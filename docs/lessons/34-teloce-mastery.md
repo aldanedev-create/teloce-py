@@ -301,6 +301,107 @@ PosixPath('.../static/teloce-runtime.js') are the same file
 Use the default `dist/` separation, or point `out_dir` somewhere that
 doesn't overlap your source tree.
 
+### Making the output actually small: what `minify` alone doesn't tell you
+
+The built-in `minify` option is, by design, only a whitespace-stripping
+pass (strip each line, drop blank lines and comments) — no identifier
+renaming, no dead-code elimination, no AST-level work at all. Measured on
+the Image Studio's `App.vel`: 36,108 → 34,713 bytes, about 3%. That's the
+entire effect of `"minify": true` on its own.
+
+Real reduction requires bundling with a real minifier, and a few
+additional flags. Verified end to end, in order of actual impact:
+
+| Config | Output | Size |
+|---|---|---|
+| default (no bundling) | `App.js` + `teloce-runtime.js` (2 files) | 36,108 + 12,477 = **48,585 bytes** |
+| `minify: true` only | same 2 files | 34,713 + 12,477 = **47,190 bytes** (~3%) |
+| `bundle: true, bundler: "esbuild", minify: true` | `App.bundle.js` (1 file, runtime inlined) | **27,073 bytes** (~44%) |
+| + `drop`, `legal_comments`, `charset` (below) | `App.bundle.js` | **26,568–26,607 bytes** (~2% more) |
+
+**`bundle` is a separate flag from `bundler`/`minify`, and gates whether
+bundling happens at all.** Set `bundler: "esbuild"` and `minify: true`
+without `bundle: true` and both are silently inert — confirmed by testing
+that exact combination and getting byte-identical output to no bundling
+at all. `bundle: true` is what actually invokes the bundler; `bundler`
+picks which one (`"esbuild"` vs. teloce's plain `ModuleBundler`); `minify`
+then means something real, because it's passed straight through as
+esbuild's own `--minify` flag.
+
+Bundling also merges the previously-separate `teloce-runtime.js` into the
+one output file instead of shipping it as a second HTTP request — that
+merge is most of where the ~44% comes from, not the minification alone.
+
+**The extra ~2%: flags the Python wrapper didn't originally expose.**
+`EsbuildBundler.bundle()` only forwarded `minify`/`sourcemap`/`target`/
+`splitting` to the underlying esbuild command. Three more esbuild flags
+give a further, smaller reduction — `--drop:console`/`--drop:debugger`
+(strips those calls entirely, not just their output), `--legal-comments=none`
+(drops any license-comment preservation esbuild would otherwise keep), and
+`--charset=utf8` (emits literal UTF-8 characters instead of `\uXXXX`
+escape sequences where safe). These are now wired through as `drop`
+(a list of names to `--drop:`-prefix), `legal_comments`, and `charset`
+options on both `EsbuildBundler.bundle()` and `Builder`'s options dict —
+they didn't exist before this lesson was written; adding them was as
+simple as extending the flag-construction logic in `esbuild.py` and
+threading three more `self.options.get(...)` calls through the one
+`Builder` call site that invokes it.
+
+```json
+{
+  "build": {
+    "bundle": true,
+    "bundler": "esbuild",
+    "minify": true,
+    "tree_shake": true,
+    "drop": ["console", "debugger"],
+    "legal_comments": "none",
+    "charset": "utf8"
+  }
+}
+```
+
+`code_splitting`, `target`, and `source_maps` were also tested against
+this same single-component app and made **no measurable difference** —
+they only matter with multiple entry points or when targeting older
+JavaScript syntax levels that require downleveling.
+
+### `tree_shake` and `lazy_components`: the Svelte-shaped lever
+
+Everything above shrinks code that's *going to ship regardless*. These
+two options decide **whether code ships at all**, which is the bigger
+architectural win once an app has more than one component:
+
+- **`tree_shake: true`** drops the import for a child `.vel` component
+  entirely if that component is never actually referenced in the
+  template — free, always safe to enable, catches dead imports the
+  compiler can prove are unused.
+- **`lazy_components: ["ComponentName", ...]`** rewrites a specific
+  child component's import from a static `import X from "./X.js"` into
+  a dynamic one, wrapped in a small lazy-loading helper:
+
+  ```js
+  // without lazy_components:
+  import HeavyModal from "./HeavyModal.js";
+
+  // with lazy_components: ["HeavyModal"]:
+  const HeavyModal = __teloceLazy(() => import("./HeavyModal.js"));
+  ```
+
+  Verified with a real two-component test — `HeavyModal.js` is not
+  fetched by the browser at all until `__teloceLazy`'s loader actually
+  runs (i.e., the first time that component is mounted). A settings
+  panel, an admin view, an upgrade modal — anything not needed on first
+  paint is a candidate.
+
+**Neither option does anything for a single, self-contained component**
+like the Image Studio's `App.vel`, which has no child `.vel` imports —
+there's nothing to shake or lazily load. They only pay off once an app is
+decomposed into multiple components, some of which aren't always needed.
+This is worth internalizing as the actual Svelte-shaped mental model: the
+compiler deciding *what ships* based on *what's used*, rather than
+minification deciding *how small what already ships* can get.
+
 ### `teloce.config.json` — read manually, not automatically, by the Python API
 
 The schema (nested under `compiler` and `build`):
@@ -452,6 +553,9 @@ of the following without looking anything up:
   as zero for unmoved rows?
 - Why does `build_project()` called directly from Python not honor
   `teloce.config.json`, even though `python -m teloce build` does?
+- Why does setting `bundler: "esbuild"` and `minify: true` alone produce
+  byte-identical output to not setting them at all — what's the one flag
+  that actually turns bundling on?
 
 If any of those are shaky, re-read the matching section above with a
 real `.vel` file open next to the actual generated `result["code"]` —

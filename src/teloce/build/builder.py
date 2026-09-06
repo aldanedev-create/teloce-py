@@ -232,6 +232,9 @@ class Builder:
                         sourcemap=bool(self.options.get('source_maps', False)),
                         metafile=(self.out_dir / 'esbuild-meta.json') if self.options.get('report') else None,
                         target=self.options.get('target'),
+                        drop=self.options.get('drop'),
+                        legal_comments=self.options.get('legal_comments'),
+                        charset=self.options.get('charset'),
                     )
                 else:
                     bundle_path = ModuleBundler(self.out_dir).bundle(entry, output)

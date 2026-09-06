@@ -32,7 +32,9 @@ class EsbuildBundler:
     def bundle(self, entry: str | Path, output: str | Path | None = None, *,
                splitting: bool = True, minify: bool = False,
                sourcemap: bool = False, metafile: str | Path | None = None,
-               target: str | None = None) -> Path:
+               target: str | None = None, drop: list[str] | None = None,
+               legal_comments: str | None = None,
+               charset: str | None = None) -> Path:
         if not self.executable:
             raise EsbuildUnavailable(
                 "esbuild was requested but is not installed. Install it with "
@@ -54,6 +56,13 @@ class EsbuildBundler:
             command.append("--sourcemap")
         if target:
             command.append(f"--target={target}")
+        if drop:
+            for name in drop:
+                command.append(f"--drop:{name}")
+        if legal_comments:
+            command.append(f"--legal-comments={legal_comments}")
+        if charset:
+            command.append(f"--charset={charset}")
         if metafile:
             metafile_path = Path(metafile).resolve()
             metafile_path.parent.mkdir(parents=True, exist_ok=True)
