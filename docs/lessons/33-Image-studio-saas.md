@@ -258,8 +258,7 @@ def render(name: str, **context) -> HTMLResponse:
 ```
 
 Being precise about what's actually verified here: this lesson was written
-and tested without `flaxon-framework` installed (it isn't published on
-public PyPI at the time of writing), so the Jinja2 fallback branch is the
+and tested without `flaxon` installed (it also polish on pypi can check it out), so the Jinja2 fallback branch is the
 one that was actually executed and confirmed working end-to-end. The
 `Jinax(str(TEMPLATES_DIR), auto_reload=True)` constructor call matches the
 documented usage in [`docs/jinax-and-vel.md`](../jinax-and-vel.md), and
