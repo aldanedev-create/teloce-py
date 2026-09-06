@@ -41,15 +41,26 @@ class Parser:
                 # Long-form v-else/v-else-if branches are represented as
                 # adjacent elements by the HTML lexer. Fold them into the
                 # preceding IfNode before they reach code generation.
-                if isinstance(node, ElementNode) and nodes and isinstance(nodes[-1], IfNode):
-                    if 'v-else-if' in node.attributes:
-                        condition = node.attributes.pop('v-else-if')
-                        branch = IfNode(condition, [node], [], node.line, node.column)
-                        nodes[-1].else_children = [branch]
-                        continue
-                    if 'v-else' in node.attributes:
-                        node.attributes.pop('v-else')
-                        nodes[-1].else_children = [node]
+                if isinstance(node, ElementNode) and ('v-else-if' in node.attributes or 'v-else' in node.attributes):
+                    anchor_index = len(nodes) - 1
+                    while anchor_index >= 0 and isinstance(nodes[anchor_index], TextNode) and not nodes[anchor_index].value.strip():
+                        anchor_index -= 1
+                    if anchor_index >= 0 and isinstance(nodes[anchor_index], IfNode):
+                        del nodes[anchor_index + 1:]
+                        chain_end = nodes[anchor_index]
+                        while (
+                            chain_end.else_children
+                            and len(chain_end.else_children) == 1
+                            and isinstance(chain_end.else_children[0], IfNode)
+                        ):
+                            chain_end = chain_end.else_children[0]
+                        if 'v-else-if' in node.attributes:
+                            condition = node.attributes.pop('v-else-if')
+                            branch = IfNode(condition, [node], [], node.line, node.column)
+                            chain_end.else_children = [branch]
+                        else:
+                            node.attributes.pop('v-else')
+                            chain_end.else_children = [node]
                         continue
                 nodes.append(node)
             else:
