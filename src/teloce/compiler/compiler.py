@@ -62,6 +62,58 @@ class Compiler:
             )
             return self._empty_result()
 
+    _CDN_IMPORT_RE = re.compile(
+        r"""import\s*(?:[\w${},\s*]+\s+from\s+)?['"](https?://[^'"]+)['"]"""
+        r"""|import\(\s*['"](https?://[^'"]+)['"]\s*\)"""
+    )
+    _KNOWN_CDN_HOSTS = (
+        "cdn.jsdelivr.net", "unpkg.com", "cdnjs.cloudflare.com",
+        "esm.sh", "esm.run", "cdn.skypack.dev", "jspm.dev",
+    )
+
+    def _check_cdn_imports(self, source: str, filename: str) -> None:
+        """Warn on module imports fetched from a remote URL that are either
+        unencrypted (http://, interceptable via MITM injection) or, for
+        known CDN hosts, missing an explicit version pin (an unpinned URL
+        silently changes behavior whenever the package publishes an
+        update). This is a warning, not an error -- CDN imports themselves
+        are a legitimate, documented pattern in this compiler (see the
+        Three.js lesson), the goal is just to flag the two ways they
+        commonly go wrong."""
+        script_match = re.search(r"<script[^>]*>(.*?)</script>", source, re.DOTALL)
+        script_text = script_match.group(1) if script_match else source
+        script_offset = script_match.start(1) if script_match else 0
+
+        for match in self._CDN_IMPORT_RE.finditer(script_text):
+            url = match.group(1) or match.group(2)
+            line = source.count("\n", 0, script_offset + match.start()) + 1
+
+            if url.startswith("http://"):
+                self.diagnostics.add(
+                    DiagnosticLevel.WARNING,
+                    f"Module imported over an insecure http:// URL: {url}. "
+                    "An attacker on the network path could inject arbitrary "
+                    "JavaScript into this response. Use https:// instead.",
+                    filename=filename,
+                    line=line,
+                    code="W1010",
+                    suggestions=[f"Change to https://{url[len('http://'):]}"],
+                )
+
+            host_match = re.match(r"https?://([^/]+)/", url)
+            host = host_match.group(1) if host_match else ""
+            if host in self._KNOWN_CDN_HOSTS and not re.search(r"@\d", url):
+                self.diagnostics.add(
+                    DiagnosticLevel.WARNING,
+                    f"CDN import has no pinned version: {url}. An unpinned "
+                    "URL can silently change behavior when the package "
+                    "publishes a new release. Pin an exact version, e.g. "
+                    "package@1.2.3.",
+                    filename=filename,
+                    line=line,
+                    code="W1011",
+                )
+
     def _compile(self, source: str, filename: str = "<input>") -> Dict[str, Any]:
         """
         Compile a .vel file from source string.
@@ -84,6 +136,8 @@ class Compiler:
         # Step 1: Parse SFC
         sfc_parser = SFCParser()
         component = sfc_parser.parse(source, filename)
+        if component:
+            self._check_cdn_imports(source, filename)
 
         for warning in sfc_parser.warnings:
             line, column = self._message_location(warning)
