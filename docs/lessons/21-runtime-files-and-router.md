@@ -105,12 +105,12 @@ import { createSignal, createComputed, createEffect } from '/static/teloce/signa
 
 export const online = createSignal(false)
 export const label = createComputed(() => online() ? 'Online' : 'Offline')
-export const stop = createEffect(() => {
+export const statusEffect = createEffect(() => {
   document.querySelector('#status').textContent = label()
 })
 ```
 
-Call `stop()` when the feature is destroyed. Never treat a client signal as authorization or as a place for secrets.
+Call `statusEffect.stop()` when the feature is destroyed. Never treat a client signal as authorization or as a place for secrets.
 
 ## How the router is made
 

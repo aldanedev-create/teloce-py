@@ -173,7 +173,21 @@ teloce compile static/js/App.vel -o dist/js/App.js
 teloce compile static/js/App.vel -o dist/js/App.js --source-map
 ```
 
-The CSS is written beside the JavaScript output and diagnostics are printed as JSON. The default output is next to the source with a `.js` extension. The equivalent Python API is:
+The CSS is written beside the JavaScript output. Failed compilation prints a
+readable diagnostic with the error code, file, location when available, source
+context, and a suggested fix. Use `--json` when an IDE or CI tool needs the
+structured diagnostic payload. The default output is next to the source with a
+`.js` extension.
+
+```bash
+teloce compile static/js/Broken.vel
+# ERROR [E1001] static/js/Broken.vel:...
+#   Fix: Check that every template, script, style, and HTML element has a matching closing tag.
+
+teloce compile static/js/Broken.vel --json > diagnostics.json
+```
+
+The equivalent Python API is:
 
 ```python
 from pathlib import Path

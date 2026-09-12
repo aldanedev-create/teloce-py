@@ -149,14 +149,14 @@ The complete example uses explicit signals for a small piece of shared browser s
 
   const saveState = createSignal('Ready')
   const label = document.querySelector('#save-state')
-  createEffect(() => { label.textContent = saveState() })
+  const saveEffect = createEffect(() => { label.textContent = saveState() })
 
   saveState.set('Editing')
   saveState.set('Saved')
 </script>
 ```
 
-The notebook calls `saveState.set('Editing')` when a note is selected, `saveState.set('New note')` when creating one, and `saveState.set('Saved')` after saving. Component-style notebook data still uses the standalone runtime proxy; the signal is useful because it is independently observable by the status effect. In a larger application, keep the effect stop function and call it when the page or feature is destroyed.
+The notebook calls `saveState.set('Editing')` when a note is selected, `saveState.set('New note')` when creating one, and `saveState.set('Saved')` after saving. Component-style notebook data still uses the standalone runtime proxy; the signal is useful because it is independently observable by the status effect. In a larger application, keep the effect object and call `saveEffect.stop()` when the page or feature is destroyed.
 
 ## Step 5: run the complete notebook example
 

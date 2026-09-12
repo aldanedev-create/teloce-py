@@ -4,25 +4,26 @@ Builder - builds the project.
 Orchestrates the build process for .vel files.
 """
 
-from pathlib import Path
-from typing import List, Dict, Any, Optional
-import time
-import re
-import os
-import shutil
 import hashlib
 import json
+import os
+import re
+import shutil
+import time
+from importlib.resources import files as package_files
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-from teloce.compiler.compiler import Compiler
-from teloce.project.scanner import ProjectScanner
-from teloce.build.writer import FileWriter
-from teloce.build.manifest import ManifestGenerator
 from teloce.build.assets import AssetManager
-from teloce.components.dependency_graph import DependencyGraph
 from teloce.build.bundler import ModuleBundler
 from teloce.build.esbuild import EsbuildBundler
-from teloce.ssr import to_jinax_template
+from teloce.build.manifest import ManifestGenerator
+from teloce.build.writer import FileWriter
+from teloce.compiler.compiler import Compiler
 from teloce.compiler.generator import SAFE_EXPRESSION_RUNTIME, SHARED_DOM_RUNTIME
+from teloce.components.dependency_graph import DependencyGraph
+from teloce.project.scanner import ProjectScanner
+from teloce.ssr import to_jinax_template
 
 
 class Builder:
@@ -133,6 +134,8 @@ class Builder:
                 # declarations in SHARED_DOM_RUNTIME. Re-exporting them here
                 # is a fatal duplicate export in real ES-module loaders.
                 + '\nexport { __safeEvaluate, __runEventExpression, __setSafePath };\n'
+                + 'export { createSignal, createComputed, createEffect, createMemo, batch, untracked, isSignal, isComputed, toSignal, getValue } from "./signals.js";\n'
+                + 'export { createSignal as signal, createComputed as computed, createEffect as effect } from "./signals.js";\n'
             )
             if self.options.get('minify', False):
                 runtime_source = self._minify_generated_js(runtime_source)
@@ -144,6 +147,21 @@ class Builder:
                 'output': results['runtime'],
                 'size': results['runtime_size'],
             })
+            # Signals are a first-class part of the shared runtime. Keep their
+            # scheduler dependency beside the barrel so generated components
+            # can use ``signal()``/``effect()`` without per-component setup.
+            runtime_package = package_files("teloce.runtime")
+            for runtime_name in ("scheduler.js", "signals.js"):
+                runtime_module_path = runtime_path.parent / runtime_name
+                runtime_module_source = runtime_package.joinpath(runtime_name).read_text(encoding="utf-8")
+                if self.options.get('minify', False):
+                    runtime_module_source = self._minify_generated_js(runtime_module_source)
+                runtime_module_path.write_text(runtime_module_source, encoding="utf-8")
+                results['files'].append({
+                    'input': f'<shared-runtime>/{runtime_name}',
+                    'output': runtime_module_path.relative_to(self.out_dir).as_posix(),
+                    'size': runtime_module_path.stat().st_size,
+                })
         
         # Compile each .vel file
         for vel_file in vel_files:

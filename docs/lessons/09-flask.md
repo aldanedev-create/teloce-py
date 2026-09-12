@@ -12,7 +12,9 @@ static/js/components/Message.vel:
 static/js/App.vel:
 
     <template>
-      <main><h1>Flask messages</h1><ul><Message v-for="message in messages" :key="message.id" :message="message" /></ul>
+      <main><h1>Flask messages</h1><ul>
+
+      <Message v-for="message in messages" :key="message.id" :message="message" /></ul>
         <form @submit.prevent="send"><input v-model="draft" /><button :disabled="!draft.trim()">Send</button></form>
         <p v-if="error">{{ error }}</p>
       </main>

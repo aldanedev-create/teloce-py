@@ -8,7 +8,7 @@ sharing state between independently compiled components.
 | --- | --- |
 | `runtime.js` | Public runtime composition and shared runtime entry point. |
 | `component.js` | Component mount, update, props, and teardown coordination. |
-| `signals.js` | `signal`, `get`, `set`, and subscriptions for explicit state. |
+| `signals.js` | `createSignal`, `createComputed`, `createEffect`, batching, and subscriptions for explicit state. |
 | `reactivity.js` | Dependency tracking and reactive effects. |
 | `computed.js` | Derived values that update when dependencies change. |
 | `effects.js` | Effects and disposer registration. |
@@ -23,19 +23,23 @@ sharing state between independently compiled components.
 ## Explicit signal example
 
 ```js
-import { signal, effect } from '/static/teloce/signals.js';
+import { createSignal, createEffect } from '/static/teloce/signals.js';
 
-const count = signal(0);
-const stop = effect(() => {
+const count = createSignal(0);
+const effect = createEffect(() => {
   document.querySelector('#count').textContent = String(count());
 });
 
 document.querySelector('#increment').addEventListener('click', () => {
-  count(count() + 1);
+  count.set(count() + 1);
 });
 
-window.addEventListener('pagehide', stop, { once: true });
+window.addEventListener('pagehide', () => effect.stop(), { once: true });
 ```
+
+`createEffect()` returns an effect object, not a callback. Use `effect.stop()`
+when the feature is destroyed. By contrast, `signal.subscribe(listener)`
+returns a callable unsubscribe function.
 
 Generated components register their event listeners and effects with their
 component scope. Third-party editors, canvases, and media players must be

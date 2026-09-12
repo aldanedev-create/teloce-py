@@ -9,6 +9,29 @@ When debugging:
 3. validate the smallest failing component;
 4. run browser tests for event, loop, and router behavior.
 
+## Readable CLI diagnostics
+
+Compile one file while developing:
+
+```bash
+teloce compile static/js/App.vel
+```
+
+The command reports the severity, diagnostic code, source path, line and
+column when the parser knows them, and a concrete `Fix:` suggestion. For
+example, an unclosed component tells you to check matching template, script,
+style, and HTML closing tags. Use the machine-readable form for an editor or
+CI integration:
+
+```bash
+teloce compile static/js/App.vel --json
+```
+
+The JSON result keeps `errors`, `warnings`, `info`, and `hints`, including
+`filename`, `line`, `column`, `code`, `suggestions`, and `notes`. Fix the first
+error before chasing later generated-code or browser errors; later messages
+may be consequences of the first malformed block.
+
 ## Common diagnostics
 
 | Problem | Likely cause | Check |

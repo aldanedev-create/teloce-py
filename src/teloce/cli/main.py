@@ -109,6 +109,7 @@ def main(args: Optional[list] = None) -> int:
     compile_parser.add_argument('source', help='Path to a .vel file')
     compile_parser.add_argument('-o', '--output', help='JavaScript output path (default: next to source)')
     compile_parser.add_argument('--source-map', action='store_true', help='Write a source map')
+    compile_parser.add_argument('--json', action='store_true', help='Print structured diagnostics as JSON')
     build_parser.add_argument(
         '--no-clean',
         action='store_true',

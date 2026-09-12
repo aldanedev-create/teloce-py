@@ -118,15 +118,15 @@ Create `templates/index.html`:
       const status = createComputed(() => online() ? 'Online' : 'Offline')
       const statusElement = document.querySelector('#status')
 
-      const stop = createEffect(() => {
+      const effect = createEffect(() => {
         statusElement.textContent = status()
       })
 
       document.querySelector('#connect').addEventListener('click', () => online.set(true))
       document.querySelector('#disconnect').addEventListener('click', () => online.set(false))
 
-      // In a real component, call stop() during beforeUnmount.
-      window.addEventListener('pagehide', stop, { once: true })
+      // createEffect() returns an object; stop it during teardown.
+      window.addEventListener('pagehide', () => effect.stop(), { once: true })
     </script>
   </body>
 </html>
@@ -226,7 +226,7 @@ import { createSignal, createComputed, createEffect } from '/static/teloce/signa
 export const online = createSignal(false)
 export const status = createComputed(() => online() ? 'Online' : 'Offline')
 
-export const stopStatusLogger = createEffect(() => {
+export const statusLogger = createEffect(() => {
   console.log('Connection status:', status())
 })
 
@@ -245,7 +245,7 @@ const unsubscribe = status.subscribe(value => { label.textContent = value })
 setOnline(true)
 
 // Call unsubscribe() when the page or feature is destroyed.
-// stopStatusLogger() stops the effect created by the store.
+// statusLogger.stop() stops the effect created by the store.
 ```
 
 A signal is callable and has useful methods:

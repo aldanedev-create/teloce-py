@@ -31,7 +31,11 @@ def _run(project: Path, *args: str) -> subprocess.CompletedProcess[str]:
 def test_django_admin_example_builds_registers_model_and_serves_staff_dashboard(tmp_path: Path) -> None:
     pytest.importorskip("django")
     project = tmp_path / "django-admin-vel"
-    shutil.copytree(ROOT / "examples" / "django-admin-vel", project)
+    shutil.copytree(
+        ROOT / "examples" / "django-admin-vel",
+        project,
+        ignore=shutil.ignore_patterns("db.sqlite3", "dist", "__pycache__"),
+    )
 
     _run(project, "build.py")
     module = project / "dist" / "static" / "js" / "AdminDashboard.js"
