@@ -386,7 +386,17 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       }
     }
     const props = { __slots: slots };
-    for (const attribute of Array.from(element.attributes || [])) {
+    const attributes = Array.from(element.attributes || []);
+    // `applyBinding` mirrors dynamic component props onto a normal HTML
+    // attribute for compatibility and inspection. That mirror is a string
+    // representation (for example, `[object Object]`) and must never
+    // override the typed value carried by data-teloce-resolved-*.
+    const resolvedPropNames = new Set(
+      attributes
+        .filter(attribute => attribute.name.startsWith("data-teloce-resolved-"))
+        .map(attribute => attribute.name.slice("data-teloce-resolved-".length))
+    );
+    for (const attribute of attributes) {
       const name = attribute.name;
       if (name.startsWith("data-teloce-event-") || name === "data-teloce-loop-scope" || name === "data-teloce-key") continue;
       if (name === "data-teloce-is") {
@@ -397,7 +407,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       } else if (name.startsWith("data-teloce-bind-")) {
         const propName = name.slice("data-teloce-bind-".length);
         props[propName] = evaluate(__teloceDecodeAttribute(attribute.value), parentState);
-      } else if (!name.startsWith("data-")) {
+      } else if (!name.startsWith("data-") && !resolvedPropNames.has(name)) {
         props[name] = attribute.value;
       }
     }

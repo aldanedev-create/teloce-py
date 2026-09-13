@@ -1,0 +1,54 @@
+<script>
+import IssueList from "../components/IssueList.vel";
+import router from "../router.js";
+
+export default {
+  components: { IssueList },
+  props: { id: String },
+  data() { return { repository: null, issues: [], title: "", body: "", loading: true, saving: false, error: "" }; },
+  mounted() { this.loadRepository(); },
+  methods: {
+    async loadRepository() {
+      this.loading = true;
+      try {
+        const response = await fetch("/api/repositories/" + this.id);
+        if (!response.ok) throw new Error(response.status === 404 ? "Repository not found." : "Repository API returned " + response.status);
+        const payload = await response.json();
+        this.repository = payload;
+        this.issues = payload.issues;
+        this.error = "";
+      } catch (error) { this.error = error.message || "Could not load repository."; }
+      finally { this.loading = false; }
+    },
+    async createIssue() {
+      if (!this.title.trim() || this.saving) return;
+      this.saving = true;
+      try {
+        const response = await fetch("/api/repositories/" + this.id + "/issues", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: this.title, body: this.body }) });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Could not create issue.");
+        this.issues.unshift(payload); this.title = ""; this.body = ""; this.error = "";
+      } catch (error) { this.error = error.message || "Could not create issue."; }
+      finally { this.saving = false; }
+    },
+    goHome() { router.push("/"); },
+  },
+};
+</script>
+
+<template>
+  <section class="repo-page">
+    <button class="back" type="button" @click="goHome">← Back to repositories</button>
+    <p v-if="loading" class="state">Loading repository…</p><p v-if="error && !repository" class="state error">{{ error }}</p>
+    <div v-if="repository" class="repository-content">
+      <header class="repo-hero"><p class="eyebrow">{{ repository.owner }} / repository</p><h1>{{ repository.name }}</h1><p>{{ repository.description }}</p><div class="stats"><span>◉ {{ repository.language }}</span><span>★ {{ repository.stars }} stars</span><span>⑂ {{ repository.forks }} forks</span><span>◌ {{ repository.issue_count }} issues</span></div></header>
+      <div class="columns"><div><IssueList :issues="issues"></IssueList></div><aside class="new-issue"><h2>Open an issue</h2><p>Send a real request to the Flask API.</p><form @submit.prevent="createIssue"><label>Title<input v-model="title" maxlength="160" required placeholder="What should be improved?"></label><label>Details<textarea v-model="body" rows="5" maxlength="5000" placeholder="Add useful context"></textarea></label><button type="submit" :disabled="saving || !title.trim()">{{ saving ? "Saving…" : "Create issue" }}</button></form><p v-if="error" class="form-error">{{ error }}</p></aside></div>
+    </div>
+  </section>
+</template>
+
+<style scoped>
+.repo-page { max-width: 70rem; margin: auto; } .back { margin-bottom: 2rem; padding: .45rem .7rem; border: 1px solid #30363d; border-radius: .45rem; background: #161b22; color: #c9d1d9; cursor: pointer; } .back:hover { border-color: #58a6ff; color: #58a6ff; } .eyebrow { color: #58a6ff; font-size: .75rem; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; } h1 { margin: .2rem 0 .8rem; font-size: clamp(2.3rem, 6vw, 4.2rem); letter-spacing: -.06em; } .repo-hero > p:not(.eyebrow) { max-width: 44rem; color: #8b949e; font-size: 1.08rem; } .stats { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 1.3rem; color: #8b949e; font-size: .88rem; } .columns { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(16rem, .8fr); gap: 2rem; margin-top: 2.5rem; } .new-issue { align-self: start; padding: 1.1rem; border: 1px solid #30363d; border-radius: .65rem; background: #161b22; } .new-issue h2 { margin: 0; font-size: 1.15rem; } .new-issue > p { color: #8b949e; font-size: .88rem; } form { display: flex; flex-direction: column; gap: .9rem; } label { display: flex; flex-direction: column; gap: .35rem; color: #c9d1d9; font-size: .85rem; } input, textarea { resize: vertical; padding: .6rem .7rem; border: 1px solid #30363d; border-radius: .45rem; outline: 0; background: #0d1117; color: #e6edf3; } input:focus, textarea:focus { border-color: #58a6ff; box-shadow: 0 0 0 3px #1f6feb33; } form button { padding: .65rem .8rem; border: 0; border-radius: .45rem; background: #238636; color: white; cursor: pointer; font-weight: 700; } form button:disabled { cursor: not-allowed; opacity: .5; } .form-error, .error { color: #f85149; font-size: .85rem; } .state { padding: 1.25rem; border: 1px solid #30363d; border-radius: .6rem; color: #8b949e; }
+@media (max-width: 46rem) { .columns { grid-template-columns: 1fr; } }
+</style>
+

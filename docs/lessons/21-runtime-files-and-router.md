@@ -114,7 +114,103 @@ Call `statusEffect.stop()` when the feature is destroyed. Never treat a client s
 
 ## How the router is made
 
+### The zero-route-table SPA workflow
+
+For the normal application workflow, create pages and run the regular build.
+Teloce discovers the page files and generates the router for you:
+
+```text
+static/
+└── js/
+    ├── App.vel
+    └── pages/
+        ├── HomePage.vel
+        ├── SettingsPage.vel
+        └── projects/
+            └── [id].vel
+```
+
+```bash
+teloce build
+```
+
+The generated route map is:
+
+```text
+HomePage.vel              /
+SettingsPage.vel          /settings
+projects/[id].vel         /projects/:id
+```
+
+The default is automatic: a project with static/js/pages containing a .vel or
+.js page gets dist/static/js/router.js. A project without that directory stays
+a normal single-page or multi-page build. Use teloce build --no-spa to opt out,
+or put this in teloce.config.json:
+
+```json
+{
+  "build": {
+    "spa": "auto"
+  }
+}
+```
+
+Use the generated router from App.vel with one mount:
+
+```html
+<template>
+  <div id="router-view"></div>
+</template>
+
+<script>
+import router from "./router.js";
+
+export default {
+  mounted() {
+    this.stopRouter = router.mount(document.querySelector("#router-view"));
+  },
+  beforeUnmount() {
+    this.stopRouter?.();
+    router.destroy();
+  }
+};
+</script>
+```
+
+Hash mode is the default and is the simplest deployment choice. Use
+"spa_mode": "history" only when the Python host or platform rewrites every
+client route to the HTML shell.
+
+### Explicit route declarations
+
 Teloce-Py does not require a JavaScript router package. Python validates a route configuration, generates a dependency-free browser router, and writes it into your static output.
+
+For most applications, the short public helper is enough. It derives the
+component variable and import from each `.js` module path:
+
+```python
+from teloce.router import generate_router
+
+generate_router("dist/static/js/router.js", {
+    "/": "./pages/HomePage.js",
+    "/settings": "./pages/SettingsPage.js",
+})
+```
+
+That replaces the longer compiler/generator ceremony below. It still performs
+the same route validation and raises a clear `ValueError` when a route is
+invalid. Use a route object for dynamic parameters or metadata:
+
+```python
+generate_router("dist/static/js/router.js", {
+    "/": {"component": "HomePage", "import": "./pages/HomePage.js"},
+    "/users/:id": {
+        "component": "UserPage",
+        "import": "./pages/UserPage.js",
+        "props": True,
+    },
+})
+```
 
 ```python
 from pathlib import Path

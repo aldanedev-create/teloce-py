@@ -40,6 +40,7 @@ This learning path teaches the complete workflow: write a `.vel` Single File Com
 34. [Advanced TypeScript architecture with Teloce](31-advanced-ts.md)
 35. [Transitions and animation directives](32-transitions-and-animations.md)
 36. [Signals inside `.vel` components](36-signals-in-vel.md)
+37. [Make a single-page app with automatic routing](37-making-a-spa.md)
 
 ## What you can build
 

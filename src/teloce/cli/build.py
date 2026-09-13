@@ -49,6 +49,13 @@ def build_command(args: Any) -> int:
     
     # Build
     static_mode = bool(getattr(args, 'static', False) or build_config.get('static', False))
+    if getattr(args, 'spa', False):
+        spa = True
+    elif getattr(args, 'no_spa', False):
+        spa = False
+    else:
+        spa = build_config.get('spa', 'auto')
+
     builder = Builder({
         'mode': 'production',
         'production': True,
@@ -74,6 +81,12 @@ def build_command(args: Any) -> int:
                             if getattr(args, 'lazy_components', None) is not None
                             else build_config.get('lazy_components', [])),
         'tree_shake': not getattr(args, 'no_tree_shake', False) and build_config.get('tree_shake', True),
+        'spa': spa,
+        'spa_mode': build_config.get('spa_mode', 'hash'),
+        'spa_base': build_config.get('spa_base', '/'),
+        'spa_pages': build_config.get('spa_pages'),
+        'spa_router': build_config.get('spa_router'),
+        'spa_routes': build_config.get('spa_routes', {}),
     })
     
     result = builder.build(discovery.root_dir, out_dir)

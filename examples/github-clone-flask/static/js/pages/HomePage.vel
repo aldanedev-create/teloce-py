@@ -1,0 +1,50 @@
+<script>
+import RepoCard from "../components/RepoCard.vel";
+import router from "../router.js";
+
+export default {
+  components: { RepoCard },
+  data() { return { repositories: [], query: "", loading: true, error: "" }; },
+  computed: {
+    filteredRepositories() {
+      const needle = this.query.trim().toLowerCase();
+      if (!needle) return this.repositories;
+      return this.repositories.filter((repo) => (repo.name + " " + repo.owner + " " + repo.description).toLowerCase().includes(needle));
+    },
+  },
+  mounted() { this.loadRepositories(); },
+  methods: {
+    async loadRepositories() {
+      this.loading = true;
+      try {
+        const response = await fetch("/api/repositories");
+        if (!response.ok) throw new Error("Repository API returned " + response.status);
+        const payload = await response.json();
+        this.repositories = payload.items;
+        this.error = "";
+      } catch (error) { this.error = error.message || "Could not load repositories."; }
+      finally { this.loading = false; }
+    },
+    openRepository(id) { router.push("/repo/" + id); },
+  },
+};
+</script>
+
+<template>
+  <section class="home-page">
+    <div class="hero"><p class="eyebrow">A tiny open-source workspace</p><h1>Build in public,<br><span>one repository at a time.</span></h1><p class="lead">Explore local projects, inspect their issues, and manage content through a real Flask backend.</p></div>
+    <div class="toolbar"><label class="search"><span>⌕</span><input v-model="query" type="search" placeholder="Find a repository..." aria-label="Find a repository"></label><a class="admin-link" href="/admin-login">Manage content ↗</a></div>
+    <p v-if="loading" class="state">Loading repositories…</p><p v-if="error" class="state error">{{ error }} <button type="button" @click="loadRepositories">Retry</button></p>
+    <div v-if="!loading && !error" class="repo-grid"><RepoCard v-for="repo in filteredRepositories" :key="repo.id" :repository="repo" @open="openRepository"></RepoCard></div>
+    <p v-if="!loading && !error && !filteredRepositories.length" class="state">No repositories match “{{ query }}”.</p>
+    <div class="proof"><div><strong>Real Flask API</strong><span>SQLite + SQLAlchemy</span></div><div><strong>Compiled UI</strong><span>Reusable .vel components</span></div><div><strong>Client routing</strong><span>Hash-safe for Flask hosting</span></div></div>
+  </section>
+</template>
+
+<style scoped>
+.home-page { max-width: 70rem; margin: auto; } .hero { max-width: 48rem; padding: 2rem 0 2.5rem; } .eyebrow { color: #58a6ff; font-size: .75rem; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; } h1 { margin: .5rem 0 1rem; font-size: clamp(2.5rem, 7vw, 5.2rem); line-height: .98; letter-spacing: -.07em; } h1 span { color: #8b949e; } .lead { max-width: 38rem; color: #8b949e; font-size: 1.1rem; }
+.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.1rem; } .search { display: flex; align-items: center; gap: .65rem; width: min(100%, 28rem); padding: .7rem .9rem; border: 1px solid #30363d; border-radius: .55rem; background: #161b22; } .search span { color: #8b949e; font-size: 1.4rem; line-height: 1; } input { min-width: 0; width: 100%; border: 0; outline: 0; background: none; color: #e6edf3; } input::placeholder { color: #6e7681; } .admin-link { color: #58a6ff; font-size: .9rem; text-decoration: none; white-space: nowrap; } .admin-link:hover { text-decoration: underline; }
+.repo-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; } .state { padding: 1.25rem; border: 1px solid #30363d; border-radius: .6rem; color: #8b949e; } .error { color: #f85149; } .error button { margin-left: .5rem; border: 1px solid #f85149; border-radius: .4rem; background: transparent; color: inherit; cursor: pointer; } .proof { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid #21262d; } .proof div { display: flex; flex-direction: column; gap: .2rem; } .proof strong { color: #c9d1d9; font-size: .9rem; } .proof span { color: #8b949e; font-size: .8rem; }
+@media (max-width: 60rem) { .repo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } } @media (max-width: 40rem) { .toolbar { align-items: stretch; flex-direction: column; } .repo-grid, .proof { grid-template-columns: 1fr; } }
+</style>
+

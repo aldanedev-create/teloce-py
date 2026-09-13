@@ -1,0 +1,29 @@
+<script>
+import AppShell from "./components/AppShell.vel";
+import router from "./router.js";
+
+export default {
+  components: { AppShell },
+  data() { return { routeUnmount: null }; },
+  mounted() { this.routeUnmount = router.mount(document.querySelector("#router-view")); },
+  beforeUnmount() {
+    if (this.routeUnmount) this.routeUnmount();
+    router.destroy();
+  },
+  methods: {
+    navigate(path) { router.push(path); },
+  },
+};
+</script>
+
+<template>
+  <AppShell @navigate="navigate">
+    <div id="router-view" aria-live="polite"></div>
+  </AppShell>
+</template>
+
+<style scoped>
+:global(*) { box-sizing: border-box; }
+:global(body) { margin: 0; background: #0d1117; color: #e6edf3; font: 15px/1.55 Inter, ui-sans-serif, system-ui, sans-serif; }
+:global(button), :global(input), :global(textarea) { font: inherit; }
+</style>

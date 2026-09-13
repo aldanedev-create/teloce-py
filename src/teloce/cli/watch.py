@@ -52,7 +52,20 @@ def watch_command(args: Any) -> int:
     
     # Build initially
     print("📦 Building project...")
-    builder = Builder({'dev': True, 'source_maps': True, 'incremental': True, 'clean': False})
+    build_config = config.get_build_config()
+    builder = Builder({
+        'dev': True,
+        'source_maps': True,
+        'incremental': True,
+        'clean': False,
+        'static_dir': build_config.get('static_dir', 'static'),
+        'spa': build_config.get('spa', 'auto'),
+        'spa_mode': build_config.get('spa_mode', 'hash'),
+        'spa_base': build_config.get('spa_base', '/'),
+        'spa_pages': build_config.get('spa_pages'),
+        'spa_router': build_config.get('spa_router'),
+        'spa_routes': build_config.get('spa_routes', {}),
+    })
     builder.build(discovery.root_dir, output_dir)
     server = start_dev_server(host, port, output_dir, proxy_target=getattr(args, 'proxy', None), hmr=hmr)
     print("✅ Initial build complete")

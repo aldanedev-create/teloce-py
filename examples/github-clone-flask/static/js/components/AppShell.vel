@@ -1,0 +1,24 @@
+<template>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#/" @click.prevent="$emit('navigate', '/')"><span class="mark">✦</span><span>ForgeHub</span></a>
+      <nav aria-label="Main navigation">
+        <a href="#/" @click.prevent="$emit('navigate', '/')">Explore</a>
+        <a href="/admin-login">Admin</a>
+      </nav>
+    </header>
+    <main class="content"><slot></slot></main>
+    <footer><span>Local GitHub-style workspace</span><a href="/api/health">API health</a></footer>
+  </div>
+</template>
+
+<style scoped>
+.app-shell { min-height: 100vh; background: radial-gradient(circle at 80% -10%, #1f3b5c 0, transparent 34rem), #0d1117; }
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; max-width: 76rem; margin: auto; padding: 1rem 1.25rem; border-bottom: 1px solid #30363d; }
+.brand { display: inline-flex; align-items: center; gap: .6rem; color: #f0f6fc; font-size: 1.08rem; font-weight: 750; text-decoration: none; }
+.mark { display: grid; width: 2rem; height: 2rem; place-items: center; border-radius: .6rem; background: #2f81f7; color: white; }
+nav { display: flex; gap: 1rem; } nav a, footer a { color: #8b949e; text-decoration: none; } nav a:hover, footer a:hover { color: #58a6ff; }
+.content { max-width: 76rem; margin: auto; padding: 3rem 1.25rem 5rem; } footer { display: flex; justify-content: space-between; max-width: 76rem; margin: auto; padding: 1.25rem; border-top: 1px solid #21262d; color: #8b949e; font-size: .85rem; }
+@media (max-width: 40rem) { .topbar { align-items: flex-start; flex-direction: column; } .content { padding-top: 2rem; } }
+</style>
+

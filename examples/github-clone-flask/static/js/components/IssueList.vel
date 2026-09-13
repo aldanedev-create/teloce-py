@@ -1,0 +1,17 @@
+<script>
+export default { props: { issues: Array } };
+</script>
+
+<template>
+  <section class="issues">
+    <div class="section-title"><h2>Issues</h2><span>{{ issues.length }} tracked</span></div>
+    <p v-if="!issues.length" class="empty">No issues yet. Start the conversation below.</p>
+    <article v-for="issue in issues" :key="issue.id" class="issue"><span class="issue-mark">●</span><div><h3>{{ issue.title }}</h3><p>#{{ issue.id }} opened by {{ issue.author }} · {{ issue.status }}</p><div v-if="issue.body" class="issue-body">{{ issue.body }}</div></div></article>
+  </section>
+</template>
+
+<style scoped>
+.issues { margin-top: 2rem; } .section-title { display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1px solid #30363d; } h2 { margin: 0 0 .8rem; font-size: 1.25rem; } .section-title span { color: #8b949e; font-size: .85rem; } .empty { padding: 1.5rem; border: 1px dashed #30363d; border-radius: .6rem; color: #8b949e; }
+.issue { display: flex; gap: .8rem; padding: 1rem 0; border-bottom: 1px solid #21262d; } .issue-mark { color: #3fb950; } h3 { margin: 0; color: #e6edf3; font-size: 1rem; } .issue p { margin: .2rem 0 0; color: #8b949e; font-size: .85rem; } .issue-body { margin-top: .55rem; color: #c9d1d9; white-space: pre-wrap; }
+</style>
+

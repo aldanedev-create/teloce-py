@@ -354,6 +354,7 @@ def create_teloce_config(project_path: Path) -> None:
             'clean': True,
             'minify': True,
             'shared_runtime': True,
+            'spa': 'auto',
             'tree_shake': True,
             'bundler': 'teloce',
         },

@@ -33,6 +33,14 @@ class ProjectConfiguration:
                 'hash_assets': True,
                 'extract_css': True,
                 'shared_runtime': True,
+                # Discover static/js/pages automatically. Set false for a
+                # deliberately multi-page build or true to require a router.
+                'spa': 'auto',
+                'spa_mode': 'hash',
+                'spa_base': '/',
+                'spa_pages': None,
+                'spa_router': None,
+                'spa_routes': {},
                 'lazy_components': [],
                 'tree_shake': True,
                 'bundler': 'teloce',

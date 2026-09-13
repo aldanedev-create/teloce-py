@@ -1,0 +1,22 @@
+<script>
+export default {
+  props: { repository: Object },
+};
+</script>
+
+<template>
+  <article class="repo-card">
+    <div class="repo-heading"><span class="repo-icon">◈</span><div><button class="repo-link" type="button" @click="$emit('open', repository.id)">{{ repository.owner }}/{{ repository.name }}</button><span v-if="repository.is_public" class="visibility">Public</span></div></div>
+    <p>{{ repository.description }}</p>
+    <div class="repo-meta"><span><i class="language-dot"></i>{{ repository.language }}</span><span>★ {{ repository.stars }}</span><span>⑂ {{ repository.forks }}</span><span>◌ {{ repository.issue_count }} issues</span></div>
+    <button class="secondary" type="button" @click="$emit('open', repository.id)">View repository →</button>
+  </article>
+</template>
+
+<style scoped>
+.repo-card { display: flex; min-height: 12rem; flex-direction: column; gap: .7rem; padding: 1.15rem; border: 1px solid #30363d; border-radius: .75rem; background: #161b22; box-shadow: 0 .8rem 2.5rem #0003; }
+.repo-heading { display: flex; align-items: flex-start; gap: .65rem; } .repo-icon { color: #58a6ff; font-size: 1.2rem; } .repo-link { padding: 0; border: 0; background: none; color: #58a6ff; cursor: pointer; font-weight: 700; } .repo-link:hover { text-decoration: underline; }
+.visibility { display: inline-block; margin-left: .5rem; padding: .1rem .45rem; border: 1px solid #30363d; border-radius: 1rem; color: #8b949e; font-size: .72rem; } p { flex: 1; margin: 0; color: #8b949e; }
+.repo-meta { display: flex; flex-wrap: wrap; gap: .9rem; color: #8b949e; font-size: .82rem; } .language-dot { display: inline-block; width: .65rem; height: .65rem; margin-right: .3rem; border-radius: 50%; background: #3572a5; } .secondary { align-self: flex-start; padding: .45rem .7rem; border: 1px solid #30363d; border-radius: .45rem; background: #21262d; color: #e6edf3; cursor: pointer; } .secondary:hover { border-color: #58a6ff; background: #30363d; }
+</style>
+

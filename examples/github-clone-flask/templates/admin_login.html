@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>ForgeHub admin</title></head>
+  <body style="font:16px system-ui;max-width:28rem;margin:4rem auto;padding:1rem">
+    <h1>ForgeHub admin</h1>
+    <p>Sign in to manage repositories, issues, and pull requests.</p>
+    {% if error %}<p style="color:#b42318">{{ error }}</p>{% endif %}
+    <form method="post">
+      <input type="hidden" name="next" value="{{ next }}">
+      <label>Password <input type="password" name="password" required autofocus></label>
+      <button type="submit">Sign in</button>
+    </form>
+    <p><a href="{{ url_for('home') }}">Return to ForgeHub</a></p>
+  </body>
+</html>
+

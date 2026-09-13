@@ -43,7 +43,8 @@ def dev_command(args: Any) -> int:
     server_config = config.get_server_config()
     port = args.port if args.port is not None else server_config.get('port', 5173)
     host = args.host if args.host is not None else server_config.get('host', 'localhost')
-    out_dir = config.get_build_config().get('out_dir', 'dist')
+    build_config = config.get_build_config()
+    out_dir = build_config.get('out_dir', 'dist')
     output_dir = Path(out_dir) if Path(out_dir).is_absolute() else discovery.root_dir / out_dir
     hmr = not args.no_hmr and server_config.get('hmr', True)
     
@@ -53,7 +54,18 @@ def dev_command(args: Any) -> int:
     
     # Build initially
     print("📦 Building project...")
-    builder = Builder({'dev': True, 'source_maps': True, 'clean': True})
+    builder = Builder({
+        'dev': True,
+        'source_maps': True,
+        'clean': True,
+        'static_dir': build_config.get('static_dir', 'static'),
+        'spa': build_config.get('spa', 'auto'),
+        'spa_mode': build_config.get('spa_mode', 'hash'),
+        'spa_base': build_config.get('spa_base', '/'),
+        'spa_pages': build_config.get('spa_pages'),
+        'spa_router': build_config.get('spa_router'),
+        'spa_routes': build_config.get('spa_routes', {}),
+    })
     result = builder.build(discovery.root_dir, output_dir)
     if result['errors']:
         print(f"❌ Initial build failed: {len(result['errors'])} errors")

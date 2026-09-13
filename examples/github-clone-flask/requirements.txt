@@ -1,0 +1,8 @@
+Flask>=3.0,<4
+Flask-Admin>=1.6,<2
+Flask-SQLAlchemy>=3.1,<4
+# Flask-Admin 1.6.x uses tuple-style validator flags; WTForms 3.2 changed
+# that contract to a mapping. Keep the admin forms compatible until the admin
+# dependency releases a compatible adapter.
+WTForms>=2.3,<3.0
+teloce-py

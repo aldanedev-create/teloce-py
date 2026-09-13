@@ -12,6 +12,7 @@ Every example is intended to be copied into a new project. From the repository r
 | `fastapi-cms` | FastAPI page CRUD API | `python app.py` |
 | `django-scanner` | Django defensive scanner UI | `python build.py`, then `python manage.py runserver` |
 | `django-admin-vel` | Django admin-managed inventory with a staff-only `.vel` dashboard | `python build.py`, then `python manage.py runserver` |
+| `github-clone-flask` | A local GitHub-style repository browser with Teloce router and protected Flask-Admin CRUD | `pip install -r requirements.txt`, then `python app.py` |
 | `flaxon` | Flaxon + Jinax + `.vel` | `python build.py`, then `python -m flaxon run app:app --reload` |
 | `flaxon-network` | Flaxon JSON and WebSocket routes | `python build.py`, then `python -m flaxon run app:app --reload` |
 | `flaxon-runtime-notebook` | Flaxon + Jinax + standalone Teloce runtime notebook | `python build.py`, then `python -m flaxon run app:app --reload` |

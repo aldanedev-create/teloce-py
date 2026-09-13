@@ -1,0 +1,8 @@
+{
+  "build": {
+    "spa": "auto",
+    "spa_routes": {
+      "RepoPage.js": "/repo/:id"
+    }
+  }
+}

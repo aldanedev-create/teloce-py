@@ -178,6 +178,16 @@ def main(args: Optional[list] = None) -> int:
         action='store_true',
         help='Keep unused local component imports in generated modules'
     )
+    build_parser.add_argument(
+        '--spa',
+        action='store_true',
+        help='Require file-based SPA router generation from the pages directory'
+    )
+    build_parser.add_argument(
+        '--no-spa',
+        action='store_true',
+        help='Disable automatic SPA router generation'
+    )
     
     # Watch command
     watch_parser = subparsers.add_parser('watch', help='Watch for changes and rebuild')

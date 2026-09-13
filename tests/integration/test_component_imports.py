@@ -67,6 +67,60 @@ def test_missing_vel_component_import_fails_the_build():
         assert "Component import not found" in result["errors"][0]["error"]
 
 
+def test_pages_directory_automatically_generates_an_spa_router():
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        pages = root / "static" / "js" / "pages"
+        pages.mkdir(parents=True)
+        (pages / "HomePage.vel").write_text(
+            "<template><main>Home</main></template>",
+            encoding="utf-8",
+        )
+        (pages / "SettingsPage.vel").write_text(
+            "<template><main>Settings</main></template>",
+            encoding="utf-8",
+        )
+
+        result = Builder({"dev": True, "clean": True, "source_maps": False}).build(root)
+
+        assert result["failed"] == 0, result["errors"]
+        assert result["spa"] is True
+        router = root / "dist" / "static" / "js" / "router.js"
+        assert router.exists()
+        source = router.read_text(encoding="utf-8")
+        assert 'path: "/"' in source
+        assert 'path: "/settings"' in source
+        assert 'import HomePage from "./pages/HomePage.js";' in source
+
+
+def test_hashed_spa_router_imports_stable_page_aliases():
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        pages = root / "static" / "js" / "pages"
+        pages.mkdir(parents=True)
+        (pages / "HomePage.vel").write_text(
+            "<template><main>Release home</main></template>",
+            encoding="utf-8",
+        )
+
+        result = Builder({
+            "mode": "production",
+            "production": True,
+            "clean": True,
+            "source_maps": False,
+        }).build(root)
+
+        assert result["failed"] == 0, result["errors"]
+        router = root / "dist" / "static" / "js" / "router.js"
+        stable_page = root / "dist" / "static" / "js" / "pages" / "HomePage.js"
+        hashed_pages = list((root / "dist" / "static" / "js" / "pages").glob("HomePage.*.js"))
+        assert stable_page.exists()
+        assert hashed_pages
+        source = router.read_text(encoding="utf-8")
+        assert 'import HomePage from "./pages/HomePage.js";' in source
+        assert hashed_pages[0].name not in source
+
+
 def test_production_build_can_clean_and_hash_assets():
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)

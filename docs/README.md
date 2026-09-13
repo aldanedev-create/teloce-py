@@ -52,6 +52,7 @@ Then open the URL printed by the server. You do not need to manually run a separ
 - [Fast Dev-Facts](lessons/fast-dev-facts.md)
 - [Build a real CRUD API application](lessons/26-crud-api.md)
 - [Production debugging workflow](lessons/27-production-debugging.md)
+- [Make a single-page app with automatic routing](lessons/37-making-a-spa.md)
 
 ## Reference pages
 

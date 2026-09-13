@@ -25,6 +25,7 @@ from teloce.compiler.generator import Generator, SAFE_EXPRESSION_RUNTIME, SHARED
 from teloce.compiler.minifier import minify_css, minify_js
 from teloce.components.dependency_graph import DependencyGraph
 from teloce.project.scanner import ProjectScanner
+from teloce.router.facade import generate_spa_router
 from teloce.ssr import to_jinax_template
 
 
@@ -54,7 +55,16 @@ class Builder:
         # Consumers may explicitly opt out when they need a self-contained
         # single-file artifact, but ordinary Flask/FastAPI/Django/Flaxon builds
         # should not duplicate runtime helpers into every component module.
-        self.options = {"shared_runtime": True, "mode": mode, **release_defaults, **requested}
+        self.options = {
+            "shared_runtime": True,
+            "mode": mode,
+            # A pages directory is enough to opt a project into the file-based
+            # SPA router. False remains available for libraries and
+            # multi-page projects that intentionally do not want a router.
+            "spa": "auto",
+            **release_defaults,
+            **requested,
+        }
         self.production = production and mode == "production" and not self.options.get("dev", False)
         self.compiler = Compiler(self.options)
         self.writer = FileWriter()
@@ -236,6 +246,34 @@ class Builder:
         results['assets_copied'] = assets_copied
         results['asset_map'] = dict(self.assets.asset_map)
         self._write_hashed_aliases(results)
+        static_root = str(self.options.get("static_dir", "static")).strip("/\\")
+        pages_relative = str(
+            self.options.get("spa_pages") or f"{static_root}/js/pages"
+        )
+        spa_enabled = self._spa_enabled(pages_relative)
+        results["spa"] = spa_enabled
+        if spa_enabled and not results['failed']:
+            try:
+                router_relative = str(self.options.get("spa_router") or f"{static_root}/js/router.js")
+                router_path = self.out_dir / router_relative
+                generate_spa_router(
+                    router_path,
+                    self.out_dir / pages_relative,
+                    mode=self.options.get("spa_mode", "hash"),
+                    base=self.options.get("spa_base", "/"),
+                    route_overrides=self.options.get("spa_routes", {}),
+                    minify=bool(self.options.get("minify", False)),
+                )
+                router_info = {
+                    "input": "<spa-router>",
+                    "output": router_path.relative_to(self.out_dir).as_posix(),
+                    "size": router_path.stat().st_size,
+                }
+                results["files"].append(router_info)
+                results["spa_router"] = router_info["output"]
+            except Exception as error:
+                results['failed'] += 1
+                results['errors'].append({"file": "<spa-router>", "error": str(error)})
         self._rewrite_generated_asset_map(results)
         # Generated modules can already contain hashed imports.  Copied
         # application assets (images, fonts, user JS/CSS, etc.) need the same
@@ -374,6 +412,41 @@ class Builder:
         self.stats = results
         
         return results
+
+    def _spa_enabled(self, pages_relative: str) -> bool:
+        """Resolve the SPA setting without making normal apps configure routes.
+
+        spa accepts True/False and the default auto. In auto mode a project is
+        considered an SPA when its configured pages directory exists in the
+        source tree. This lets a developer create
+        static/js/pages/HomePage.vel and run the normal build command.
+        """
+        setting = self.options.get("spa", "auto")
+        if isinstance(setting, str):
+            normalized = setting.strip().lower()
+            if normalized in {"false", "0", "no", "off"}:
+                return False
+            if normalized in {"true", "1", "yes", "on"}:
+                return True
+            if normalized != "auto":
+                raise ValueError(
+                    "Invalid build option 'spa'; use true, false, or 'auto'"
+                )
+        elif setting is False:
+            return False
+        elif setting is not True and setting is not None:
+            raise ValueError(
+                "Invalid build option 'spa'; use true, false, or 'auto'"
+            )
+        if not self.root_dir:
+            return False
+        pages_path = self.root_dir / pages_relative
+        if not pages_path.is_dir():
+            return False
+        return any(
+            path.is_file() and path.suffix.lower() in {".vel", ".js"}
+            for path in pages_path.rglob("*")
+        )
 
     def _load_build_cache(self) -> Dict[str, Dict[str, Any]]:
         """Read prior component metadata for safe incremental development builds."""
