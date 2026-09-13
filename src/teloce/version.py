@@ -2,5 +2,5 @@
 Teloce-Py version information.
 """
 
-__version__ = "0.2.4"
+__version__ = "0.2.5"
 __version_info__ = (0, 2, 3)
