@@ -283,10 +283,12 @@ from teloce.build import build_project
 result = build_project(ROOT)
 ```
 
-This writes to **`<root>/dist/`** by default — `dist/static/js/App.js`,
-`dist/static/js/App.css`, `dist/static/teloce-runtime.js` — not in place
-next to your `.vel` source. Your Python framework needs to serve static
-files from `dist/static`, not `static`.
+This writes to **`<root>/dist/`** by default, not in place next to your `.vel`
+source. A development build uses logical names such as
+`dist/static/js/App.js`; a production build uses content-hashed files such as
+`App.<hash>.js` and `teloce-runtime.<hash>.js`, plus a small stable `App.js`
+shim. Your Python framework should serve static files from `dist/static`, not
+the authored `static` directory.
 
 **Don't pass `out_dir` equal to your project root** when your `.vel`
 source and other static assets already live inside that root — the asset
@@ -301,23 +303,23 @@ PosixPath('.../static/teloce-runtime.js') are the same file
 Use the default `dist/` separation, or point `out_dir` somewhere that
 doesn't overlap your source tree.
 
-### Making the output actually small: what `minify` alone doesn't tell you
+### Making the output smaller: what each production switch does
 
 The built-in `minify` option is, by design, only a whitespace-stripping
-pass (strip each line, drop blank lines and comments) — no identifier
-renaming, no dead-code elimination, no AST-level work at all. Measured on
-the Image Studio's `App.vel`: 36,108 → 34,713 bytes, about 3%. That's the
-entire effect of `"minify": true` on its own.
+pass that preserves strings, template literals, regular expressions, and
+source semantics. It does not rename user symbols or replace a full
+JavaScript bundler. The exact byte reduction depends on the component; use
+`build-report.json` for current measurements.
 
 Real reduction requires bundling with a real minifier, and a few
 additional flags. Verified end to end, in order of actual impact:
 
-| Config | Output | Size |
+| Config | Output |
 |---|---|---|
-| default (no bundling) | `App.js` + `teloce-runtime.js` (2 files) | 36,108 + 12,477 = **48,585 bytes** |
-| `minify: true` only | same 2 files | 34,713 + 12,477 = **47,190 bytes** (~3%) |
-| `bundle: true, bundler: "esbuild", minify: true` | `App.bundle.js` (1 file, runtime inlined) | **27,073 bytes** (~44%) |
-| + `drop`, `legal_comments`, `charset` (below) | `App.bundle.js` | **26,568–26,607 bytes** (~2% more) |
+| development | readable modules, logical filenames, HMR-friendly output |
+| production defaults | one shared runtime, minified modules/CSS, extracted CSS, tree-shaking, hashed files, and stable logical JS shims |
+| `bundle: true, bundler: "teloce"` | one dependency-aware bundle using the dependency-free built-in bundler |
+| `bundle: true, bundler: "esbuild"` | optional whole-application bundle with esbuild minification and code splitting |
 
 **`bundle` is a separate flag from `bundler`/`minify`, and gates whether
 bundling happens at all.** Set `bundler: "esbuild"` and `minify: true`
@@ -328,9 +330,10 @@ picks which one (`"esbuild"` vs. teloce's plain `ModuleBundler`); `minify`
 then means something real, because it's passed straight through as
 esbuild's own `--minify` flag.
 
-Bundling also merges the previously-separate `teloce-runtime.js` into the
-one output file instead of shipping it as a second HTTP request — that
-merge is most of where the ~44% comes from, not the minification alone.
+With the built-in bundler, component modules and their local dependencies are
+merged into one output. With esbuild, code splitting can leave shared and
+lazy chunks as separate files. Deploy the complete output directory in both
+cases; do not upload only the entry file.
 
 **The extra ~2%: flags the Python wrapper didn't originally expose.**
 `EsbuildBundler.bundle()` only forwarded `minify`/`sourcemap`/`target`/
@@ -435,10 +438,11 @@ def load_teloce_config(root: Path) -> dict:
     return flat
 ```
 
-Verified end to end: with `minify: false`, `App.js` compiled to 36,108
-bytes; with `minify: true`, the identical component compiled to 34,713
-bytes (and the shared runtime shrank from 12,477 to 11,393 bytes). The
-option genuinely flows all the way through.
+Verified end to end: the current shared-runtime build keeps the generated
+component module small and writes the component glue once in the shared
+runtime. With `minify: true`, both generated JavaScript and CSS are compacted;
+exact byte counts vary with the component and runtime version, so use the
+generated `build-report.json` rather than copying fixed numbers from a lesson.
 
 ### The automated-build-on-startup pattern
 
@@ -490,7 +494,8 @@ app.mount("/media", StaticFiles(directory=MEDIA), name="media")
 
 Verified end-to-end via `TestClient`: home page renders through the
 Jinax/Jinja shell, `build_project()` runs and produces `dist/static/js/
-App.js` (confirmed served correctly at `/static/js/App.js`, 36,108 bytes),
+App.js` is a stable shim for the hashed implementation (both are confirmed
+served correctly at `/static/js/App.js` and the hashed URL),
 an uploaded image round-trips correctly through `/media/uploads/...`, and
 applying a filter produces a new file served through
 `/media/processed/...` — all through the exact code path a real

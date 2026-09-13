@@ -27,7 +27,8 @@ class AssetManager:
             '.xml', '.txt', '.md',
         }
     
-    def copy_assets(self, source_dir: str | Path, dest_dir: str | Path) -> int:
+    def copy_assets(self, source_dir: str | Path, dest_dir: str | Path,
+                    asset_directories: list[str | Path] | None = None) -> int:
         """
         Copy static assets to the build directory.
         
@@ -49,13 +50,23 @@ class AssetManager:
         # Create destination directory
         dest.mkdir(parents=True, exist_ok=True)
         
-        # Copy assets from common asset directories
+        # Copy assets from common asset directories, plus an explicitly
+        # configured source directory such as ``client``. The latter matters
+        # for projects whose authored static tree is not named ``static``.
         asset_dirs = [
             source / 'static',
             source / 'assets',
             source / 'public',
             source / 'media',
         ]
+        for configured in asset_directories or []:
+            candidate = source / Path(configured)
+            try:
+                candidate.resolve().relative_to(source.resolve())
+            except (OSError, ValueError):
+                continue
+            if candidate not in asset_dirs:
+                asset_dirs.append(candidate)
         
         for asset_dir in asset_dirs:
             if asset_dir.exists():

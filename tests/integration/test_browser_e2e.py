@@ -387,3 +387,77 @@ def test_npm_style_long_form_directives_render_in_real_chrome(tmp_path: Path):
     finally:
         server.shutdown()
         server.server_close()
+
+
+@pytest.mark.skipif(_chrome() is None, reason="Chrome/Chromium is not installed")
+def test_conditional_component_unmount_does_not_recurse_in_real_chrome(tmp_path: Path):
+    """Switching a parent condition must clean up a child exactly once."""
+    source_dir = tmp_path / "static" / "js"
+    source_dir.mkdir(parents=True)
+    (source_dir / "Child.vel").write_text(
+        '<template><p>Child</p></template>'
+        '<script>export default { beforeUnmount() { window.childUnmounts = (window.childUnmounts || 0) + 1; } };</script>',
+        encoding="utf-8",
+    )
+    (source_dir / "App.vel").write_text(
+        '<template><button @click="hide">Hide</button><Child v-if="visible" /></template>'
+        '<script>import Child from "./Child.vel"; export default { components: { Child }, '
+        'data() { return { visible: true }; }, methods: { hide() { this.visible = false; } } };</script>',
+        encoding="utf-8",
+    )
+    build_project(tmp_path, options={"dev": True, "source_maps": False})
+    (tmp_path / "dist" / "index.html").write_text(
+        '<div id="app"></div><script type="module">import { mount } from "/static/js/App.js"; '
+        'mount("#app"); setTimeout(() => { document.querySelector("button").click(); '
+        'setTimeout(() => document.title = (window.childUnmounts || 0) + ":" + !!document.querySelector("p"), 100); }, 100);</script>',
+        encoding="utf-8",
+    )
+    server = start_dev_server("127.0.0.1", 0, tmp_path / "dist")
+    try:
+        time.sleep(0.1)
+        result = _dump_dom(f"http://127.0.0.1:{server.server_port}/?no_hmr=1", 1600)
+        assert result.returncode == 0, result.stderr
+        assert "<title>1:false</title>" in result.stdout
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.skipif(_chrome() is None, reason="Chrome/Chromium is not installed")
+def test_production_hashed_shared_runtime_and_extracted_css_run_in_real_chrome(tmp_path: Path):
+    """Exercise the actual release artifact, including its stable alias."""
+    source_dir = tmp_path / "static" / "js"
+    source_dir.mkdir(parents=True)
+    (source_dir / "App.vel").write_text(
+        '<template><button @click="increment">{{ count }}</button></template>'
+        '<script>export default { data() { return { count: 0 }; }, methods: { increment() { this.count++; } } };</script>'
+        '<style scoped>button { color: purple; }</style>',
+        encoding="utf-8",
+    )
+    (tmp_path / "templates").mkdir()
+    (tmp_path / "templates" / "index.html").write_text(
+        '<div id="app"></div><script type="module">'
+        'import { mount } from "/static/js/App.js"; const app = mount("#app"); '
+        'setTimeout(() => { document.querySelector("button").click(); '
+        'setTimeout(() => document.title = document.querySelector("button").textContent, 50); }, 50);'
+        '</script>',
+        encoding="utf-8",
+    )
+    result = build_project(tmp_path, options={"mode": "production", "source_maps": False})
+    assert result["failed"] == 0, result["errors"]
+    app = next((tmp_path / "dist" / "static" / "js").glob("App.*.js"))
+    runtime = next((tmp_path / "dist" / "static").glob("teloce-runtime.*.js"))
+    index = (tmp_path / "dist" / "index.html").read_text(encoding="utf-8")
+    assert app.name in index
+    assert runtime.name in app.read_text(encoding="utf-8")
+    assert '<link rel="stylesheet"' in index
+    assert (tmp_path / "dist" / "static" / "js" / "App.js").is_file()
+    server = start_dev_server("127.0.0.1", 0, tmp_path / "dist", hmr=False)
+    try:
+        time.sleep(0.1)
+        result = _dump_dom(f"http://127.0.0.1:{server.server_port}/?no_hmr=1", 1200)
+        assert result.returncode == 0, result.stderr
+        assert "<title>1</title>" in result.stdout
+    finally:
+        server.shutdown()
+        server.server_close()

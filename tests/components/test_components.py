@@ -45,6 +45,20 @@ class TestComponents:
         
         assert importer.get_import("MyComponent") == "./components/MyComponent.vel"
 
+    def test_importer_parses_aliases_and_namespace_imports(self):
+        """Import metadata uses the local binding developers actually use."""
+        importer = ComponentImporter()
+
+        assert importer.parse_import(
+            'import { Button as PrimaryButton, Card } from "./ui.vel";'
+        ) is None
+        assert importer.get_import("PrimaryButton") == "./ui.vel"
+        assert importer.get_import("Card") == "./ui.vel"
+        assert importer.parse_import(
+            'import * as Icons from "./icons.vel";'
+        ) == ("Icons", "./icons.vel")
+        assert importer.get_component("Icons") == "./icons.vel"
+
     def test_dependency_graph(self):
         """Test dependency graph."""
         graph = DependencyGraph()

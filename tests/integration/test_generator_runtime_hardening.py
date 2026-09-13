@@ -52,3 +52,25 @@ def test_nested_conditional_runtime_helper_is_emitted_as_valid_javascript(tmp_pa
     assert "__resolveIfBlocks" in result["code"]
     checked = _node_eval(result["code"], tmp_path)
     assert checked.returncode == 0, checked.stderr
+
+
+def test_static_and_dynamic_class_bindings_are_merged_without_erasing_static_class(tmp_path: Path):
+    source = '''
+<template><button class="file-row" :class="{ active: selected }">Open</button></template>
+<script>export default { data() { return { selected: true }; } };</script>
+'''
+    result = compile(source, "StaticDynamicClass.vel", source_maps=False)
+    assert result["success"], result["diagnostics"]
+    assert 'data-teloce-static-class=\\"file-row\\"' in result["code"]
+    assert "element.__teloceStaticClass" in result["code"]
+    checked = _node_eval(result["code"], tmp_path)
+    assert checked.returncode == 0, checked.stderr
+
+
+def test_standalone_runtime_preserves_imperative_widget_children(tmp_path: Path):
+    source = '<template><div data-teloce-preserve><canvas></canvas></div></template>'
+    result = compile(source, "PreservedWidget.vel", source_maps=False, shared_runtime=False)
+    assert result["success"], result["diagnostics"]
+    assert 'oldNode.hasAttribute("data-teloce-preserve")' in result["code"]
+    checked = _node_eval(result["code"], tmp_path)
+    assert checked.returncode == 0, checked.stderr

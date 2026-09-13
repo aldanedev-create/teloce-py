@@ -1,0 +1,77 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-09-13T04:50:46.191931+00:00",
+  "total_files": 2,
+  "compiled": 2,
+  "failed": 0,
+  "assets_copied": 0,
+  "asset_map": {
+    "client/js/App.js": "client/js/App.54a8dc8a.js",
+    "client/js/App.54a8dc8a.css": "client/js/App.54a8dc8a.css",
+    "client/js/components/StatusCard.js": "client/js/components/StatusCard.7edec8e2.js",
+    "client/js/components/StatusCard.7edec8e2.css": "client/js/components/StatusCard.7edec8e2.css"
+  },
+  "files": [
+    {
+      "input": "<shared-runtime>",
+      "output": "client/teloce-runtime.5f9dad2d.js",
+      "size": 36702,
+      "source_hash": null,
+      "hash": "5f9dad2d"
+    },
+    {
+      "input": "<shared-runtime>/scheduler.js",
+      "output": "client/scheduler.js",
+      "size": 570,
+      "source_hash": null,
+      "hash": "10cd8c6e"
+    },
+    {
+      "input": "<shared-runtime>/signals.js",
+      "output": "client/signals.js",
+      "size": 3578,
+      "source_hash": null,
+      "hash": "a81ff85e"
+    },
+    {
+      "input": "client/js/App.vel",
+      "output": "client/js/App.54a8dc8a.js",
+      "size": 2007,
+      "source_hash": "54a8dc8ab32ea6a0a0a53e7b457126f8dbd1a9d2c706a0805a12d10322ce192d",
+      "hash": "9c40bb27"
+    },
+    {
+      "input": "client/js/components/StatusCard.vel",
+      "output": "client/js/components/StatusCard.7edec8e2.js",
+      "size": 1089,
+      "source_hash": "7edec8e25ab3bd05fd96817becf28348aa288f9ef2093bcb80702781c886d1d1",
+      "hash": "a9a8ce96"
+    }
+  ],
+  "dependencies": {
+    "client/js/App.vel": [
+      "client/js/components/StatusCard.vel"
+    ],
+    "client/js/components/StatusCard.vel": []
+  },
+  "dependency_cycle": null,
+  "errors": [],
+  "mode": "production",
+  "total_bytes": 43946,
+  "asset_bytes": 0,
+  "asset_files": [],
+  "asset_aliases": [
+    {
+      "output": "client/js/App.js",
+      "target": "client/js/App.54a8dc8a.js",
+      "size": 70
+    },
+    {
+      "output": "client/js/components/StatusCard.js",
+      "target": "client/js/components/StatusCard.7edec8e2.js",
+      "size": 84
+    }
+  ],
+  "size_warnings": [],
+  "build_signature": "c124d79b3e25d672a4f56b72699c369a93db1868ff9695902e6e50e55881d5d2"
+}

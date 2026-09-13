@@ -1,0 +1,38 @@
+{
+  "mode": "production",
+  "duration_seconds": 0.9648,
+  "total_bytes": 43946,
+  "asset_bytes": 0,
+  "files": [
+    {
+      "input": "<shared-runtime>",
+      "output": "client/teloce-runtime.5f9dad2d.js",
+      "size": 36702
+    },
+    {
+      "input": "<shared-runtime>/scheduler.js",
+      "output": "client/scheduler.js",
+      "size": 570
+    },
+    {
+      "input": "<shared-runtime>/signals.js",
+      "output": "client/signals.js",
+      "size": 3578
+    },
+    {
+      "input": "client/js/App.vel",
+      "output": "client/js/App.54a8dc8a.js",
+      "size": 2007,
+      "source_hash": "54a8dc8ab32ea6a0a0a53e7b457126f8dbd1a9d2c706a0805a12d10322ce192d"
+    },
+    {
+      "input": "client/js/components/StatusCard.vel",
+      "output": "client/js/components/StatusCard.7edec8e2.js",
+      "size": 1089,
+      "source_hash": "7edec8e25ab3bd05fd96817becf28348aa288f9ef2093bcb80702781c886d1d1"
+    }
+  ],
+  "asset_files": [],
+  "assets_copied": 0,
+  "size_warnings": []
+}

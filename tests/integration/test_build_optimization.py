@@ -120,11 +120,14 @@ def test_cli_build_honors_teloce_config_json(tmp_path: Path):
     )
     assert result.returncode == 0, result.stdout + result.stderr
     output = tmp_path / "release-assets"
-    app = output / "client" / "js" / "App.js"
-    assert (output / "client" / "teloce-runtime.js").is_file()
+    app_files = list((output / "client" / "js").glob("App.*.js"))
+    runtime_files = list((output / "client").glob("teloce-runtime*.js"))
+    assert len(app_files) == 1
+    assert len(runtime_files) == 1
+    app = app_files[0]
     assert app.is_file()
     assert not (output / "Ignored.js").exists()
-    assert 'from "../teloce-runtime.js"' in app.read_text(encoding="utf-8")
+    assert runtime_files[0].name in app.read_text(encoding="utf-8")
     assert not app.with_suffix(".js.map").exists()
     _node_check(app)
 

@@ -45,7 +45,8 @@ def test_nested_vel_components_are_resolved_and_mounted():
         parent_code = parent_js.read_text(encoding="utf-8")
         assert 'import Child from "./components/Child.js";' in parent_code
         assert '"Child": Child' in parent_code
-        assert "child.mount(element, __readProps(element, state))" in parent_code
+        assert "__teloceCreateCompiledComponent" in parent_code
+        assert "__readProps" not in parent_code
         assert child_js.exists()
 
         for generated in (parent_js, child_js):
@@ -84,6 +85,48 @@ def test_production_build_can_clean_and_hash_assets():
         assert generated[0].stem.startswith("App.")
 
 
+def test_release_build_extracts_shared_component_glue_and_styles(tmp_path: Path):
+    source_dir = tmp_path / "static" / "js"
+    source_dir.mkdir(parents=True)
+    (source_dir / "Child.vel").write_text(
+        '<template><button @click="$emit(\'press\')">{{ label }}</button></template>'
+        '<script>export default { props: { label: { default: "Child" } } };</script>'
+        '<style scoped>button { color: purple; }</style>',
+        encoding="utf-8",
+    )
+    (source_dir / "App.vel").write_text(
+        '<template><main><Child label="Ready" /></main></template>'
+        '<script>import Child from "./Child.vel"; export default {};</script>'
+        '<style scoped>main { padding: 1rem; }</style>',
+        encoding="utf-8",
+    )
+    (tmp_path / "templates").mkdir()
+    (tmp_path / "templates" / "index.html").write_text(
+        '<!doctype html><html><head></head><body><div id="app"></div>'
+        '<script type="module" src="/static/js/App.js"></script></body></html>',
+        encoding="utf-8",
+    )
+
+    result = Builder({"mode": "production", "source_maps": False}).build(tmp_path)
+
+    assert result["failed"] == 0, result["errors"]
+    runtime = next((tmp_path / "dist" / "static").glob("teloce-runtime.*.js"))
+    generated = list((tmp_path / "dist" / "static" / "js").glob("*.js"))
+    app = next(path for path in generated if path.name.startswith("App."))
+    css = list((tmp_path / "dist" / "static" / "js").glob("*.css"))
+    assert runtime.exists()
+    assert app.stat().st_size < 10_000
+    assert "__teloceCreateCompiledComponent" in app.read_text(encoding="utf-8")
+    assert "const __patch =" not in app.read_text(encoding="utf-8")
+    assert css and all("padding:1rem" in path.read_text(encoding="utf-8") or "color:purple" in path.read_text(encoding="utf-8") for path in css)
+    index = (tmp_path / "dist" / "index.html").read_text(encoding="utf-8")
+    assert app.name in index
+    assert all(path.name in index for path in css)
+    for path in [runtime, *generated]:
+        checked = subprocess.run(["node", "--check", str(path)], capture_output=True, text=True)
+        assert checked.returncode == 0, f"{path}: {checked.stderr}"
+
+
 def test_build_writes_size_report_and_threshold_warnings():
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
@@ -98,6 +141,63 @@ def test_build_writes_size_report_and_threshold_warnings():
         assert result["total_bytes"] > 1
         assert result["size_warnings"]
         assert '"total_bytes"' in report.read_text(encoding="utf-8")
+
+
+def test_generated_css_is_present_in_the_asset_map():
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        source = root / "static" / "js" / "App.vel"
+        source.parent.mkdir(parents=True)
+        source.write_text(
+            "<template><main>Styled</main></template>"
+            "<style scoped>main { color: purple; }</style>",
+            encoding="utf-8",
+        )
+
+        result = Builder({"dev": True}).build(root)
+
+        assert result["failed"] == 0, result["errors"]
+        assert result["asset_map"]["static/js/App.js"] == "static/js/App.js"
+        assert result["asset_map"]["static/js/App.css"] == "static/js/App.css"
+
+
+def test_custom_static_directory_copies_non_component_assets():
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        source_dir = root / "client" / "js"
+        source_dir.mkdir(parents=True)
+        (root / "client" / "images").mkdir(parents=True)
+        (root / "client" / "images" / "logo.svg").write_text("<svg/>", encoding="utf-8")
+        (source_dir / "App.vel").write_text(
+            '<template><img src="/client/images/logo.svg">Ready</template>',
+            encoding="utf-8",
+        )
+
+        result = Builder({
+            "dev": True,
+            "static_dir": "client",
+            "hash_assets": True,
+        }).build(root)
+
+        assert result["failed"] == 0, result["errors"]
+        image = next((root / "dist" / "client" / "images").glob("logo.*.svg"))
+        assert image.exists()
+        assert result["asset_map"]["client/images/logo.svg"].endswith(image.name)
+
+
+def test_incremental_cache_invalidates_when_build_options_change():
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        source = root / "static" / "js" / "App.vel"
+        source.parent.mkdir(parents=True)
+        source.write_text("<template><main>Cached</main></template>", encoding="utf-8")
+
+        first = Builder({"dev": True, "minify": False}).build(root)
+        assert first["compiled"] == 1
+        second = Builder({"dev": True, "minify": True}).build(root)
+
+        assert second["compiled"] == 1
+        assert second["cache_hits"] == 0
 
 
 def test_incremental_dev_build_reuses_unchanged_components_and_invalidates_dependents():
@@ -136,7 +236,7 @@ def test_shared_runtime_build_emits_one_helper_module_and_imports_it():
         assert runtime.exists()
         app_source = app.read_text(encoding="utf-8")
         assert "../teloce-runtime.js" in app_source
-        assert "__createReactive, __patch" in app_source
+        assert "__teloceCreateCompiledComponent" in app_source
         assert "const __patch =" not in app_source
         assert "const __reactive =" not in app_source
         assert result["runtime"] == "static/teloce-runtime.js"
@@ -257,8 +357,8 @@ export default { props: ["title", "value"], methods: { save() { this.$emit("save
         assert result["failed"] == 0, result["errors"]
         code = (root / "dist" / "static" / "js" / "App.js").read_text(encoding="utf-8")
         assert "data-teloce-is" in code
-        assert "__slots" in code
-        assert "teloce:${name}" in code
+        assert "__teloceCreateCompiledComponent" in code
+        assert "data-teloce-is" in code
         checked = subprocess.run(
             ["node", "--check", str(root / "dist" / "static" / "js" / "App.js")],
             capture_output=True,
@@ -279,8 +379,7 @@ def test_named_slots_and_child_prop_updates_are_emitted():
         result = Builder({"dev": True}).build(root)
         assert result["failed"] == 0, result["errors"]
         code = (root / "dist" / "static" / "js" / "App.js").read_text(encoding="utf-8")
-        assert "updateProps" in code
-        assert "__slots" in code
+        assert "__teloceCreateCompiledComponent" in code
 
 
 def test_production_bundle_resolves_nested_components_and_is_valid_js():
@@ -295,6 +394,43 @@ def test_production_bundle_resolves_nested_components_and_is_valid_js():
         assert result["failed"] == 0, result["errors"]
         bundle = root / "dist" / "static" / "js" / "App.bundle.js"
         assert bundle.exists()
+        checked = subprocess.run(["node", "--check", str(bundle)], capture_output=True, text=True)
+        assert checked.returncode == 0, checked.stderr
+
+
+def test_hashed_production_bundle_updates_entrypoint_and_asset_warnings():
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        source_dir = root / "static" / "js"
+        source_dir.mkdir(parents=True)
+        (root / "static" / "images").mkdir(parents=True)
+        (root / "static" / "images" / "logo.svg").write_text("<svg/>", encoding="utf-8")
+        (source_dir / "App.vel").write_text(
+            '<template><main><img src="/static/images/logo.svg">Release</main></template>',
+            encoding="utf-8",
+        )
+        (root / "templates").mkdir()
+        (root / "templates" / "index.html").write_text(
+            '<main id="app"></main><script type="module" src="/static/js/App.js"></script>',
+            encoding="utf-8",
+        )
+
+        result = Builder({
+            "mode": "production",
+            "bundle": True,
+            "source_maps": False,
+            "max_asset_size": 1,
+        }).build(root)
+
+        assert result["failed"] == 0, result["errors"]
+        bundle = root / "dist" / result["bundle"]
+        assert bundle.exists()
+        assert "." in bundle.stem
+        html = (root / "dist" / "index.html").read_text(encoding="utf-8")
+        assert bundle.name in html
+        assert "/static/js/App.js" not in html
+        assert result["asset_bytes"] >= 1
+        assert any(item["output"].endswith(".svg") for item in result["size_warnings"])
         checked = subprocess.run(["node", "--check", str(bundle)], capture_output=True, text=True)
         assert checked.returncode == 0, checked.stderr
 

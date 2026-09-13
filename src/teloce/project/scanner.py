@@ -49,7 +49,7 @@ class ProjectScanner:
             return []
         
         excluded = [Path(item).resolve() for item in (exclude_paths or [])]
-        for path in root.rglob('*.vel'):
+        for path in sorted(root.rglob('*.vel'), key=lambda item: item.as_posix().lower()):
             resolved = path.resolve()
             if any(resolved == item or item in resolved.parents for item in excluded):
                 continue
@@ -82,11 +82,18 @@ class ProjectScanner:
         include_patterns = include or ['**/*.vel']
         exclude_patterns = exclude or []
         
+        seen: Set[Path] = set()
         for pattern in include_patterns:
-            for path in root.glob(pattern):
+            for path in sorted(root.glob(pattern), key=lambda item: item.as_posix().lower()):
+                resolved = path.resolve()
+                if resolved in seen:
+                    continue
                 if self._should_ignore(path, exclude_patterns):
                     continue
+                seen.add(resolved)
                 self.vel_files.append(path)
+
+        self.vel_files.sort(key=lambda item: item.as_posix().lower())
         
         return self.vel_files
     
@@ -108,7 +115,7 @@ class ProjectScanner:
     def get_relative_paths(self, root_dir: str | Path) -> List[str]:
         """Get relative paths of .vel files."""
         root = Path(root_dir)
-        return [str(p.relative_to(root)) for p in self.vel_files]
+        return [p.relative_to(root).as_posix() for p in self.vel_files]
     
     def get_components(self) -> List[str]:
         """Get component names from .vel files."""

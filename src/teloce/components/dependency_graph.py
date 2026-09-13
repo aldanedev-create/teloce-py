@@ -140,7 +140,7 @@ class DependencyGraph:
             stack.add(node)
             path.append(node)
             
-            for neighbor in self._graph.get(node, set()):
+            for neighbor in sorted(self._graph.get(node, set())):
                 if neighbor not in visited:
                     result = dfs(neighbor, path)
                     if result is not None:
@@ -154,7 +154,7 @@ class DependencyGraph:
             path.pop()
             return None
         
-        for comp in self._components:
+        for comp in sorted(self._components):
             if comp not in visited:
                 result = dfs(comp, [])
                 if result is not None:

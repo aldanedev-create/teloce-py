@@ -121,6 +121,16 @@ def main(args: Optional[list] = None) -> int:
         help='Add content hashes to generated JavaScript and CSS filenames'
     )
     build_parser.add_argument(
+        '--no-hash-assets',
+        action='store_true',
+        help='Keep generated JavaScript and CSS filenames stable'
+    )
+    build_parser.add_argument(
+        '--no-extract-css',
+        action='store_true',
+        help='Keep component CSS in JavaScript instead of extracting stylesheets'
+    )
+    build_parser.add_argument(
         '--bundle',
         action='store_true',
         help='Create a dependency-aware production ES module bundle'

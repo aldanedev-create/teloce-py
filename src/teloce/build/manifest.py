@@ -43,7 +43,11 @@ class ManifestGenerator:
             'errors': build_result.get('errors', []),
             'mode': build_result.get('mode', 'production'),
             'total_bytes': build_result.get('total_bytes', 0),
+            'asset_bytes': build_result.get('asset_bytes', 0),
+            'asset_files': build_result.get('asset_files', []),
+            'asset_aliases': build_result.get('asset_aliases', []),
             'size_warnings': build_result.get('size_warnings', []),
+            'build_signature': build_result.get('build_signature'),
         }
         
         for file_info in build_result.get('files', []):
@@ -89,5 +93,5 @@ class ManifestGenerator:
         if not self.manifest:
             return
         
-        with open(filepath, 'w') as f:
+        with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(self.manifest, f, indent=2)

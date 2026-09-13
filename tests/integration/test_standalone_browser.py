@@ -128,8 +128,6 @@ def test_standalone_create_app_reacts_to_events_in_real_chrome(tmp_path: Path):
     finally:
         server.shutdown()
         server.server_close()
-
-
 @pytest.mark.skipif(_chrome() is None, reason="Chrome is not installed")
 def test_standalone_invokes_event_methods_with_state_context(tmp_path: Path):
     runtime = Path(__file__).parents[2].joinpath("src", "teloce", "runtime", "standalone.js")
@@ -334,6 +332,63 @@ def test_standalone_plugin_component_renders_props(tmp_path: Path):
         )
         assert result.returncode == 0, result.stderr
         assert "<title>Ready:works</title>" in result.stdout
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.skipif(_chrome() is None, reason="Chrome is not installed")
+def test_modular_runtime_preserves_static_classes_with_dynamic_class_helper(tmp_path: Path):
+    runtime = Path(__file__).parents[2].joinpath("src", "teloce", "runtime")
+    (tmp_path / "package.json").write_text('{"type":"module"}', encoding="utf-8")
+    for name in ("dom.js", "signals.js", "scheduler.js"):
+        (tmp_path / name).write_text((runtime / name).read_text(encoding="utf-8"), encoding="utf-8")
+    (tmp_path / "index.html").write_text(
+        '<div id="app"><button class="base">Ready</button></div>'
+        '<script type="module">import { createClass } from "/dom.js"; import { createSignal } from "/signals.js"; '
+        'const source = createSignal("active"); createClass(document.querySelector("button"), source); '
+        'setTimeout(() => document.title = document.querySelector("button").className, 50);</script>',
+        encoding="utf-8",
+    )
+    server = start_dev_server("127.0.0.1", 0, tmp_path, hmr=False)
+    try:
+        time.sleep(0.1)
+        result = subprocess.run(
+            [_chrome(), "--headless=new", "--no-sandbox", "--disable-gpu", "--dump-dom",
+             "--virtual-time-budget=1000", f"http://127.0.0.1:{server.server_port}/"],
+            capture_output=True, text=True, timeout=60,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "<title>base active</title>" in result.stdout
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.skipif(_chrome() is None, reason="Chrome is not installed")
+def test_lazy_component_does_not_mount_after_unmount(tmp_path: Path):
+    runtime = Path(__file__).parents[2].joinpath("src", "teloce", "runtime")
+    (tmp_path / "package.json").write_text('{"type":"module"}', encoding="utf-8")
+    for name in ("component.js", "reactivity.js", "signals.js", "scheduler.js"):
+        (tmp_path / name).write_text((runtime / name).read_text(encoding="utf-8"), encoding="utf-8")
+    (tmp_path / "index.html").write_text(
+        '<div id="app"></div>'
+        '<script type="module">import { defineAsyncComponent } from "/component.js"; '
+        'const lazy = defineAsyncComponent(() => new Promise(resolve => setTimeout(() => resolve({default: {mount(target) { target.textContent = "STALE"; return { unmount() {} }; }}}), 100))); '
+        'const pending = lazy.mount("#app"); lazy.unmount(); pending.then(() => setTimeout(() => document.title = document.querySelector("#app").textContent || "empty", 120));</script>',
+        encoding="utf-8",
+    )
+    server = start_dev_server("127.0.0.1", 0, tmp_path, hmr=False)
+    try:
+        time.sleep(0.1)
+        result = subprocess.run(
+            [_chrome(), "--headless=new", "--no-sandbox", "--disable-gpu", "--dump-dom",
+             "--virtual-time-budget=1000", f"http://127.0.0.1:{server.server_port}/"],
+            capture_output=True, text=True, timeout=60,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "<title>empty</title>" in result.stdout
+        assert "<title>STALE</title>" not in result.stdout
     finally:
         server.shutdown()
         server.server_close()

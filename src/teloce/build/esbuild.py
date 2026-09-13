@@ -34,7 +34,8 @@ class EsbuildBundler:
                sourcemap: bool = False, metafile: str | Path | None = None,
                target: str | None = None, drop: list[str] | None = None,
                legal_comments: str | None = None,
-               charset: str | None = None) -> Path:
+               charset: str | None = None,
+               hash_assets: bool = False) -> Path:
         if not self.executable:
             raise EsbuildUnavailable(
                 "esbuild was requested but is not installed. Install it with "
@@ -46,8 +47,12 @@ class EsbuildBundler:
         command = [self.executable, str(entry_path), "--bundle", "--format=esm"]
         if splitting:
             # esbuild requires an output directory for multiple chunks.
+            entry_name = output_path.stem
+            entry_pattern = f"{entry_name}-[hash]" if hash_assets else entry_name
+            chunk_pattern = "chunks/[name]-[hash]" if hash_assets else "chunks/[name]"
             command.extend(["--splitting", f"--outdir={output_path.parent}",
-                             f"--entry-names={output_path.stem.replace('.bundle', '')}.bundle"])
+                             f"--entry-names={entry_pattern}",
+                             f"--chunk-names={chunk_pattern}"])
         else:
             command.append(f"--outfile={output_path}")
         if minify:
@@ -72,9 +77,13 @@ class EsbuildBundler:
         if completed.returncode:
             detail = (completed.stderr or completed.stdout).strip()
             raise RuntimeError(f"esbuild failed ({completed.returncode}): {detail}")
-        if not output_path.is_file():
-            raise RuntimeError(f"esbuild completed without producing {output_path}")
-        return output_path
+        if output_path.is_file():
+            return output_path
+        if splitting and hash_assets:
+            candidates = sorted(output_path.parent.glob(f"{output_path.stem}-*.js"))
+            if len(candidates) == 1:
+                return candidates[0]
+        raise RuntimeError(f"esbuild completed without producing {output_path}")
 
     @staticmethod
     def read_metafile(path: str | Path) -> dict:

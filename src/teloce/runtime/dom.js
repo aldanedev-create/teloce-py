@@ -61,14 +61,34 @@ export function createFor(container, source, renderItem, key = (_, index) => ind
     const active = new Set();
     const nodes = next.map((item, index) => {
       const id = key(item, index);
+      if (active.has(id)) throw new Error(`Duplicate keyed loop value: ${String(id)}`);
       const old = records.get(id);
-      if (old) { old.item = item; old.index = index; active.add(id); return old.node; }
-      const node = renderItem(item, index);
-      records.set(id, { item, index, node });
+      if (old) {
+        old.item = item;
+        old.index = index;
+        old.update?.(item, index);
+        active.add(id);
+        return old.node;
+      }
+      const rendered = renderItem(item, index);
+      const node = rendered?.nodeType ? rendered : rendered?.node;
+      if (!node) throw new TypeError('createFor renderItem must return a DOM node');
+      records.set(id, {
+        item,
+        index,
+        node,
+        update: rendered?.nodeType ? undefined : rendered?.update,
+        unmount: rendered?.nodeType ? undefined : rendered?.unmount,
+      });
       active.add(id);
       return node;
     });
-    for (const id of records.keys()) if (!active.has(id)) records.delete(id);
+    for (const [id, record] of records) {
+      if (!active.has(id)) {
+        record.unmount?.();
+        records.delete(id);
+      }
+    }
     container.replaceChildren(...nodes.filter(Boolean));
   };
   update(source);
@@ -104,12 +124,15 @@ export function createModel(element, signal) {
 }
 
 export function createClass(element, source) {
+  const staticClass = element.getAttribute('data-teloce-static-class') ?? element.className ?? '';
+  element.setAttribute('data-teloce-static-class', staticClass);
   const update = value => {
     const next = value === undefined ? (typeof source === 'function' ? source() : source?.get?.()) : value;
-    if (typeof next === 'string') element.className = next;
-    else if (Array.isArray(next)) element.className = next.filter(Boolean).join(' ');
-    else if (next && typeof next === 'object') element.className = Object.entries(next).filter(([, enabled]) => enabled).map(([name]) => name).join(' ');
-    else element.className = '';
+    let dynamicClass = '';
+    if (typeof next === 'string') dynamicClass = next;
+    else if (Array.isArray(next)) dynamicClass = next.filter(Boolean).join(' ');
+    else if (next && typeof next === 'object') dynamicClass = Object.entries(next).filter(([, enabled]) => enabled).map(([name]) => name).join(' ');
+    element.className = [staticClass, dynamicClass].filter(Boolean).join(' ');
   };
   update();
   const unsubscribe = source?.subscribe ? source.subscribe(update) : () => {};

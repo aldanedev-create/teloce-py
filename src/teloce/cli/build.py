@@ -50,12 +50,17 @@ def build_command(args: Any) -> int:
     # Build
     static_mode = bool(getattr(args, 'static', False) or build_config.get('static', False))
     builder = Builder({
+        'mode': 'production',
+        'production': True,
         'minify': minify,
         'source_maps': source_map,
         'dev': False,
         'clean': clean,
         'static_dir': build_config.get('static_dir', 'static'),
-        'hash_assets': getattr(args, 'hash_assets', False) or build_config.get('hash_assets', False),
+        'hash_assets': (not getattr(args, 'no_hash_assets', False)
+                        and (getattr(args, 'hash_assets', False)
+                             or build_config.get('hash_assets', True))),
+        'extract_css': not getattr(args, 'no_extract_css', False) and build_config.get('extract_css', True),
         'bundle': getattr(args, 'bundle', False) or build_config.get('bundle', False),
         'bundler': getattr(args, 'bundler', None) or build_config.get('bundler', 'teloce'),
         'code_splitting': not getattr(args, 'no_splitting', False),

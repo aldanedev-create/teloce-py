@@ -29,37 +29,55 @@ class ComponentImporter:
         Returns:
             A tuple of (name, source) or None.
         """
-        # Default import: import X from 'source'
-        default_match = re.match(r'import\s+(\w+)\s+from\s+[\'"]([^\'"]+)[\'"]', line)
-        if default_match:
-            name = default_match.group(1)
-            source = default_match.group(2)
+        line = line.strip().rstrip(';').strip()
+
+        # Namespace import: import * as X from 'source'
+        namespace_match = re.match(
+            r'import\s+\*\s+as\s+([A-Za-z_$][\w$]*)\s+from\s+[\'"]([^\'"]+)[\'"]$',
+            line,
+        )
+        if namespace_match:
+            name, source = namespace_match.groups()
             self.imports[name] = source
             self.components[name] = source
+            return (name, source)
+
+        # Default imports may be combined with named imports.  Keep the local
+        # alias as the key so ``import Widget as``-style named bindings resolve
+        # to the identifier developers actually use in templates/scripts.
+        default_match = re.match(
+            r'import\s+([A-Za-z_$][\w$]*)(?:\s*,\s*\{([^}]*)\})?\s+from\s+[\'"]([^\'"]+)[\'"]$',
+            line,
+        )
+        if default_match:
+            name, named, source = default_match.groups()
+            self.imports[name] = source
+            self.components[name] = source
+            if named:
+                self._record_named_imports(named, source)
             return (name, source)
         
         # Named import: import { X, Y } from 'source'
-        named_match = re.match(r'import\s*{([^}]+)}\s*from\s+[\'"]([^\'"]+)[\'"]', line)
+        named_match = re.match(
+            r'import\s*\{([^}]+)\}\s*from\s+[\'"]([^\'"]+)[\'"]$',
+            line,
+        )
         if named_match:
             names_str = named_match.group(1)
             source = named_match.group(2)
-            for name_part in names_str.split(','):
-                name = name_part.strip()
-                if name:
-                    self.imports[name] = source
-                    self.components[name] = source
+            self._record_named_imports(names_str, source)
             return None
-        
-        # Namespace import: import * as X from 'source'
-        namespace_match = re.match(r'import\s+\*\s+as\s+(\w+)\s+from\s+[\'"]([^\'"]+)[\'"]', line)
-        if namespace_match:
-            name = namespace_match.group(1)
-            source = namespace_match.group(2)
-            self.imports[name] = source
-            self.components[name] = source
-            return (name, source)
-        
         return None
+
+    def _record_named_imports(self, names: str, source: str) -> None:
+        """Record named imports using their local aliases when present."""
+        for name_part in names.split(','):
+            pieces = re.split(r'\s+as\s+', name_part.strip(), maxsplit=1)
+            imported = pieces[0].strip()
+            local = pieces[-1].strip()
+            if imported and re.fullmatch(r'[A-Za-z_$][\w$]*', local):
+                self.imports[local] = source
+                self.components[local] = source
     
     def add_import(self, name: str, source: str):
         """Add an import."""
@@ -96,23 +114,18 @@ class ComponentImporter:
         """
         imports = []
         
-        # Find all import statements
-        import_pattern = r'import\s+(\w+)\s+from\s+[\'"]([^\'"]+)[\'"]'
-        for match in re.finditer(import_pattern, script):
-            name = match.group(1)
-            source = match.group(2)
-            imports.append((name, source))
-            self.add_import(name, source)
-        
-        # Named imports
-        named_pattern = r'import\s*{([^}]+)}\s*from\s+[\'"]([^\'"]+)[\'"]'
-        for match in re.finditer(named_pattern, script):
-            names_str = match.group(1)
-            source = match.group(2)
-            for name_part in names_str.split(','):
-                name = name_part.strip()
-                if name:
-                    imports.append((name, source))
-                    self.add_import(name, source)
-        
+        # Keep this helper source-preserving and intentionally small: it is a
+        # public import registry, not the compiler's JavaScript parser.  Parse
+        # one import declaration per line and report every local binding.
+        pattern = re.compile(r'(?m)^\s*import\b[^\n;]*(?:;|$)')
+        for match in pattern.finditer(script):
+            statement = match.group(0).strip()
+            before = set(self.imports)
+            parsed = self.parse_import(statement)
+            if parsed:
+                imports.append(parsed)
+                before.add(parsed[0])
+            for name in sorted(set(self.imports) - before):
+                imports.append((name, self.imports[name]))
+
         return imports

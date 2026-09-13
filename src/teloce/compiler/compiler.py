@@ -267,7 +267,11 @@ class Compiler:
             css_options["scoped"] = style.scoped
             css_options["module"] = style.module
             generated.append(CSSGenerator(css_options).generate(style.css, component.name))
-        return "\n".join(css for css in generated if css)
+        css = "\n".join(css for css in generated if css)
+        if self.minify:
+            from teloce.compiler.minifier import minify_css
+            css = minify_css(css)
+        return css
 
     def _empty_result(self) -> Dict[str, Any]:
         """Return an empty compilation result."""

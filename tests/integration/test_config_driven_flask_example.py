@@ -36,17 +36,23 @@ def test_config_driven_flask_example_uses_custom_source_and_shared_runtime(tmp_p
     _run(project, "-m", "teloce", "build")
     app_module = project / "public-assets" / "client" / "js" / "App.js"
     child_module = project / "public-assets" / "client" / "js" / "components" / "StatusCard.js"
-    runtime = project / "public-assets" / "client" / "teloce-runtime.js"
+    app_bundled = next((project / "public-assets" / "client" / "js").glob("App.*.js"))
+    child_bundled = next((project / "public-assets" / "client" / "js" / "components").glob("StatusCard.*.js"))
+    runtime = next((project / "public-assets" / "client").glob("teloce-runtime*.js"))
     assert app_module.is_file()
     assert child_module.is_file()
+    assert app_bundled.is_file()
+    assert child_bundled.is_file()
     assert runtime.is_file()
     assert not (project / "public-assets" / "static").exists()
-    assert 'from "../teloce-runtime.js"' in app_module.read_text(encoding="utf-8")
-    assert 'from "../../teloce-runtime.js"' in child_module.read_text(encoding="utf-8")
-    assert app_module.stat().st_size < 30_000
+    assert app_bundled.name in app_module.read_text(encoding="utf-8")
+    assert child_bundled.name in child_module.read_text(encoding="utf-8")
+    assert runtime.name in app_bundled.read_text(encoding="utf-8")
+    assert runtime.name in child_bundled.read_text(encoding="utf-8")
+    assert app_bundled.stat().st_size < 30_000
 
     _run(project, "-c", "from app import create_app; response = create_app().test_client().get('/'); assert response.status_code == 200; assert b'/static/js/App.js' in response.data")
-    for module in (app_module, child_module, runtime):
+    for module in (app_module, child_module, app_bundled, child_bundled, runtime):
         checked = subprocess.run(
             [shutil.which("node") or "node", "--check", str(module)],
             capture_output=True,
