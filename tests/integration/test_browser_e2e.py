@@ -390,6 +390,41 @@ def test_npm_style_long_form_directives_render_in_real_chrome(tmp_path: Path):
 
 
 @pytest.mark.skipif(_chrome() is None, reason="Chrome/Chromium is not installed")
+def test_conditional_branch_clears_runtime_boolean_bindings_in_real_chrome(tmp_path: Path):
+    """A reused v-if node must not keep a boolean binding from its old branch."""
+    source_dir = tmp_path / "static" / "js"
+    source_dir.mkdir(parents=True)
+    (source_dir / "App.vel").write_text(
+        '<template><button id="advance" @click="advance">Advance</button>'
+        '<if condition="done"><button id="branch" @click="finish">Next</button>'
+        '<else><button id="branch" v-bind:disabled="busy" @click="advance">Check</button></if></template>'
+        '<script>export default { data() { return { done: false, busy: true }; }, '
+        'methods: { advance() { this.done = true; }, finish() {} } };</script>',
+        encoding="utf-8",
+    )
+    build_project(
+        tmp_path,
+        options={"dev": True, "source_maps": False, "shared_runtime": True},
+    )
+    (tmp_path / "dist" / "index.html").write_text(
+        '<div id="app"></div><script type="module">import { mount } from "/static/js/App.js"; '
+        'mount("#app"); setTimeout(() => { document.querySelector("#advance").click(); '
+        'setTimeout(() => { const button = document.querySelector("#branch"); '
+        'document.title = String(button.disabled) + ":" + button.textContent; }, 75); }, 75);</script>',
+        encoding="utf-8",
+    )
+    server = start_dev_server("127.0.0.1", 0, tmp_path / "dist")
+    try:
+        time.sleep(0.1)
+        result = _dump_dom(f"http://127.0.0.1:{server.server_port}/?no_hmr=1", 1500)
+        assert result.returncode == 0, result.stderr
+        assert "<title>false:Next</title>" in result.stdout
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.skipif(_chrome() is None, reason="Chrome/Chromium is not installed")
 def test_conditional_component_unmount_does_not_recurse_in_real_chrome(tmp_path: Path):
     """Switching a parent condition must clean up a child exactly once."""
     source_dir = tmp_path / "static" / "js"

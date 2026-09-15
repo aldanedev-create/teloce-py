@@ -210,7 +210,8 @@ from flask import Flask, render_template
 from teloce.build import build_project
 
 ROOT = Path(__file__).parent
-app = Flask(__name__, template_folder=str(ROOT / 'templates'))
+app = Flask(__name__, static_folder="dist/static", static_url_path="/static")
+
 
 @app.get('/')
 def home():

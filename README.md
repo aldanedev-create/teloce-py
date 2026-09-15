@@ -34,8 +34,8 @@ Recommended layout:
 my-app/
 ├── app.py
 ├── teloce.config.json
-├── static/js/App.vel       # authored source
-├── templates/index.html    # HTML shell and #app mount
+├── static/js/App.vel         # authored source
+├── templates/app.html    # HTML shell and #app mount
 └── dist/                   # generated output; never edit by hand
 ```
 
@@ -50,16 +50,7 @@ python -m pip install teloce-py Flask
 Create `static/js/App.vel`:
 
 ```html
-<template>
-  <main class="chat">
-    <h1>Quick chat</h1>
-    <ul><li v-for="message in messages" :key="message.id">{{ message.text }}</li></ul>
-    <form @submit.prevent="send">
-      <input v-model="draft" aria-label="Message" />
-      <button>Send</button>
-    </form>
-  </main>
-</template>
+
 <script>
 export default {
   data() { return { draft: "", messages: [] }; },
@@ -78,6 +69,21 @@ export default {
   }
 };
 </script>
+
+<template>
+  <main class="chat">
+    <h1>Quick chat</h1>
+    <ul>
+      <li v-for="message in messages" :key="message.id">{{ message.text }}
+      </li>
+      </ul>
+    <form @submit.prevent="send">
+      <input v-model="draft" aria-label="Message" />
+      <button>Send</button>
+    </form>
+  </main>
+</template>
+
 <style scoped>
 .chat { max-width: 40rem; margin: 3rem auto; padding: 1rem; font: 1rem system-ui; }
 form { display: flex; gap: .5rem; } input { flex: 1; padding: .7rem; }
@@ -99,7 +105,7 @@ messages = []
 
 @app.get("/")
 def home():
-    return render_template("index.html")
+    return render_template("app.html")
 
 @app.get("/api/messages")
 def list_messages():
@@ -118,7 +124,7 @@ if __name__ == "__main__":
     app.run(debug=True)
 ```
 
-Create `templates/index.html`:
+Create `templates/app.html`:
 
 ```html
 <!doctype html><html><head><meta charset="utf-8"><title>Quick chat</title></head>

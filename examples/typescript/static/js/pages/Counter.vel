@@ -1,0 +1,30 @@
+<template>
+  <main class="counter">
+    <p class="eyebrow">Teloce + TypeScript</p>
+    <h1>{{ title }}</h1>
+    <p>You clicked {{ count }} times.</p>
+    <button type="button" @click="increment">Add one</button>
+  </main>
+</template>
+
+<script lang="ts">
+interface CounterState {
+  title: string;
+  count: number;
+}
+
+export default {
+  data(): CounterState {
+    return { title: "Typed without friction", count: 0 };
+  },
+  methods: {
+    increment(): void { this.count++; },
+  },
+};
+</script>
+
+<style scoped>
+.counter { max-width: 42rem; margin: 4rem auto; font: 1rem/1.5 system-ui, sans-serif; }
+.eyebrow { color: #635bff; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+button { border: 0; border-radius: .6rem; padding: .7rem 1rem; background: #312e81; color: white; cursor: pointer; }
+</style>

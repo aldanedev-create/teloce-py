@@ -1,0 +1,63 @@
+<script>
+export default {
+  data() { return { draft: "", messages: [] }; },
+  async mounted() { this.messages = await fetch("/api/messages").then(r => r.json()); },
+  methods: {
+    async send() {
+      const text = this.draft.trim();
+      if (!text) return;
+      const message = await fetch("/api/messages", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({text})
+      }).then(r => r.json());
+      this.messages = [...this.messages, message];
+      this.draft = "";
+    }
+  }
+};
+</script>
+
+<template>
+<main class="chat">
+
+<h1> Quick chat</h1>
+<ul>
+<li v-for="message in messages" :key="message.id"> 
+ {{message.text}}
+</li>
+</ul>
+
+<form @submit.prevent="send">
+<input v-model="draft" aria-label="Message"/>
+<button> Send</button>
+</form>
+</main>
+</template>
+
+
+
+<style scoped>
+.chat{
+
+    max-width: 40rem;
+    margin: 3rem auto;
+    padding: 1rem;
+    font: 1rem system-ui;
+
+}
+
+form{
+
+    display:flex;
+    gap: .5rem;
+
+}
+
+input{
+
+    flex:1;
+    padding: .7rem;
+}
+
+
+</style>

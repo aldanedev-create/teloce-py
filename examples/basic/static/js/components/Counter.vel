@@ -5,6 +5,7 @@
     <button @click="decrement">-</button>
   </section>
 </template>
+
 <script>
 export default {
   data() { return { count: 0 }; },

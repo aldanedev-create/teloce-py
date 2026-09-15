@@ -266,7 +266,13 @@ class Generator:
         if component.script_data:
             lines.append(f'{self._indent()}data() {{')
             self.indent_level += 1
-            lines.append(f'{self._indent()}return {component.script_data};')
+            data_body = getattr(component.script, "data_body", None)
+            if data_body:
+                for line in data_body.split('\n'):
+                    if line.strip():
+                        lines.append(f'{self._indent()}{line}')
+            else:
+                lines.append(f'{self._indent()}return {component.script_data};')
             self.indent_level -= 1
             lines.append(f'{self._indent()}}},')
             lines.append('')
@@ -911,6 +917,13 @@ class Generator:
         return [
             line
             .replace("else __evaluate(handlerName", "else __runEventExpression(handlerName")
+            # A binding may create a real DOM attribute after the declarative
+            # template is cloned. Mark it managed so a later conditional
+            # branch can remove stale boolean attributes such as `disabled`.
+            .replace(
+                'const __applyBinding = (element, name, value) => { ',
+                'const __applyBinding = (element, name, value) => { element.__teloceManagedAttributes ||= new Set(); element.__teloceManagedAttributes.add(name); ',
+            )
             .replace(
                 'const encoded = JSON.stringify({ [itemMatch[1]]: value, index }).replace(/&/g, "&amp;").replace(/"/g, "&quot;"); return `<${tag}${before}data-teloce-event-${name}="${expression}" data-teloce-loop-scope="${encoded}"${after}>`;',
                 'const scopeId = String(loopScopes.size); loopScopes.set(scopeId, loopScope); return `<${tag}${before}data-teloce-event-${name}="${expression}" data-teloce-loop-scope="${scopeId}"${after}>`;',

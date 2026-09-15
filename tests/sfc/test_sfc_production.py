@@ -180,6 +180,23 @@ def test_prop_factories_arrays_and_validator_functions_are_emitted_as_code():
         path.unlink(missing_ok=True)
 
 
+def test_compact_data_function_preserves_local_setup_before_return():
+    source = '''
+<template><h1>{{ state.title }}</h1></template>
+<script>
+export default { data() { const catalog = window.AppCatalog || {}; return { catalog, state: catalog.current || { title: "Ready" } }; } };
+</script>
+'''
+    component = SFCParser().parse(source, "CompactData.vel")
+    assert component is not None
+    assert component.script.data == '{ catalog, state: catalog.current || { title: "Ready" } }'
+    assert component.script.data_body == 'const catalog = window.AppCatalog || {}; return { catalog, state: catalog.current || { title: "Ready" } };'
+    generated = compile(source, filename="CompactData.vel")
+    assert generated["success"], generated.get("diagnostics")
+    assert "const catalog = window.AppCatalog || {};" in generated["code"]
+    assert "return { catalog, state: catalog.current || { title: \"Ready\" } };" in generated["code"]
+
+
 def test_common_typescript_sfc_annotations_are_transpiled_to_valid_javascript():
     source = '''
 <template><button @click="load">{{ count }}</button></template>

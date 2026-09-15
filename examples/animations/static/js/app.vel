@@ -1,0 +1,40 @@
+<template>
+  <main class="app">
+    <h1>Todo</h1>
+    <form @submit.prevent="add">
+      <input v-model="draft" placeholder="New task" />
+      <button type="submit">Add</button>
+    </form>
+    <ul>
+      <li v-for="task in tasks" :key="task.id"
+          transition:fade="{ duration: 150 }"
+          animate:flip>
+        <span>{{ task.text }}</span>
+        <button @click="remove(task.id)">Done</button>
+      </li>
+    </ul>
+  </main>
+</template>
+
+<script>
+export default {
+  data() {
+    return { draft: "", tasks: [], nextId: 1 };
+  },
+  methods: {
+    add() {
+      if (!this.draft.trim()) return;
+      this.tasks = [...this.tasks, { id: this.nextId++, text: this.draft.trim() }];
+      this.draft = "";
+    },
+    remove(id) {
+      this.tasks = this.tasks.filter((task) => task.id !== id);
+    }
+  }
+};
+</script>
+
+<style scoped>
+.app { max-width: 28rem; margin: 3rem auto; font: 1rem system-ui; }
+li { display: flex; justify-content: space-between; padding: .4rem 0; }
+</style>

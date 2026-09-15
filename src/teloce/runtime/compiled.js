@@ -13,6 +13,7 @@ const __teloceEscapeAttribute = value => __teloceEscapeHtml(value);
 const __teloceDecodeAttribute = value => String(value ?? "")
   .replace(/&quot;/g, '"')
   .replace(/&#39;/g, "'")
+  .replace(/&#x27;/gi, "'")
   .replace(/&lt;/g, "<")
   .replace(/&gt;/g, ">")
   .replace(/&amp;/g, "&");
@@ -164,6 +165,7 @@ const __teloceLazy = loader => {
 
 const __teloceCreateCompiledComponent = (definition, options = {}) => {
   const template = String(options.template ?? "");
+  const camelizeProp = name => String(name).replace(/-([a-z])/g, (_, character) => character.toUpperCase());
   const components = options.components || {};
   const filters = options.filters || {};
   const style = String(options.style ?? "");
@@ -225,6 +227,12 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
 
   const applyBinding = (element, name, value) => {
     if (name === "key") return;
+    // Bindings can materialize real DOM attributes (for example `disabled`)
+    // after reconciliation has cloned the declarative template. Track those
+    // mutations as managed too, otherwise a later v-if branch can reuse the
+    // node and leave a stale boolean attribute behind.
+    element.__teloceManagedAttributes ||= new Set();
+    element.__teloceManagedAttributes.add(name);
     if (name === "class") {
       const staticClass = element.getAttribute("data-teloce-static-class") ?? element.__teloceStaticClass ?? element.className ?? "";
       element.__teloceStaticClass = staticClass;
@@ -394,7 +402,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     const resolvedPropNames = new Set(
       attributes
         .filter(attribute => attribute.name.startsWith("data-teloce-resolved-"))
-        .map(attribute => attribute.name.slice("data-teloce-resolved-".length))
+        .map(attribute => camelizeProp(attribute.name.slice("data-teloce-resolved-".length)))
     );
     for (const attribute of attributes) {
       const name = attribute.name;
@@ -402,13 +410,13 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       if (name === "data-teloce-is") {
         props.__dynamic = evaluate(attribute.value, parentState);
       } else if (name.startsWith("data-teloce-resolved-")) {
-        const propName = name.slice("data-teloce-resolved-".length);
+        const propName = camelizeProp(name.slice("data-teloce-resolved-".length));
         try { props[propName] = JSON.parse(attribute.value); } catch (_) { props[propName] = attribute.value; }
       } else if (name.startsWith("data-teloce-bind-")) {
-        const propName = name.slice("data-teloce-bind-".length);
+        const propName = camelizeProp(name.slice("data-teloce-bind-".length));
         props[propName] = evaluate(__teloceDecodeAttribute(attribute.value), parentState);
       } else if (!name.startsWith("data-") && !resolvedPropNames.has(name)) {
-        props[name] = attribute.value;
+        props[camelizeProp(name)] = attribute.value;
       }
     }
     return props;
@@ -556,6 +564,9 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       if (attribute.name === "data-teloce-model" && !element.__teloceModelListener) {
         const expression = attribute.value;
         const eventName = element.type === "checkbox" || element.tagName === "SELECT" ? "change" : "input";
+        const initialValue = __safeEvaluate(expression, state);
+        if (element.type === "checkbox") element.checked = Boolean(initialValue);
+        else if (initialValue !== undefined && initialValue !== null) element.value = String(initialValue);
         const listener = () => {
           const scopeElement = element.closest?.("[data-teloce-loop-scope]");
           const loopScope = scopeElement ? loopScopes.get(scopeElement.getAttribute("data-teloce-loop-scope")) : null;

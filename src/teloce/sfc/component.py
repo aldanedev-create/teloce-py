@@ -14,6 +14,12 @@ class ComponentScript:
     Parsed script section of a component.
     """
     data: Optional[str] = None
+    # The object expression is kept for backwards compatibility, while the
+    # complete function body preserves local variables used by ``return``.
+    # Without this, compact data functions such as
+    # ``data() { const defaults = ...; return { ...defaults }; }`` lose the
+    # local declaration during code generation.
+    data_body: Optional[str] = None
     methods: Dict[str, str] = field(default_factory=dict)
     method_params: Dict[str, str] = field(default_factory=dict)
     method_async: Dict[str, bool] = field(default_factory=dict)

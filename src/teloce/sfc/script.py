@@ -273,6 +273,7 @@ class ScriptParser:
             # Extract component options
             script.name = self._extract_component_name(option_source)
             script.data = self._extract_data(option_source)
+            script.data_body = getattr(self, "_data_body", None)
             script.methods = self._extract_methods(option_source)
             script.method_params = dict(self._method_params)
             script.method_async = dict(self._method_async)
@@ -598,6 +599,43 @@ class ScriptParser:
     
     def _extract_data(self, source: str) -> Optional[str]:
         """Extract data function from the script."""
+        self._data_body = None
+
+        # Read the complete method body first.  The old fast path only
+        # matched ``data() { return { ... } }`` and silently dropped data
+        # functions that declared a local value before returning their
+        # object.  That is valid, common JavaScript and produced a component
+        # with no data at all.  The token-based scanner handles nested
+        # objects, callbacks, strings, regexes, and compact formatting.
+        method = self._scan_object_methods(source, allowed_names={"data"}).get("data")
+        if method:
+            body, _params, _is_async = method
+            self._data_body = body.strip()
+            body_tokens = tokenize_javascript(self._data_body)
+            depth = 0
+            for index, token in enumerate(body_tokens):
+                if token.value in {"{", "[", "("}:
+                    depth += 1
+                    continue
+                if token.value in {"}", "]", ")"}:
+                    depth = max(0, depth - 1)
+                    continue
+                if token.value != "return" or depth != 0:
+                    continue
+                cursor = index + 1
+                while cursor < len(body_tokens) and body_tokens[cursor].kind == "whitespace":
+                    cursor += 1
+                if cursor < len(body_tokens) and body_tokens[cursor].value == "(":
+                    cursor += 1
+                if cursor < len(body_tokens) and body_tokens[cursor].value == "{":
+                    closing = self._matching_token_index(body_tokens, cursor)
+                    if closing is not None:
+                        return self._data_body[body_tokens[cursor].start:body_tokens[closing].end].strip()
+            # A data method without a returned object is still preserved so
+            # the generator can emit a useful function and the normal parser
+            # diagnostics can explain any runtime result.
+            return None
+
         # data() { return { ... } }
         match = re.search(r'data\s*\(\s*\)\s*{\s*return\s*{', source)
         if match:

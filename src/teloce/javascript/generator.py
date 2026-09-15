@@ -87,7 +87,13 @@ class JavaScriptGenerator:
         if component.script.data:
             lines.append(f'{self._indent()}data() {{')
             self.indent_level += 1
-            lines.append(f'{self._indent()}return {component.script.data};')
+            data_body = getattr(component.script, "data_body", None)
+            if data_body:
+                for line in data_body.split('\n'):
+                    if line.strip():
+                        lines.append(f'{self._indent()}{line}')
+            else:
+                lines.append(f'{self._indent()}return {component.script.data};')
             self.indent_level -= 1
             lines.append(f'{self._indent()}}},')
             lines.append('')
