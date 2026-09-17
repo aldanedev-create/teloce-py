@@ -150,6 +150,7 @@ export const __patch = (target, html, options = {}) => {
       if (oldNode.nodeValue !== newNode.nodeValue) oldNode.nodeValue = newNode.nodeValue;
       return oldNode;
     }
+            if (oldNode.hasAttribute("data-teloce-memo") && newNode.hasAttribute("data-teloce-memo") && oldNode.getAttribute("data-teloce-memo") === newNode.getAttribute("data-teloce-memo")) return oldNode;
     const managedAttributes = oldNode.__teloceManagedAttributes || new Set();
     for (const attr of Array.from(oldNode.attributes)) if (managedAttributes.has(attr.name) && !newNode.hasAttribute(attr.name)) oldNode.removeAttribute(attr.name);
     for (const attr of Array.from(newNode.attributes)) if (oldNode.getAttribute(attr.name) !== attr.value) oldNode.setAttribute(attr.name, attr.value);
@@ -158,6 +159,11 @@ export const __patch = (target, html, options = {}) => {
       // A mounted component owns its rendered subtree. Preserve that subtree
       // and retain the new declarative host as the next props/slots source.
       oldNode.__telocePendingPropsSource = newNode.cloneNode(true);
+      return oldNode;
+    }
+    if (oldNode.hasAttribute("data-teloce-data-table")) {
+      // The table helper owns the host's generated table/controls. Its
+      // reactive configuration is refreshed by the directive binder below.
       return oldNode;
     }
     if (oldNode.hasAttribute("data-teloce-preserve")) {
@@ -209,7 +215,8 @@ BUILTIN_FILTERS_JS = {
     "truncate": '(value, length = 30, suffix = "...") => { const text = String(value ?? ""); const size = Number(length); return text.length > size ? text.slice(0, Math.max(0, size - String(suffix).length)) + suffix : text; }',
     "currency": '(value, currency = "USD") => new Intl.NumberFormat(undefined, { style: "currency", currency: String(currency).toUpperCase() }).format(Number(value) || 0)',
     "percent": '(value, digits = 0) => `${(Number(value) * 100).toFixed(Number(digits))}%`',
-    "number": '(value, locale) => new Intl.NumberFormat(locale || undefined).format(Number(value) || 0)',
+    "number": '(value, options) => { const config = options && typeof options === "object" ? { ...options } : {}; const locale = typeof options === "string" ? options : config.locale; if (config.locale) delete config.locale; return new Intl.NumberFormat(locale || undefined, config).format(Number(value) || 0); }',
+    "date": '(value, formatOrOptions, locale) => { const date = value instanceof Date ? value : new Date(value); if (Number.isNaN(date.getTime())) return ""; let options = formatOrOptions && typeof formatOrOptions === "object" ? { ...formatOrOptions } : {}; const resolvedLocale = locale || options.locale; if (options.locale) delete options.locale; if (typeof formatOrOptions === "string") { const pattern = formatOrOptions; options = { year: /y{2,4}/i.test(pattern) ? "numeric" : undefined, month: /MMMM/.test(pattern) ? "long" : /MMM/.test(pattern) ? "short" : /M/.test(pattern) ? "numeric" : undefined, day: /dd/.test(pattern) ? "2-digit" : /d/.test(pattern) ? "numeric" : undefined }; } return new Intl.DateTimeFormat(resolvedLocale || undefined, options).format(date); }',
     "first": 'value => Array.isArray(value) ? value[0] : value',
     "last": 'value => Array.isArray(value) ? value[value.length - 1] : value',
     "pluck": '(value, key) => Array.isArray(value) ? value.map(item => item == null ? undefined : item[key]) : value',
@@ -297,6 +304,16 @@ class Generator:
 
         if component.script.props:
             lines.append(f'{self._indent()}props: {self._generate_props(component.script.props)},')
+            lines.append('')
+
+        query_state = getattr(component.script, "query_state", None)
+        if query_state:
+            lines.append(f'{self._indent()}queryState: {query_state},')
+            lines.append('')
+
+        actions = self._collect_actions(nodes)
+        if actions:
+            lines.append(f'{self._indent()}actions: {self._generate_actions(actions)},')
             lines.append('')
         
         # Computed
@@ -663,14 +680,18 @@ class Generator:
             # CSS metadata and imports; lifecycle/event/binding/reconciliation
             # glue belongs in the shared runtime barrel.
             style_id = HashGenerator().generate(component.name, length=9)
+            runtime_imports = ["__teloceCreateCompiledComponent"]
+            if "data-teloce-data-table" in template_code:
+                runtime_imports.append("createDataTable")
             return [
-                f'import {{ __teloceCreateCompiledComponent }} from {json.dumps(shared_runtime_import)};',
+                f'import {{ {", ".join(runtime_imports)} }} from {json.dumps(shared_runtime_import)};',
                 f'const __components = {{{component_map}}};',
                 f'const __template = {template_literal};',
                 f'const __style = {style_literal};',
                 f'const __styleClasses = {style_classes_literal};',
                 f'const __filters = {{ {self._generate_builtin_filters(component)}{", " if self._generate_builtin_filters(component) and custom_filters else ""}{custom_filters} }};',
-                f'const __runtimeOptions = {{ components: __components, template: __template, style: __style, styleId: "teloce-style-{style_id}", styleClasses: __styleClasses, filters: __filters, dev: {str(bool(self.dev)).lower()}, moduleUrl: import.meta.url }};',
+                f'const __actions = {self._generate_actions(self._collect_actions_from_template(template_code))};',
+                f'const __runtimeOptions = {{ components: __components, template: __template, style: __style, styleId: "teloce-style-{style_id}", styleClasses: __styleClasses, filters: __filters, actions: __actions, table: typeof createDataTable === "function" ? createDataTable : undefined, dev: {str(bool(self.dev)).lower()}, moduleUrl: import.meta.url }};',
                 'export const mount = (target, props = {}) => __teloceCreateCompiledComponent(__component, { ...__runtimeOptions, props }).mount(target, props);',
                 'export const createApp = mount;',
                 '__component.mount = mount;',
@@ -678,6 +699,7 @@ class Generator:
         runtime = [
             SAFE_EXPRESSION_RUNTIME,
             f'const __components = {{{component_map}}};',
+            f'const __actions = {self._generate_actions(self._collect_actions_from_template(template_code))};',
             'const __readProps = (element, parentState) => {',
             '  const slots = { default: "" }; for (const child of Array.from(element.childNodes)) { if (child.nodeType === 1 && child.hasAttribute("slot")) { const name = child.getAttribute("slot") || "default"; slots[name] = (slots[name] || "") + child.outerHTML; } else { slots.default += child.outerHTML ?? child.textContent ?? ""; } }',
             '  const props = { __slots: slots };',
@@ -1035,6 +1057,43 @@ class Generator:
         for node in nodes:
             visit(node)
         return names
+
+    def _collect_actions(self, nodes: List[ASTNode]) -> set[str]:
+        """Collect ``use:name`` action names from the template AST."""
+        names: set[str] = set()
+
+        def visit(node: ASTNode) -> None:
+            if isinstance(node, ElementNode):
+                for name in node.attributes:
+                    if re.fullmatch(r"use:[A-Za-z_$][\w$]*", name):
+                        names.add(name[4:])
+                for child in node.children:
+                    visit(child)
+            elif isinstance(node, (ForNode, IfNode, ComponentNode, SlotNode, FragmentNode)):
+                for child in getattr(node, "children", []):
+                    visit(child)
+                if isinstance(node, IfNode):
+                    for child in node.else_children:
+                        visit(child)
+
+        for node in nodes:
+            visit(node)
+        return names
+
+    @staticmethod
+    def _collect_actions_from_template(template: str) -> set[str]:
+        return set(re.findall(r'\buse:([A-Za-z_$][\w$]*)', template or ""))
+
+    @staticmethod
+    def _generate_actions(names: set[str]) -> str:
+        """Reference action functions without making missing actions fatal at import."""
+        if not names:
+            return "{}"
+        entries = [
+            f'{json.dumps(name)}: (typeof {name} === "function" ? {name} : undefined)'
+            for name in sorted(names)
+        ]
+        return "{ " + ", ".join(entries) + " }"
     
     def _generate_template(self, nodes: List[ASTNode]) -> str:
         """Generate template code from AST nodes."""
@@ -1081,7 +1140,17 @@ class Generator:
         for name, value in node.attributes.items():
             if name == "class" and self.module_mapping:
                 value = " ".join(self.module_mapping.get(token, token) for token in str(value).split())
-            attrs.append(f'{name}="{html.escape(str(value), quote=True)}"')
+            emitted_name = {
+                "v-memo": "data-teloce-memo",
+                "v-scrolly": "data-teloce-scrolly",
+                "v-chart-annotation": "data-teloce-chart-annotation",
+                "v-data-table": "data-teloce-data-table",
+            }.get(name, name)
+            # Memo keys are expressions, not static strings. Keep the
+            # expression in the generated template so the renderer evaluates
+            # it for every update before reconciliation compares keys.
+            emitted_value = f'{{{{ {value} }}}}' if name == "v-memo" else value
+            attrs.append(f'{emitted_name}="{html.escape(str(emitted_value), quote=True)}"')
             if name == "class" and has_class_binding:
                 attrs.append(f'data-teloce-static-class="{html.escape(str(value), quote=True)}"')
         
@@ -1139,6 +1208,7 @@ class Generator:
         key = node.key or 'index'
         
         children = self._generate_template(node.children)
+        key_expression = "index"
         if node.key and node.key != "index":
             # Give the DOM reconciler a stable identity for each repeated row.
             key_expression = node.key if "." in node.key or node.key == item else f"{item}.{node.key}"
@@ -1148,7 +1218,11 @@ class Generator:
                 children,
                 count=1,
             )
-        return f'<for key="{key}" item="{item}" in="{collection}">{children}</for>'
+        tag = "virtual-for" if getattr(node, "virtual", False) else "for"
+        options = ""
+        for option, value in getattr(node, "virtual_options", {}).items():
+            options += f' {option}="{html.escape(str(value), quote=True)}"'
+        return f'<{tag} key="{html.escape(key_expression, quote=True)}" item="{item}" in="{collection}"{options}>{children}</{tag}>'
     
     def _generate_if(self, node: IfNode) -> str:
         """Generate code for if statement."""

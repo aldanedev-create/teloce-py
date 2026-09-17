@@ -53,6 +53,17 @@ Then open the URL printed by the server. You do not need to manually run a separ
 - [Build a real CRUD API application](lessons/26-crud-api.md)
 - [Production debugging workflow](lessons/27-production-debugging.md)
 - [Make a single-page app with automatic routing](lessons/37-making-a-spa.md)
+- [Data-story feature showcase](../examples/data-story/README.md)
+- [Automatic components and `$attrs`](lessons/38-components-and-attrs.md)
+- [Virtual lists](lessons/39-virtual-lists.md)
+- [Sortable data tables](lessons/40-data-tables.md)
+- [CSV and Python data shaping](lessons/41-data-loading.md)
+- [Memoized rendering](lessons/42-memo-performance.md)
+- [Scrollytelling](lessons/43-scrollytelling.md)
+- [Shareable state and exports](lessons/44-sharing-and-exports.md)
+- [Polling and live data](lessons/45-live-data.md)
+- [DOM actions](lessons/46-use-actions.md)
+- [Static components and embed builds](lessons/47-static-and-embed.md)
 
 ## Reference pages
 

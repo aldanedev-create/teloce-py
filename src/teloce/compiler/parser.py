@@ -182,6 +182,12 @@ class Parser:
 
     def _lower_long_form_directives(self, element: ElementNode) -> ASTNode:
         """Lower npm/Vue-compatible structural attributes into AST nodes."""
+        # ``v-bind="$attrs"`` is a component escape hatch. Keep it as a
+        # regular binding node so the browser runtime can merge undeclared
+        # parent attributes onto the child root element.
+        if element.attributes.get('v-bind') == '$attrs':
+            element.attributes.pop('v-bind', None)
+            element.bindings.append(BindingNode('attrs', '$attrs', element.line, element.column))
         for source_name, binding_name in (
             ('v-show', 'show'),
             ('v-hide', 'hide'),
@@ -192,8 +198,9 @@ class Parser:
                 element.bindings.append(
                     BindingNode(binding_name, element.attributes.pop(source_name), element.line, element.column)
                 )
-        if 'v-for' in element.attributes:
-            expression = element.attributes.pop('v-for').strip()
+        virtual = 'v-virtual-for' in element.attributes
+        if 'v-for' in element.attributes or virtual:
+            expression = element.attributes.pop('v-virtual-for', element.attributes.pop('v-for', '')).strip()
             match = re.match(
                 r'^\s*(?:\(([^)]+)\)|([^\s]+))\s+(?:in|of)\s+(.+?)\s*$',
                 expression,
@@ -214,7 +221,16 @@ class Parser:
                 if 'v-if' in element.attributes:
                     condition = element.attributes.pop('v-if').strip()
                     child = IfNode(condition, [element], [], element.line, element.column)
-                return ForNode(item, collection, key, [child], element.line, element.column)
+                virtual_options = {}
+                if virtual:
+                    for option in ('item-height', 'overscan', 'min-height'):
+                        if option in element.attributes:
+                            virtual_options[option] = element.attributes.pop(option)
+                        for binding in list(element.bindings):
+                            if binding.name == option:
+                                virtual_options[option] = binding.value
+                                element.bindings.remove(binding)
+                return ForNode(item, collection, key, [child], element.line, element.column, virtual, virtual_options)
         if 'v-if' in element.attributes:
             condition = element.attributes.pop('v-if').strip()
             return IfNode(condition, [element], [], element.line, element.column)

@@ -41,6 +41,16 @@ This learning path teaches the complete workflow: write a `.vel` Single File Com
 35. [Transitions and animation directives](32-transitions-and-animations.md)
 36. [Signals inside `.vel` components](36-signals-in-vel.md)
 37. [Make a single-page app with automatic routing](37-making-a-spa.md)
+38. [Automatic components and attribute forwarding](38-components-and-attrs.md)
+39. [Virtual lists for large datasets](39-virtual-lists.md)
+40. [Sortable and filterable data tables](40-data-tables.md)
+41. [CSV loading and Python data shaping](41-data-loading.md)
+42. [Memoized rendering for fast interfaces](42-memo-performance.md)
+43. [Scrollytelling and chart annotations](43-scrollytelling.md)
+44. [Shareable URL state and exports](44-sharing-and-exports.md)
+45. [Polling and live data](45-live-data.md)
+46. [DOM actions with use:](46-use-actions.md)
+47. [Static components, SSR, and embed builds](47-static-and-embed.md)
 
 ## What you can build
 

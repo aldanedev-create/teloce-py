@@ -32,6 +32,7 @@ class ProjectConfiguration:
                 'minify': True,
                 'hash_assets': True,
                 'extract_css': True,
+                'css_bundle': True,
                 'shared_runtime': True,
                 # Discover static/js/pages automatically. Set false for a
                 # deliberately multi-page build or true to require a router.
@@ -47,6 +48,7 @@ class ProjectConfiguration:
                 'ssr': False,
                 'static': False,
                 'report': 'build-report.json',
+                'embed': {'enabled': False, 'aspect_ratio': '16/9', 'remove_chrome': True},
             },
             'server': {
                 'port': 5173,

@@ -39,6 +39,10 @@ class ComponentScript:
     line: int = 0
     lang: str = "js"
     setup: bool = False
+    # Raw JavaScript option source used by browser-only runtime integrations
+    # such as query-state synchronization. Keeping it raw avoids pretending
+    # that arbitrary option expressions are JSON.
+    query_state: Optional[str] = None
     
     @property
     def has_data(self) -> bool:

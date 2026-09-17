@@ -19,7 +19,13 @@ configuration is:
     "shared_runtime": true,
     "tree_shake": true,
     "bundle": false,
-    "lazy_components": []
+    "lazy_components": [],
+    "css_bundle": true,
+    "embed": { "enabled": false, "remove_chrome": true, "aspect_ratio": "16/9" },
+    "max_asset_size": 250000,
+    "report": "build-report.json",
+    "ssr": false,
+    "spa": "auto"
   }
 }
 ```
@@ -86,6 +92,13 @@ Production switches:
   working while browsers cache the hashed implementation.
 - `report` records sizes, hashes, copied assets, aliases, and warnings. Set
   `max_asset_size` to surface oversized generated or copied assets in CI.
+- `css_bundle` writes one deduplicated aggregate stylesheet while retaining
+  per-component CSS for debugging and tooling.
+- `embed.enabled` removes standard chrome tags and creates a constrained
+  aspect-ratio entrypoint for iframe embeds. Only numeric ratios such as
+  `16/9` are accepted.
+- `ssr` emits Jinax/Jinja-compatible `.html` component artifacts; it is a
+  static template artifact, not client hydration by itself.
 
 `--no-hash-assets`, `--no-extract-css`, `--no-minify`, `--no-tree-shake`, and
 `--max-size N` are available for controlled debugging or compatibility builds.

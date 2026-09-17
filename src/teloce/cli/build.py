@@ -68,6 +68,8 @@ def build_command(args: Any) -> int:
                         and (getattr(args, 'hash_assets', False)
                              or build_config.get('hash_assets', True))),
         'extract_css': not getattr(args, 'no_extract_css', False) and build_config.get('extract_css', True),
+        'css_bundle': build_config.get('css_bundle', True),
+        'embed': build_config.get('embed', {'enabled': False}),
         'bundle': getattr(args, 'bundle', False) or build_config.get('bundle', False),
         'bundler': getattr(args, 'bundler', None) or build_config.get('bundler', 'teloce'),
         'code_splitting': not getattr(args, 'no_splitting', False),

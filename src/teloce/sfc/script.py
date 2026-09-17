@@ -5,13 +5,17 @@ Parses the <script> section of a .vel file with full JavaScript/TypeScript
 support including ES modules, exports, imports, and component options.
 """
 
-import re
 import ast
-from typing import Optional, Dict, Any, List, Tuple, Set
+import re
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Set, Tuple
 
-from teloce.sfc.component import ComponentScript
 from teloce.javascript.parser import parse_javascript, tokenize_javascript
+from teloce.javascript.tree_sitter_backend import (
+    TreeSitterUnavailable,
+    default_export_object_source,
+)
+from teloce.sfc.component import ComponentScript
 
 
 def _read_ts_balanced(source: str, opening: int, open_char: str = '{', close_char: str = '}') -> int:
@@ -243,7 +247,9 @@ class ScriptParser:
         self._watch_async = {}
         
         original_source = source
-        if str(self.options.get("lang", "js")).lower() in {"ts", "tsx", "typescript"}:
+        script_language = str(self.options.get("lang", "js")).lower()
+        is_typescript = script_language in {"ts", "tsx", "typescript"}
+        if is_typescript:
             source = strip_typescript_annotations(source)
         script = ComponentScript(raw=original_source)
         script.module_code = self._extract_module_code(source)
@@ -253,11 +259,13 @@ class ScriptParser:
             return script
         
         try:
-            # Validate module structure with Teloce's source-located parser
-            # before extracting component options. The original source is
-            # preserved for generation; this pass only establishes safe
-            # statement boundaries and catches malformed delimiters.
-            parse_javascript(source)
+            # Validate the authored language before lowering TypeScript. The
+            # generated JavaScript is validated separately below. Tree-sitter
+            # provides structural syntax errors while the original source is
+            # still available for accurate diagnostics.
+            parse_javascript(original_source, language=script_language)
+            if is_typescript:
+                parse_javascript(source, language="js")
             # Parse imports
             self._parse_imports(source)
             script.imports = list(self.imports)
@@ -291,6 +299,7 @@ class ScriptParser:
             script.watch_params = dict(self._watch_params)
             script.watch_async = dict(self._watch_async)
             script.emits = self._extract_emits(option_source)
+            script.query_state = self._scan_object_properties(option_source).get('queryState')
             
         except Exception as e:
             self.errors.append(f"Error parsing script: {str(e)}")
@@ -300,19 +309,24 @@ class ScriptParser:
     def _extract_module_code(self, source: str) -> str:
         """Preserve executable module-level code around the component export."""
         code = source
-        default_match = re.search(r'\bexport\s+default\s+', code)
-        if default_match:
-            start = default_match.start()
-            cursor = default_match.end()
-            while cursor < len(code) and code[cursor].isspace():
-                cursor += 1
-            if cursor < len(code) and code[cursor] == '{':
-                block = self._read_balanced_pair(code, cursor, '{', '}')
-                if block:
-                    end = cursor + len(block)
-                    while end < len(code) and code[end] in ' ;\t\r\n':
-                        end += 1
-                    code = code[:start] + code[end:]
+        default_span = None
+        try:
+            for node in parse_javascript(code).body:
+                if node.kind != "ExportDeclaration":
+                    continue
+                if re.match(r"export\s+default\b", node.source.strip()):
+                    default_span = (node.start, node.end)
+                    break
+        except (TreeSitterUnavailable, ValueError):
+            # Syntax diagnostics are emitted by ``parse`` below. Keep module
+            # extraction non-throwing so malformed input returns a normal
+            # compiler diagnostic rather than an internal pipeline failure.
+            default_span = None
+        if default_span is not None:
+            start, end = default_span
+            while end < len(code) and code[end] in ' ;\t\r\n':
+                end += 1
+            code = code[:start] + code[end:]
         # Local component imports are re-emitted with resolved build URLs by
         # the generator; package imports and ordinary module code remain.
         code = re.sub(
@@ -348,6 +362,17 @@ class ScriptParser:
         Both ``export default { ... }`` and the common
         ``export default defineComponent({ ... })`` form are accepted.
         """
+        # Prefer the structural parser. It cannot be confused by braces in a
+        # string, regular expression, comment, or template literal. The
+        # token-based path below remains as a compatibility fallback when a
+        # project deliberately runs without the Tree-sitter wheels.
+        try:
+            parsed = default_export_object_source(source)
+        except TreeSitterUnavailable:
+            parsed = None
+        if parsed is not None:
+            return parsed
+
         tokens = tokenize_javascript(source)
         for index in range(len(tokens) - 2):
             if tokens[index].value != 'export' or tokens[index + 1].value != 'default':
@@ -552,31 +577,41 @@ class ScriptParser:
                     self.imports.append(ScriptImport(source_path, [imported], alias=alias, line=line))
     
     def _parse_exports(self, source: str):
-        """Parse export statements."""
-        # Default export: export default { ... }
-        default_match = re.search(r'export\s+default\s+({[\s\S]*?})(?=\n\s*\n|\s*$)', source)
-        if default_match:
-            self.exports.append(ScriptExport('default', is_default=True, line=source[:default_match.start()].count('\n') + 1))
-        
-        # Named export: export const X = ...
-        named_pattern = r'export\s+(?:const|let|var|function|class)\s+(\w+)'
-        for match in re.finditer(named_pattern, source):
-            name = match.group(1)
-            self.exports.append(ScriptExport(name, line=source[:match.start()].count('\n') + 1))
-        
-        # Export list: export { X, Y }
-        export_list_pattern = r'export\s*{([^}]+)}'
-        for match in re.finditer(export_list_pattern, source):
-            names_str = match.group(1)
-            for name_part in names_str.split(','):
+        """Parse top-level export statements from the structural AST."""
+        for node in parse_javascript(source).body:
+            if node.kind != "ExportDeclaration":
+                continue
+            statement = node.source.strip().rstrip(";").strip()
+            if re.match(r"export\s+default\b", statement):
+                self.exports.append(ScriptExport("default", is_default=True, line=node.line))
+                continue
+
+            declaration = re.match(
+                r"export\s+(?:async\s+)?(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)",
+                statement,
+            )
+            if declaration:
+                self.exports.append(ScriptExport(declaration.group(1), line=node.line))
+                continue
+
+            export_list = re.match(r"export\s*\{([\s\S]*)\}(?:\s+from\s+['\"][^'\"]+['\"])?$", statement)
+            if not export_list:
+                continue
+            for name_part in export_list.group(1).split(","):
                 name_part = name_part.strip()
-                if ' as ' in name_part:
-                    local, exported = name_part.split(' as ')
-                    self.exports.append(ScriptExport(exported.strip(), local_name=local.strip(), line=source[:match.start()].count('\n') + 1))
-                else:
-                    name = name_part.strip()
-                    if name:
-                        self.exports.append(ScriptExport(name, line=source[:match.start()].count('\n') + 1))
+                if not name_part:
+                    continue
+                pieces = re.split(r"\s+as\s+", name_part, maxsplit=1)
+                local_name = pieces[0].strip()
+                exported_name = pieces[-1].strip()
+                self.exports.append(
+                    ScriptExport(
+                        exported_name,
+                        local_name=local_name if len(pieces) > 1 else None,
+                        is_default=exported_name == "default",
+                        line=node.line,
+                    )
+                )
     
     def _extract_component_name(self, source: str) -> Optional[str]:
         """Extract component name from the script."""

@@ -154,6 +154,32 @@ export default {
 
 then reference it the same way: `<div transition:bounce>`.
 
+## Data and DOM directives
+
+The following opt-in directives are implemented by the shared project runtime:
+
+```html
+<div v-virtual-for="row in rows" :key="row.id" item-height="40" overscan="5">{{ row.name }}</div>
+<div v-memo="record.id + ':' + record.version">{{ record.title }}</div>
+<div v-data-table="{ rows: rows, columns: columns, pageSize: 20 }"></div>
+<section v-scrolly @step="active = $event.detail.name">
+  <article v-step="intro">Intro</article>
+</section>
+<div v-chart-annotation="{ text: note, x: 50 }"></div>
+<div poll="/api/summary" interval="10000" poll-target="summary"></div>
+<div live="wss://example.test/events" live-target="latest"></div>
+<input use:autofocus="{ select: true }">
+```
+
+`v-for` remains the compatible general-purpose loop. `v-virtual-for` uses a
+fixed row-height estimate and stable `:key` to bound DOM work. `v-memo` skips
+unchanged subtrees. `v-scrolly` observes `v-step` children and emits
+`teloce:step`; `v-chart-annotation` creates an accessible overlay. `poll`
+pauses while the page is hidden and retries safely. `live` supports WebSocket
+URLs and named host adapters. `use:` actions receive a DOM node and must
+return cleanup or `{ update, destroy }`. All of these are automatically
+cleaned when the owning branch/component unmounts.
+
 ## Quick reference
 
 | Feature | Original Teloce API | npm-style alias |

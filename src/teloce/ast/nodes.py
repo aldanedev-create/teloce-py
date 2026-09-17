@@ -104,15 +104,21 @@ class ForNode(ASTNode):
     collection: str
     key: str = ""
     children: List[ASTNode] = field(default_factory=list)
+    virtual: bool = False
+    virtual_options: Dict[str, str] = field(default_factory=dict)
     
     def __init__(self, item: str, collection: str, key: str = "",
                  children: List[ASTNode] = None,
-                 line: int = 0, column: int = 0):
+                 line: int = 0, column: int = 0,
+                 virtual: bool = False,
+                 virtual_options: Dict[str, str] = None):
         super().__init__(NodeType.FOR, line, column)
         self.item = item
         self.collection = collection
         self.key = key
         self.children = children or []
+        self.virtual = virtual
+        self.virtual_options = virtual_options or {}
     
     def accept(self, visitor):
         return visitor.visit_for(self)

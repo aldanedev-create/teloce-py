@@ -316,6 +316,27 @@ curl -I https://your-app.vercel.app/static/js/App.js
 
 Check Python version, dependency installation, environment variables, build output, static rewrites, case-sensitive paths, service-worker caches, and external CDN availability. The Vercel build must run the same Teloce build command as local development.
 
+## Data-feature troubleshooting
+
+- If `v-virtual-for` renders nothing, inspect the generated module for
+  `data-teloce-virtual-for`, confirm the collection is an array/object, and
+  give every row a stable `:key`. The container must have a non-zero height
+  and `overflow: auto`.
+- If a table is empty, check that the `v-data-table` value contains `rows` and
+  `columns` and that the shared `data.js` and `table.js` files were deployed
+  beside `teloce-runtime.js`.
+- If a CSV row is wrong, check quoted commas/newlines and enable `strict` plus
+  `onRowError`. Date coercion returns `Date` objects in the browser; serialize
+  them explicitly when sending them back to Python.
+- If `poll` or `live` keeps retrying, inspect the endpoint status, CORS,
+  WebSocket origin policy, and browser network panel. Cleanup is expected on
+  unmount; it does not hide server authorization or transport errors.
+- If `v-memo` appears stale, its key does not include all values read by the
+  subtree. Remove it temporarily, then add a complete key.
+- If static rendering fails, pass a Jinax/Jinja-compatible engine and list
+  every server-rendered child in `components`. Static rendering intentionally
+  does not run browser scripts or discover arbitrary imports.
+
 ## Bug-report checklist
 
 Include Teloce-Py/Python versions, OS, command, first compiler diagnostic, browser console error, failing network request and response, and a minimal `.vel` file. Never include database URLs, cron secrets, cookies, or private data.

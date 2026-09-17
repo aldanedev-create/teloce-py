@@ -1,15 +1,29 @@
 # JavaScript, TypeScript, and production bundling
 
-Teloce's default JavaScript boundary parser is written from scratch in
-`src/teloce/javascript/parser.py`. It is dependency-free and source
-preserving. It tokenizes literals/comments, validates balanced syntax, and
-understands the top-level import/export boundaries needed by `.vel` files.
-It does not claim to be a complete ECMAScript or TypeScript compiler. Teloce
-has a limited compatibility pass for common TypeScript annotations; that pass
-is not type-checking.
+Teloce's default JavaScript boundary parser uses the bundled Tree-sitter
+backend in `src/teloce/javascript/tree_sitter_backend.py`. Teloce keeps the
+stable source-preserving AST and token classes in
+`src/teloce/javascript/parser.py`, so existing integrations do not need to
+change. The legacy parser remains available with `backend="legacy"` for
+constrained environments.
 
-For dependency-free editor and diagnostic tooling, the package also exposes a
-source-preserving language AST:
+The installed parser grammars provide structural JavaScript/JSX and
+TypeScript/TSX syntax analysis. They do not execute code, type-check a
+program, or emit/transpile TypeScript. Teloce still owns the `.vel` component
+model and generated browser runtime.
+
+They are regular Teloce runtime dependencies, so a normal installation is
+enough:
+
+```powershell
+python -m pip install teloce-py
+```
+
+The package declares one compatible version range for `tree-sitter`,
+`tree-sitter-javascript`, and `tree-sitter-typescript`; users do not need to
+install a separate parser package or Node.js just to compile a `.vel` file.
+
+The package exposes a source-preserving language AST:
 
 ```python
 from teloce.javascript import parse_javascript_language
@@ -31,17 +45,17 @@ calls, members, `new`, arrays/objects, spread/rest, unary/binary/assignment,
 conditional, optional-chaining, and update expressions. It does not promise
 support for every current or future ECMAScript proposal.
 
-That distinction matters: Teloce can safely compile its template language
-without forcing a Node toolchain, but full JavaScript language parsing,
-TypeScript type erasure, symbol linking, and industrial dead-code elimination
-are separate compiler jobs.
+That distinction matters: Teloce now performs structural JavaScript and
+TypeScript parsing without forcing a Node toolchain. TypeScript type erasure,
+symbol linking, type checking, and industrial dead-code elimination remain
+separate compiler jobs.
 
-## What the optional packages do
+## What the JavaScript tooling packages do
 
 | Tool | What it provides | Where it fits |
 | --- | --- | --- |
 | TypeScript compiler API (`typescript`) | Microsoft's parser, binder, type checker, emitter, source maps, and language-service data | Full TypeScript/JavaScript analysis and transpilation; normally run in a Node build step |
-| Tree-sitter with JavaScript/TypeScript grammars | Fast incremental concrete syntax trees and error nodes | Editor tooling, syntax-aware transforms, and reliable analysis; it is not a type checker or bundler |
+| Tree-sitter with JavaScript/TypeScript grammars | Fast incremental concrete syntax trees and error nodes | Teloce's bundled syntax backend and editor tooling; it is not a type checker or bundler |
 | SWC (`@swc/core`) | Rust-based JavaScript/TypeScript/JSX parser and transformer | Fast transpilation and syntax lowering in a Node build pipeline |
 | esbuild | Bundling, ESM-aware tree-shaking, code splitting, minification, and source maps | Production asset optimization after Teloce emits JavaScript |
 
@@ -51,7 +65,8 @@ editing, but does not replace semantic type checking. SWC is a transformer,
 while esbuild is the most direct fit for final bundling and tree-shaking.
 
 References: [TypeScript Compiler API](https://github.com/microsoft/TypeScript/wiki/Using-the-Compiler-API),
-[Tree-sitter TypeScript grammars](https://github.com/tree-sitter/tree-sitter-typescript),
+[Tree-sitter JavaScript grammar](https://pypi.org/project/tree-sitter-javascript/),
+[Tree-sitter TypeScript grammars](https://pypi.org/project/tree-sitter-typescript/),
 [SWC parser configuration](https://swc.rs/docs/usage/core), and
 [esbuild tree-shaking and code splitting](https://github.com/evanw/esbuild/blob/main/docs/architecture.md).
 
@@ -97,21 +112,25 @@ the project has configured esbuild as the bundling entry and the syntax is
 within esbuild's supported transform surface. Teloce itself still discovers
 and compiles `.vel` files first.
 
-## Why Teloce currently stays dependency-free
+## Why Teloce bundles Tree-sitter
 
-The from-scratch parser keeps `pip install teloce-py` small and lets Flask,
-Django, FastAPI, and Flaxon projects compile `.vel` components without a
-Node dependency. It is appropriate for Teloce's SFC boundary and diagnostics.
-The compiler must not silently use regexes to decide module boundaries. The
-parser test suite includes semicolon-free modules, nested delimiter failures,
-modern numeric/regex/template literals, arrow functions, spread/rest, and
-postfix updates.
+The bundled parser keeps `pip install teloce-py` independent of Node while
+providing a real structural syntax tree for JavaScript, JSX, TypeScript, and
+TSX. The parser is used for source validation, module boundaries, component
+script diagnostics, and source-preserving AST tooling. Teloce still keeps its
+legacy parser as an explicit compatibility backend:
 
-For applications containing arbitrary modern JavaScript or TypeScript, use a
-separate optional build stage. Keep Teloce responsible for `.vel` templates,
-component metadata, CSS, and runtime generation; give emitted `.js` files to
-esbuild or another approved JavaScript tool. This avoids pretending that a
-small embedded parser can safely rewrite every ECMAScript proposal.
+```python
+from teloce.javascript import parse_javascript
+
+modern = parse_javascript("const value = source?.value ?? 0;")
+legacy = parse_javascript("const value = 1;", backend="legacy")
+```
+
+Tree-sitter does not make Teloce a TypeScript type checker, JavaScript
+transpiler, or full symbol linker. Applications using TypeScript syntax that
+Teloce's compatibility lowering does not erase should use the TypeScript
+compiler or another dedicated emitter before the final browser bundle.
 
 ## Recommended full TypeScript arrangement
 
@@ -123,9 +142,9 @@ For applications that need full TypeScript, use a separate Node build stage:
    hashing, minification, and browser-target selection.
 4. Preserve Teloce diagnostics and map them back to the `.vel` source.
 
-Do not add a TypeScript package just to make a simple `.vel` component work.
-The current supported path is plain JavaScript plus Teloce's dependency-free
-parser.
+Tree-sitter-TypeScript is included for parsing and diagnostics. It does not
+replace the TypeScript compiler when an application needs full type erasure,
+type checking, declaration output, or language-service behavior.
 
 ## Current Teloce commands
 

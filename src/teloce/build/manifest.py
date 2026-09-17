@@ -48,6 +48,7 @@ class ManifestGenerator:
             'asset_aliases': build_result.get('asset_aliases', []),
             'size_warnings': build_result.get('size_warnings', []),
             'build_signature': build_result.get('build_signature'),
+            'components': build_result.get('components', {}),
         }
         
         for file_info in build_result.get('files', []):

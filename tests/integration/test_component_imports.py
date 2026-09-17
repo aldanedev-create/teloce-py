@@ -215,6 +215,27 @@ def test_generated_css_is_present_in_the_asset_map():
         assert result["asset_map"]["static/js/App.css"] == "static/js/App.css"
 
 
+def test_manifest_keeps_duplicate_component_stems_discoverable():
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        (root / "static" / "js" / "pages").mkdir(parents=True)
+        (root / "static" / "js" / "App.vel").write_text(
+            "<template><main>Root</main></template>", encoding="utf-8"
+        )
+        (root / "static" / "js" / "pages" / "App.vel").write_text(
+            "<template><main>Page</main></template>", encoding="utf-8"
+        )
+
+        result = Builder({"dev": True, "clean": True}).build(root)
+
+        assert result["failed"] == 0, result["errors"]
+        assert set(result["components"]) == {
+            "App",
+            "App@static/js/pages/App.vel",
+        }
+        assert result["components"]["App@static/js/pages/App.vel"]["name"] == "App"
+
+
 def test_custom_static_directory_copies_non_component_assets():
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)

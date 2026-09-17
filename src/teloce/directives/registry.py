@@ -54,6 +54,10 @@ class DirectiveRegistry:
         from teloce.directives.show import ShowDirective
         from teloce.directives.if_ import IfDirective
         from teloce.directives.for_ import ForDirective
+        from teloce.directives.advanced import (
+            VirtualForDirective, MemoDirective, ScrollyDirective, StepDirective,
+            AnnotationDirective, PollDirective, LiveDirective, UseDirective,
+        )
         
         self.register(EventDirective())
         self.register(ModelDirective())
@@ -61,6 +65,12 @@ class DirectiveRegistry:
         self.register(ShowDirective())
         self.register(IfDirective())
         self.register(ForDirective())
+        for directive in (
+            VirtualForDirective(), MemoDirective(), ScrollyDirective(),
+            StepDirective(), AnnotationDirective(), PollDirective(),
+            LiveDirective(), UseDirective(),
+        ):
+            self.register(directive)
     
     def clear(self):
         """Clear all directives."""

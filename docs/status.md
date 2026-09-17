@@ -18,7 +18,10 @@ toolchain.
 | Router and lifecycle cleanup | Supported | Router is client navigation, not authorization. |
 | HMR | Development feature | Never expose the HMR endpoint in production. |
 | SSR/static output | Supported with Jinax/Jinja-compatible engines | Browser events still hydrate on the client. |
-| Built-in JavaScript parser | Supported analysis surface | Not a complete ECMAScript or TypeScript compiler. |
+| `$attrs` and automatic local component registration | Supported | Importing a local `.vel` is enough; explicit `components` remains compatible. |
+| Virtual lists, memo, data tables, CSV, URL state, polling, live, actions | Supported in shared-runtime project builds | `v-for` remains supported; these are opt-in APIs with browser capability requirements. |
+| Static child components and embed output | Supported | Server rendering is allow-listed and never executes component scripts. |
+| Built-in JavaScript parser | Tree-sitter JavaScript/JSX and TypeScript/TSX syntax analysis, with a legacy fallback | Not a type checker or complete TypeScript/JavaScript emitter. |
 | Symbol-level bundling/tree-shaking | Optional | Use esbuild for industrial JavaScript bundling. |
 | TypeScript | Limited compatibility pass | Common annotations are stripped; use TypeScript/SWC for full syntax and type-checking. |
 

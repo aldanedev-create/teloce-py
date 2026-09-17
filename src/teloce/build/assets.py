@@ -24,7 +24,7 @@ class AssetManager:
             '.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg',
             '.ico', '.webp', '.woff', '.woff2', '.ttf', '.eot',
             '.mp3', '.mp4', '.webm', '.ogg', '.pdf', '.json',
-            '.xml', '.txt', '.md',
+            '.xml', '.txt', '.md', '.csv', '.tsv',
         }
     
     def copy_assets(self, source_dir: str | Path, dest_dir: str | Path,

@@ -334,6 +334,27 @@ class Lexer:
                     self.advance()
                 self._tokenize_attribute_value()
                 continue
+            # Colon-bearing action attributes are not ordinary identifiers.
+            # Keep the complete name so the AST/runtime can support multiple
+            # actions on one element (``use:focus use:drag``).
+            if self.source.startswith('use:', self.position):
+                start = self.position
+                for _ in range(4):
+                    self.advance()
+                while self.position < len(self.source) and (
+                    self.current_char().isalnum() or self.current_char() in '-_.:$'
+                ):
+                    self.advance()
+                self.tokens.append(Token(
+                    TokenType.ATTRIBUTE_NAME,
+                    self.source[start:self.position],
+                    self.line,
+                    self.column - (self.position - start),
+                ))
+                if self.current_char() == '=':
+                    self.advance()
+                    self._tokenize_attribute_value()
+                continue
             transition_prefix = self._peek_transition_prefix()
             if transition_prefix:
                 start = self.position

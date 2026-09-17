@@ -1,0 +1,24 @@
+<template>
+  <article class="metric-card" v-bind="$attrs">
+    <p class="metric-label">{{ title }}</p>
+    <strong class="metric-value">{{ value | number }}</strong>
+    <small>{{ hint }}</small>
+  </article>
+</template>
+
+<script>
+export default {
+  props: {
+    title: { type: String, required: true },
+    value: { type: Number, default: 0 },
+    hint: { type: String, default: "From the current dataset" }
+  }
+};
+</script>
+
+<style scoped>
+.metric-card { padding: 1rem; border: 1px solid #d7e2ee; border-radius: 1rem; background: #ffffff; }
+.metric-label { margin: 0; color: #5b6b7d; font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; }
+.metric-value { display: block; margin: .25rem 0; color: #182536; font-size: 1.8rem; }
+.metric-card small { color: #6e7f91; }
+</style>

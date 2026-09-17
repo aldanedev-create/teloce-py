@@ -22,6 +22,7 @@ __pycache__/
 .demo-chrome-shared/
 .demo-chrome-shared2/
 .demo-edge-profile/
+.release-check/
 
 # C extensions
 *.so

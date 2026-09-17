@@ -182,6 +182,8 @@ class Compiler:
         # canonical template AST avoids parsing the AST as if it were text.
         ast = component.template
 
+        self._validate_runtime_features(ast, filename)
+
         ast = self._run_plugin_hooks("before_transform", ast)
 
         # Step 2: Transformation
@@ -233,6 +235,51 @@ class Compiler:
             "component": component,
             "success": not self.diagnostics.has_errors(),
         }
+
+    def _validate_runtime_features(self, nodes: list[Any], filename: str) -> None:
+        """Emit actionable warnings for opt-in runtime features."""
+        from teloce.ast.nodes import ForNode, IfNode, ElementNode
+
+        def visit(node: Any) -> None:
+            if isinstance(node, ForNode) and node.virtual and not node.key:
+                self.diagnostics.add(
+                    DiagnosticLevel.WARNING,
+                    "virtual-for works best with a stable :key; index identity can lose focus and input state when rows change.",
+                    filename=filename,
+                    line=node.line,
+                    column=node.column,
+                    code="W2001",
+                    suggestions=["Add :key=\"item.id\" (or another stable unique key) to the virtual loop."],
+                )
+            if isinstance(node, ElementNode) and node.attributes.get("live") and not str(node.attributes.get("live", "")).lower().startswith(("ws:", "wss:")):
+                self.diagnostics.add(
+                    DiagnosticLevel.INFO,
+                    "live uses a named adapter unless its value is a ws:// or wss:// URL.",
+                    filename=filename,
+                    line=node.line,
+                    column=node.column,
+                    code="I2001",
+                )
+            if isinstance(node, ElementNode):
+                for attribute in node.attributes:
+                    if attribute.startswith("use:") and not re.fullmatch(r"use:[A-Za-z_$][\w$]*", attribute):
+                        self.diagnostics.add(
+                            DiagnosticLevel.WARNING,
+                            f"Action name {attribute[4:]!r} is not a JavaScript identifier and cannot be registered from the component script.",
+                            filename=filename,
+                            line=node.line,
+                            column=node.column,
+                            code="W2002",
+                            suggestions=["Rename it to use:actionName or expose it through globalThis."],
+                        )
+            for child in getattr(node, "children", []) or []:
+                visit(child)
+            if isinstance(node, IfNode):
+                for child in node.else_children:
+                    visit(child)
+
+        for node in nodes:
+            visit(node)
 
     def _run_plugin_hooks(self, name: str, value: Any) -> Any:
         """Run optional plugin hooks without making plugins mandatory."""

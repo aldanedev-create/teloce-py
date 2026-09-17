@@ -172,7 +172,7 @@ class Builder:
             # scheduler dependency beside the barrel so generated components
             # can use ``signal()``/``effect()`` without per-component setup.
             runtime_package = package_files("teloce.runtime")
-            for runtime_name in ("scheduler.js", "signals.js"):
+            for runtime_name in ("scheduler.js", "signals.js", "data.js", "table.js"):
                 runtime_module_path = runtime_path.parent / runtime_name
                 runtime_module_source = runtime_package.joinpath(runtime_name).read_text(encoding="utf-8")
                 if self.options.get('minify', False):
@@ -235,6 +235,9 @@ class Builder:
                     'file': str(vel_file),
                     'error': str(e),
                 })
+
+        results['components'] = self._component_manifest(vel_files, results)
+        self._write_css_bundle(results)
         
         # Copy assets
         assets_copied = self.assets.copy_assets(
@@ -413,6 +416,83 @@ class Builder:
         
         return results
 
+    def _component_manifest(self, vel_files: List[Path], results: Dict[str, Any]) -> Dict[str, Any]:
+        """Build a predictable component discovery manifest.
+
+        The manifest records source-to-output relationships without making the
+        browser runtime discover files dynamically. This is useful to editors,
+        diagnostics, asset audits, and future bundlers.
+        """
+        by_input = {str(item.get('input')): item for item in results.get('files', []) if item.get('input')}
+        components: Dict[str, Any] = {}
+        lazy = {str(item) for item in self.options.get('lazy_components', []) or []}
+        for path in vel_files:
+            source_name = path.relative_to(self.root_dir).as_posix()
+            item = by_input.get(source_name)
+            if not item:
+                continue
+            name = path.stem
+            manifest_name = name
+            if manifest_name in components:
+                # Two folders may legitimately contain ``Card.vel`` (for
+                # example ``admin/Card.vel`` and ``site/Card.vel``). Keep the
+                # convenient short key for the first component, then use a
+                # stable source-qualified key instead of silently overwriting
+                # the earlier manifest entry.
+                manifest_name = f"{name}@{source_name}"
+                suffix = 2
+                while manifest_name in components:
+                    manifest_name = f"{name}@{source_name}#{suffix}"
+                    suffix += 1
+            output = str(item.get('output', ''))
+            css_candidate = output[:-3] + '.css' if output.endswith('.js') else ''
+            css = css_candidate if css_candidate and (self.out_dir / css_candidate).is_file() else None
+            imports = sorted(self.dependency_graph.get_dependencies(source_name))
+            components[manifest_name] = {
+                'name': name,
+                'source': source_name,
+                'js': output,
+                'css': css,
+                'imports': imports,
+                'lazy': name in lazy,
+            }
+        return components
+
+    def _write_css_bundle(self, results: Dict[str, Any]) -> None:
+        """Write one deduplicated stylesheet for extracted component CSS.
+
+        Individual component CSS files remain available for tooling and
+        debugging. The generated entrypoint links the aggregate once, which
+        prevents duplicate rules when several pages import the same component.
+        """
+        if not self.extract_css or not self.out_dir or self.options.get('css_bundle', True) is False:
+            return
+        styles = []
+        seen = set()
+        for item in results.get('files', []):
+            output = str(item.get('output', ''))
+            if not output.endswith('.css') or str(item.get('input', '')).startswith('<'):
+                continue
+            path = self.out_dir / output
+            if not path.is_file():
+                continue
+            content = path.read_text(encoding='utf-8').strip()
+            if content and content not in seen:
+                seen.add(content)
+                styles.append(content)
+        if not styles:
+            return
+        content = '\n'.join(styles) + '\n'
+        filename = 'styles.css'
+        if self.hash_assets:
+            filename = f"styles.{hashlib.sha256(content.encode('utf-8')).hexdigest()[:8]}.css"
+        path = self.out_dir / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding='utf-8')
+        relative = path.relative_to(self.out_dir).as_posix()
+        results['files'].append({'input': '<component-css-bundle>', 'output': relative, 'size': path.stat().st_size})
+        self.assets.asset_map[f"{self.options.get('static_dir', 'static').strip('/\\')}/styles.css"] = relative
+
     def _spa_enabled(self, pages_relative: str) -> bool:
         """Resolve the SPA setting without making normal apps configure routes.
 
@@ -497,7 +577,7 @@ class Builder:
         # entries on the next development build.
         try:
             runtime_package = package_files("teloce.runtime")
-            for runtime_name in ("scheduler.js", "signals.js", "compiled.js"):
+            for runtime_name in ("scheduler.js", "signals.js", "data.js", "table.js", "compiled.js"):
                 digest.update(runtime_name.encode("utf-8"))
                 digest.update(runtime_package.joinpath(runtime_name).read_bytes())
         except OSError:
@@ -552,6 +632,8 @@ class Builder:
             + '\nexport { __safeEvaluate, __runEventExpression, __setSafePath };\n'
             + 'export { createSignal, createComputed, createEffect, createMemo, batch, untracked, isSignal, isComputed, toSignal, getValue } from "./signals.js";\n'
             + 'export { createSignal as signal, createComputed as computed, createEffect as effect } from "./signals.js";\n'
+            + 'export * from "./data.js";\n'
+            + 'export * from "./table.js";\n'
         )
         return self._minify_generated_js(runtime_source) if self.options.get("minify", False) else runtime_source
 
@@ -746,6 +828,13 @@ class Builder:
         """Return generated stylesheet paths for the build entrypoint."""
         if not self.out_dir:
             return []
+        aggregate = sorted(
+            path.relative_to(self.out_dir).as_posix()
+            for path in self.out_dir.rglob('styles*.css')
+            if path.is_file()
+        )
+        if aggregate:
+            return aggregate
         return sorted(
             path.relative_to(self.out_dir).as_posix()
             for path in self.out_dir.rglob('*.css')
@@ -763,6 +852,19 @@ class Builder:
         html = re.sub(r"\{\{\s*url_for\(['\"]static['\"],\s*filename=['\"]([^'\"]+)['\"]\)\s*\}\}", r"/static/\1", html)
         html = re.sub(r"\{\%\s*static\s+['\"]([^'\"]+)['\"]\s*\%\}", r"/static/\1", html)
         html = re.sub(r"\{\{\s*url_for\(['\"]static['\"],\s*path=['\"]([^'\"]+)['\"]\)\s*\}\}", r"/static/\1", html)
+        embed = self.options.get('embed') or {}
+        if isinstance(embed, bool):
+            embed = {'enabled': embed}
+        if embed.get('enabled'):
+            if embed.get('remove_chrome', True):
+                html = re.sub(r'<(?:header|nav|footer)\b[^>]*>[\s\S]*?</(?:header|nav|footer)>', '', html, flags=re.I)
+                html = re.sub(r'<[^>]+data-teloce-chrome(?:="[^"]*")?[^>]*>[\s\S]*?</[^>]+>', '', html, flags=re.I)
+            ratio = str(embed.get('aspect_ratio', '16/9')).strip()
+            if not re.fullmatch(r'\d+(?:\.\d+)?\s*/\s*\d+(?:\.\d+)?', ratio):
+                raise ValueError("embed.aspect_ratio must be a safe ratio such as '16/9'")
+            embed_style = f'<style data-teloce-embed>html,body{{margin:0;min-height:100%;}}#app{{width:100%;aspect-ratio:{ratio};overflow:hidden;}}</style>'
+            embed_script = '<script>if (typeof ResizeObserver === "function") new ResizeObserver(entries=>parent!==window&&parent.postMessage({type:"teloce:embed-resize",height:entries[0].contentRect.height},"*")).observe(document.documentElement)</script>'
+            html = embed_style + embed_script + '\n' + html
         for source_name, output_name in sorted(self.assets.asset_map.items(), key=lambda item: len(item[0]), reverse=True):
             html = html.replace(f"/{source_name}", f"/{output_name}")
             html = html.replace(f"'{source_name}'", f"'{output_name}'").replace(f'"{source_name}"', f'"{output_name}"')

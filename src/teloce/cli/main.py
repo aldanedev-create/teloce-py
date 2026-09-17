@@ -17,6 +17,7 @@ from teloce.cli.lint import lint_command
 from teloce.cli.create import create_command
 from teloce.cli.benchmark import benchmark_command
 from teloce.cli.compile import compile_command
+from teloce.cli.component import component_command
 from teloce.version import __version__
 
 
@@ -110,6 +111,21 @@ def main(args: Optional[list] = None) -> int:
     compile_parser.add_argument('-o', '--output', help='JavaScript output path (default: next to source)')
     compile_parser.add_argument('--source-map', action='store_true', help='Write a source map')
     compile_parser.add_argument('--json', action='store_true', help='Print structured diagnostics as JSON')
+
+    component_parser = subparsers.add_parser('component', help='Check, build, or test one .vel component')
+    component_subparsers = component_parser.add_subparsers(dest='component_command', required=True)
+    for name, help_text in (
+        ('check', 'Parse and validate a component'),
+        ('build', 'Compile a component to JavaScript'),
+        ('test', 'Compile and syntax-check generated JavaScript'),
+    ):
+        command_parser = component_subparsers.add_parser(name, help=help_text)
+        command_parser.add_argument('source', help='Path to a .vel component')
+        command_parser.add_argument('-o', '--output', help='Output JavaScript path for build/test')
+        command_parser.add_argument('--source-map', action='store_true')
+        command_parser.add_argument('--json', action='store_true')
+        if name == 'test':
+            command_parser.add_argument('--browser', action='store_true', help='Also document the project browser harness')
     build_parser.add_argument(
         '--no-clean',
         action='store_true',
@@ -287,6 +303,7 @@ def main(args: Optional[list] = None) -> int:
         'create': create_command,
         'benchmark': benchmark_command,
         'compile': compile_command,
+        'component': component_command,
     }
     
     command_func = command_map.get(parsed_args.command)

@@ -9,3 +9,5 @@ export * from './effects.js';
 export * from './computed.js';
 export * from './lifecycle.js';
 export * from './slots.js';
+export * from './data.js';
+export * from './table.js';

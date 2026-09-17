@@ -179,3 +179,47 @@ staff-only JSON endpoint.
 interfaces, assertions, and simple enums. It is not full TypeScript checking.
 Run `npx tsc --noEmit` for diagnostics and use esbuild/SWC for advanced
 TypeScript or `.ts` browser modules. See [JavaScript and TypeScript tooling](javascript-typescript-tooling.md).
+
+## Data and large-dataset APIs
+
+Project builds copy browser data helpers beside the shared runtime:
+
+```js
+import { loadCsv, parseDelimited, downloadRowsAsCsv, exportChartToPng } from "../teloce-runtime.js";
+```
+
+`loadCsv(url, options)` parses CSV or TSV and supports `headers`, `delimiter`,
+`tsv`, `types`, `strict`, and `onRowError`. `to_frontend_data(records, fields)`
+is the Python-side equivalent for mappings, dataclasses, tuple rows, and a
+pandas DataFrame when pandas is already part of the host application. pandas
+is optional and is not installed with Teloce. A supplied field schema is also
+an allow-list for backend-only columns.
+
+Use `v-virtual-for="row in rows" :key="row.id" item-height="40"` for bounded
+DOM rendering. Existing `v-for` remains the normal list API. `v-memo` skips a
+subtree when its evaluated key is unchanged. `v-data-table` attaches the
+shared sortable/filterable table helper; the direct `createDataTable(element,
+options)` API returns `setRows`, `getVisibleRows`, `exportCsv`, and `unmount`.
+
+## Story, live, and DOM behavior
+
+`v-scrolly` observes child `v-step` elements and emits `teloce:step`.
+`v-chart-annotation` adds an accessible overlay to a chart container.
+`poll="/api/data" interval="10000" poll-target="state.path"` fetches JSON
+with visibility pausing, abort cleanup, and bounded retry delay. `live` accepts
+a `ws:`/`wss:` URL or a name in `globalThis.__teloceLiveAdapters`; WebSocket
+connections reconnect with backoff and are closed on unmount.
+
+`use:name="params"` calls an action with the actual DOM element. Return a
+cleanup function or `{ update(next), destroy() }`. Timers, observers, event
+listeners, sockets, action cleanups, and child instances are disposed when a
+component or branch is removed.
+
+## Static components and embed mode
+
+`await render_static_component(source, context, components={...}, engine=...)`
+expands only explicitly allow-listed child `.vel` templates through a
+Jinax/Jinja-compatible engine. It does not execute component scripts or follow
+imports from markup. Set `build.embed.enabled` in `teloce.config.json` to
+produce an iframe-friendly entrypoint with a validated aspect ratio and
+optional chrome removal.

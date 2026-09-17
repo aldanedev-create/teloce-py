@@ -152,6 +152,21 @@ const doubled = createComputed(() => count() * 2);
 Use scoped styles for component rules and global CSS for resets, fonts, and
 design tokens. Never use `v-html` with unsanitized user content.
 
+## 7a. Data-heavy UI
+
+```html
+<div v-virtual-for="row in rows" :key="row.id" item-height="40">{{ row.name }}</div>
+<div v-data-table="{ rows: rows, columns: columns, pageSize: 20 }"></div>
+<section v-scrolly @step="active = $event.detail.name">
+  <article v-step="intro">Intro</article>
+</section>
+```
+
+Use `v-for` for ordinary lists and opt into `v-virtual-for` for large lists.
+Use `v-memo` only when its key includes every value the subtree reads. Load
+CSV with `loadCsv` from the shared runtime, shape server records with
+`to_frontend_data`, and use `poll`/`live` only with secured API endpoints.
+
 ## 8. Python page shell
 
 ```html

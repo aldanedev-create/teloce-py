@@ -163,11 +163,41 @@ const __teloceLazy = loader => {
   };
 };
 
+// Small, dependency-free browser primitives used by generated components.
+// They live in the shared runtime so a project does not ship a copy per
+// component.
+const __teloceSplitArguments = source => {
+  const result = [];
+  let start = 0;
+  let depth = 0;
+  let quote = "";
+  let escaped = false;
+  const text = String(source ?? "");
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === quote) quote = "";
+    } else if (["'", '"', "`"] .includes(character)) quote = character;
+    else if ("([{".includes(character)) depth += 1;
+    else if (")]}`".includes(character)) depth = Math.max(0, depth - 1);
+    else if (character === "," && depth === 0) {
+      result.push(text.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  if (text.slice(start).trim()) result.push(text.slice(start).trim());
+  return result;
+};
+
 const __teloceCreateCompiledComponent = (definition, options = {}) => {
   const template = String(options.template ?? "");
   const camelizeProp = name => String(name).replace(/-([a-z])/g, (_, character) => character.toUpperCase());
   const components = options.components || {};
   const filters = options.filters || {};
+  const actions = options.actions || definition?.actions || {};
+  const tableFactory = options.table || definition?.table;
   const style = String(options.style ?? "");
   const styleId = String(options.styleId ?? definition?.name ?? "component");
   const styleClasses = options.styleClasses || {};
@@ -188,7 +218,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
         const filter = match && filters[match[1]];
         if (typeof filter === "function") {
           value = filter(value, ...(argumentsSource
-            ? argumentsSource.split(",").map(argument => __safeEvaluate(argument, scope || {}))
+            ? __teloceSplitArguments(argumentsSource).map(argument => __safeEvaluate(argument, scope || {}))
             : []));
         }
       }
@@ -233,7 +263,31 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     // node and leave a stale boolean attribute behind.
     element.__teloceManagedAttributes ||= new Set();
     element.__teloceManagedAttributes.add(name);
-    if (name === "class") {
+    if (name === "attrs") {
+      const previous = element.__teloceForwardedAttrs || new Set();
+      const next = value && typeof value === "object" ? value : {};
+      const applied = new Set();
+      for (const attribute of previous) if (!(attribute in next)) {
+        if (attribute === "class" && element.__teloceStaticClass) element.setAttribute("class", element.__teloceStaticClass);
+        else element.removeAttribute(attribute);
+      }
+      for (const [attribute, nextValue] of Object.entries(next)) {
+        // Component internals must not leak Teloce bookkeeping attributes.
+        if (attribute.startsWith("data-teloce-") || attribute === "children") continue;
+        if (attribute === "class") {
+          const staticClass = element.getAttribute("data-teloce-static-class") ?? element.__teloceStaticClass ?? element.className ?? "";
+          element.__teloceStaticClass = staticClass;
+          const merged = [staticClass, mapClass(nextValue)].filter(Boolean).join(" ");
+          element.setAttribute("class", merged);
+        } else if (attribute === "style" && nextValue && typeof nextValue === "object") {
+          for (const [property, propertyValue] of Object.entries(nextValue)) element.style[property] = propertyValue ?? "";
+        } else if (nextValue === false || nextValue == null) element.removeAttribute(attribute);
+        else if ((attribute === "href" || attribute === "src" || attribute === "action" || attribute === "formaction") && isDangerousUrl(nextValue)) element.removeAttribute(attribute);
+        else element.setAttribute(attribute, String(nextValue));
+        if (nextValue !== false && nextValue != null) applied.add(attribute);
+      }
+      element.__teloceForwardedAttrs = applied;
+    } else if (name === "class") {
       const staticClass = element.getAttribute("data-teloce-static-class") ?? element.__teloceStaticClass ?? element.className ?? "";
       element.__teloceStaticClass = staticClass;
       element.className = [staticClass, String(mapClass(value) ?? "").trim()].filter(Boolean).join(" ");
@@ -361,12 +415,41 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     return result;
   };
 
+  // Virtual loops are opt-in. Normal ``v-for`` remains the compatibility
+  // path; this renderer only materializes the visible window and keeps the
+  // full collection out of the DOM.
+  const renderVirtualForBlocks = (source, scope) => {
+    let result = String(source ?? "");
+    let start = result.indexOf("<virtual-for ");
+    while (start >= 0) {
+      const openingEnd = result.indexOf(">", start);
+      if (openingEnd < 0) break;
+      const opening = result.slice(start, openingEnd + 1);
+      const closeStart = result.indexOf("</virtual-for>", openingEnd + 1);
+      if (closeStart < 0) break;
+      const body = result.slice(openingEnd + 1, closeStart);
+      const attr = name => opening.match(new RegExp(`\\b${name}="([^"]*)"`))?.[1] ?? "";
+      const item = attr("item") || "item";
+      const collection = attr("in") || attr("collection");
+      const key = attr("key") || "index";
+      const itemHeight = attr("item-height") || "40";
+      const overscan = attr("overscan") || "5";
+      const minHeight = attr("min-height") || "";
+      const bodySource = encodeURIComponent(body);
+      const wrapper = `<div class="teloce-virtual-list" data-teloce-virtual-for="true" data-teloce-virtual-item="${__teloceEscapeAttribute(item)}" data-teloce-virtual-collection="${__teloceEscapeAttribute(collection)}" data-teloce-virtual-key="${__teloceEscapeAttribute(key)}" data-teloce-virtual-item-height="${__teloceEscapeAttribute(itemHeight)}" data-teloce-virtual-overscan="${__teloceEscapeAttribute(overscan)}" data-teloce-virtual-min-height="${__teloceEscapeAttribute(minHeight)}" data-teloce-virtual-body="${__teloceEscapeAttribute(bodySource)}"><div class="teloce-virtual-spacer"></div><div class="teloce-virtual-content"></div></div>`;
+      result = result.slice(0, start) + wrapper + result.slice(closeStart + 14);
+      start = result.indexOf("<virtual-for ", start + wrapper.length);
+    }
+    return result;
+  };
+
   const renderTemplate = (source, scope, loopScopes = new Map()) => {
     let output = String(source ?? "");
     output = output.replace(/<slot\b([^>]*)>\s*<\/slot>/g, (_, attributes) => {
       const name = attributes.match(/(?:^|\s)name="([^"]*)"/)?.[1] || "default";
       return scope.__slots?.[name] || "";
     });
+    output = renderVirtualForBlocks(output, scope);
     output = renderForBlocks(output, scope, loopScopes);
     output = resolveIfBlocks(output, scope);
     output = output.replace(/<([A-Za-z][\w:-]*)([^>]*?)v-if="([^"]+)"([^>]*)>([\s\S]*?)<\/\1>/g,
@@ -376,6 +459,10 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       const value = evaluate(__teloceDecodeAttribute(expression), scope);
       const serialized = __teloceEscapeAttribute(JSON.stringify(value === undefined ? null : value));
       return name === "key" ? `data-teloce-key="${serialized}"` : `data-teloce-resolved-${name}="${serialized}"`;
+    });
+    output = output.replace(/\bv-memo="([^"]*)"/g, (_, expression) => {
+      const value = evaluate(__teloceDecodeAttribute(expression), scope);
+      return `data-teloce-memo="${__teloceEscapeAttribute(JSON.stringify(value === undefined ? null : value))}"`;
     });
     output = output.replace(/v-model="([^"]*)"/g, (_, expression) => `data-teloce-model="${__teloceEscapeAttribute(expression)}"`);
     output = output.replace(/v-on:([\w.-]+)="([^"]*)"/g, (_, name, expression) => `data-teloce-event-${name}="${__teloceEscapeAttribute(expression)}"`);
@@ -394,6 +481,8 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       }
     }
     const props = { __slots: slots };
+    const forwarded = {};
+    const declaredNames = new Set(Object.keys(definition?.props || {}).map(camelizeProp));
     const attributes = Array.from(element.attributes || []);
     // `applyBinding` mirrors dynamic component props onto a normal HTML
     // attribute for compatibility and inspection. That mirror is a string
@@ -414,11 +503,25 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
         try { props[propName] = JSON.parse(attribute.value); } catch (_) { props[propName] = attribute.value; }
       } else if (name.startsWith("data-teloce-bind-")) {
         const propName = camelizeProp(name.slice("data-teloce-bind-".length));
-        props[propName] = evaluate(__teloceDecodeAttribute(attribute.value), parentState);
+        const value = evaluate(__teloceDecodeAttribute(attribute.value), parentState);
+        props[propName] = value;
+        if (propName !== "attrs") forwarded[propName] = value;
       } else if (!name.startsWith("data-") && !resolvedPropNames.has(name)) {
         props[camelizeProp(name)] = attribute.value;
+        if (!declaredNames.has(camelizeProp(name))) forwarded[name] = attribute.value;
       }
     }
+    // Preserve semantic parent attributes for an explicit ``$attrs`` bind.
+    // Teloce bookkeeping attributes and declared dynamic prop mirrors are
+    // excluded from the forwarded set.
+    for (const attribute of attributes) {
+      const name = attribute.name;
+      if (name === "class" || name === "id" || name.startsWith("aria-") || name.startsWith("data-")) {
+        if (!name.startsWith("data-teloce-") && !declaredPropNames.has(camelizeProp(name))) forwarded[name] = attribute.value;
+      }
+    }
+    props.$attrs = forwarded;
+    props.__attrs = forwarded;
     return props;
   };
 
@@ -435,6 +538,22 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       try { record.cleanup?.(); record.directive?.destroy?.(element, record.context); } catch (_) {}
     }
     element.__teloceDirectives?.clear?.();
+    for (const record of element.__teloceActions?.values?.() || []) {
+      try { record.destroy?.(); } catch (error) { handleError(error, "action:destroy"); }
+    }
+    element.__teloceActions?.clear?.();
+    try { element.__teloceScrollyCleanup?.(); } catch (_) {}
+    element.__teloceScrollyCleanup = null;
+    try { element.__teloceLiveCleanup?.(); } catch (_) {}
+    element.__teloceLiveCleanup = null;
+    try { element.__telocePollCleanup?.(); } catch (_) {}
+    element.__telocePollCleanup = null;
+    try { element.__teloceAnnotationCleanup?.(); } catch (_) {}
+    element.__teloceAnnotationCleanup = null;
+    try { element.__teloceVirtualCleanup?.(); } catch (_) {}
+    element.__teloceVirtualCleanup = null;
+    try { element.__teloceDataTable?.instance?.unmount?.(); } catch (error) { handleError(error, "data-table:destroy"); }
+    element.__teloceDataTable = null;
   };
 
   let target = null;
@@ -462,6 +581,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
 
   const rawData = typeof definition?.data === "function" ? definition.data() || {} : {};
   const propDefinitions = definition?.props || {};
+  const queryState = definition?.queryState || {};
   const normalizeProps = input => {
     const output = { ...(input || {}) };
     for (const [name, descriptorValue] of Object.entries(propDefinitions)) {
@@ -485,6 +605,9 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
 
   state = __createReactive({ ...rawData, ...normalizeProps(options.props || {}) }, requestUpdate);
   suppressUpdates = true;
+  const declaredPropNames = new Set(Object.keys(propDefinitions));
+  const incomingAttrs = options.props?.$attrs || options.props?.__attrs || {};
+  state.$attrs = Object.fromEntries(Object.entries(incomingAttrs).filter(([name]) => !declaredPropNames.has(camelizeProp(name)) && !name.startsWith("data-teloce-")));
   for (const [name, method] of Object.entries(definition?.methods || {})) {
     if (typeof method === "function") state[name] = (...args) => method.apply(state, args);
   }
@@ -496,6 +619,40 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
   state.$emit = (name, detail) => target?.dispatchEvent?.(new CustomEvent(`teloce:${name}`, { detail, bubbles: true }));
   suppressUpdates = false;
 
+  const parseQueryValue = (raw, definition) => {
+    if (raw == null) return undefined;
+    const type = typeof definition === "string" ? definition : definition?.type;
+    if (type === "number") { const number = Number(raw); return Number.isFinite(number) ? number : undefined; }
+    if (type === "boolean" || type === "Boolean") return raw === "1" || raw === "true";
+    if (type === "json" || type === "array") { try { return JSON.parse(raw); } catch (_) { return undefined; } }
+    return raw;
+  };
+  const queryKey = (name, config) => typeof config === "string" ? config : config?.key || name;
+  const hydrateQueryState = () => {
+    if (typeof window === "undefined" || !window.location?.search) return;
+    const params = new URLSearchParams(window.location.search);
+    suppressUpdates = true;
+    try { for (const [name, config] of Object.entries(queryState)) { const value = parseQueryValue(params.get(queryKey(name, config)), config); if (value !== undefined) state[name] = value; } }
+    finally { suppressUpdates = false; }
+  };
+  const syncQueryState = () => {
+    if (typeof window === "undefined" || !window.history?.replaceState || !queryState || !Object.keys(queryState).length) return;
+    const url = new URL(window.location.href);
+    for (const [name, config] of Object.entries(queryState)) {
+      const key = queryKey(name, config);
+      const value = state[name];
+      if (value == null || value === "" || (Array.isArray(value) && !value.length)) url.searchParams.delete(key);
+      else url.searchParams.set(key, typeof value === "object" ? JSON.stringify(value) : String(value));
+    }
+    window.history.replaceState(window.history.state, "", url);
+  };
+  hydrateQueryState();
+  const onPopState = () => { hydrateQueryState(); requestUpdate(); };
+  let queryListenerActive = false;
+  const registerQueryListener = () => {
+    if (!queryListenerActive && typeof window !== "undefined" && Object.keys(queryState).length) { window.addEventListener("popstate", onPopState); queryListenerActive = true; }
+  };
+
   const initialData = () => ({ ...rawData, ...normalizeProps({}) });
   const watchValue = name => String(name).split(".").reduce((value, key) => value == null ? undefined : value[key], state);
   const callHook = (name, ...args) => {
@@ -506,6 +663,319 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       if (result?.then) result.catch(error => handleError(error, name));
       return result;
     } catch (error) { handleError(error, name); }
+  };
+
+  const readActionParams = expression => expression && expression.trim()
+    ? evaluate(__teloceDecodeAttribute(expression), state)
+    : undefined;
+
+  const renderVirtualList = element => {
+    const signature = [
+      element.getAttribute("data-teloce-virtual-collection"),
+      element.getAttribute("data-teloce-virtual-key"),
+      element.getAttribute("data-teloce-virtual-item-height"),
+      element.getAttribute("data-teloce-virtual-overscan"),
+      element.getAttribute("data-teloce-virtual-min-height"),
+      element.getAttribute("data-teloce-virtual-body"),
+    ].join("\u0000");
+    if (element.__teloceVirtualRender && element.__teloceVirtualSignature === signature) {
+      element.__teloceVirtualRender();
+      return;
+    }
+    if (element.__teloceVirtualCleanup) element.__teloceVirtualCleanup();
+    const content = element.querySelector(".teloce-virtual-content");
+    const spacer = element.querySelector(".teloce-virtual-spacer");
+    if (!content || !spacer) return;
+    const bodySource = element.getAttribute("data-teloce-virtual-body") || "";
+    const body = decodeURIComponent(bodySource);
+    const itemName = element.getAttribute("data-teloce-virtual-item") || "item";
+    const collectionExpression = element.getAttribute("data-teloce-virtual-collection") || "[]";
+    const keyExpression = element.getAttribute("data-teloce-virtual-key") || "index";
+    const rowHeightExpression = element.getAttribute("data-teloce-virtual-item-height") || "40";
+    const overscanExpression = element.getAttribute("data-teloce-virtual-overscan") || "5";
+    const minHeightExpression = element.getAttribute("data-teloce-virtual-min-height") || "";
+    let scheduled = false;
+    let virtualScopeIds = new Set();
+    const renderVisible = () => {
+      scheduled = false;
+      // Virtual rows are replaced as the viewport moves. Clean their
+      // framework listeners/actions before detaching them so document-level
+      // integrations do not survive a scroll or reactive refresh.
+      for (const scopeId of virtualScopeIds) loopScopes.delete(scopeId);
+      virtualScopeIds = new Set();
+      content.querySelectorAll("*").forEach(cleanupElement);
+      const raw = evaluate(collectionExpression, state);
+      const values = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? Object.values(raw) : [];
+      const rowHeight = Math.max(1, Number(evaluate(rowHeightExpression, state) || rowHeightExpression) || 40);
+      const overscan = Math.max(0, Number(evaluate(overscanExpression, state) || overscanExpression) || 5);
+      const minHeight = Number(evaluate(minHeightExpression, state) || minHeightExpression);
+      if (Number.isFinite(minHeight) && minHeight >= 0) element.style.minHeight = `${minHeight}px`;
+      const viewportHeight = element.clientHeight || 320;
+      const first = Math.max(0, Math.floor(element.scrollTop / rowHeight) - overscan);
+      const last = Math.min(values.length, Math.ceil((element.scrollTop + viewportHeight) / rowHeight) + overscan);
+      spacer.style.height = `${values.length * rowHeight}px`;
+      content.style.transform = `translateY(${first * rowHeight}px)`;
+      const focusedKey = document.activeElement?.getAttribute?.("data-teloce-key");
+      const fragment = document.createDocumentFragment();
+      for (let index = first; index < last; index += 1) {
+        const value = values[index];
+        const loopScope = { ...state, [itemName]: value, index };
+        const scopeId = String(loopScopes.size);
+        loopScopes.set(scopeId, loopScope);
+        virtualScopeIds.add(scopeId);
+        let markup = renderTemplate(body, loopScope, loopScopes);
+        const key = evaluate(keyExpression, loopScope);
+        markup = markup.replace(/^(\s*<[A-Za-z][\w:-]*)(?=[\s>])/, `$1 data-teloce-key="${__teloceEscapeAttribute(String(key ?? index))}" data-teloce-loop-scope="${scopeId}"`);
+        const rowTemplate = document.createElement("template");
+        rowTemplate.innerHTML = markup;
+        fragment.append(...Array.from(rowTemplate.content.childNodes));
+      }
+      content.replaceChildren(fragment);
+      content.querySelectorAll("*").forEach(bindEventsAndDirectives);
+      if (focusedKey) Array.from(content.querySelectorAll("[data-teloce-key]")).find(node => node.getAttribute("data-teloce-key") === focusedKey)?.focus?.();
+    };
+    const onScroll = () => {
+      if (scheduled) return;
+      scheduled = true;
+      if (typeof globalThis.requestAnimationFrame === "function") globalThis.requestAnimationFrame(renderVisible);
+      else queueMicrotask(renderVisible);
+    };
+    element.addEventListener("scroll", onScroll, { passive: true });
+    element.__teloceVirtualRender = renderVisible;
+    element.__teloceVirtualSignature = signature;
+    element.__teloceVirtualCleanup = () => {
+      element.removeEventListener("scroll", onScroll);
+      for (const scopeId of virtualScopeIds) loopScopes.delete(scopeId);
+      virtualScopeIds.clear();
+      content.querySelectorAll("*").forEach(cleanupElement);
+      element.__teloceVirtualRender = null;
+      element.__teloceVirtualSignature = null;
+      element.__teloceVirtualCleanup = null;
+    };
+    renderVisible();
+  };
+
+  const bindScrolly = element => {
+    const steps = Array.from(element.querySelectorAll("[v-step], [data-v-step]"));
+    if (!steps.length) return;
+    if (element.__teloceScrollyCleanup && element.__teloceScrollySteps?.length === steps.length &&
+        element.__teloceScrollySteps.every((step, index) => step === steps[index])) return;
+    if (element.__teloceScrollyCleanup) element.__teloceScrollyCleanup();
+    const activate = step => {
+      const name = step.getAttribute("v-step") || step.getAttribute("data-v-step") || "";
+      steps.forEach(item => item.toggleAttribute("data-teloce-step-active", item === step));
+      element.setAttribute("data-teloce-active-step", name);
+      element.dispatchEvent?.(new CustomEvent("teloce:step", { detail: { name, element: step }, bubbles: true }));
+    };
+    let observer;
+    if (typeof IntersectionObserver === "function") {
+      observer = new IntersectionObserver(entries => {
+        const visible = entries.filter(entry => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (visible) activate(visible.target);
+      }, { rootMargin: "-35% 0px -35% 0px", threshold: [0.1, 0.5, 0.9] });
+      steps.forEach(step => observer.observe(step));
+    }
+    const focusHandlers = new Map();
+    steps.forEach(step => { step.tabIndex ||= 0; const handler = () => activate(step); focusHandlers.set(step, handler); step.addEventListener("focus", handler); });
+    activate(steps[0]);
+    element.__teloceScrollySteps = steps;
+    element.__teloceScrollyCleanup = () => {
+      observer?.disconnect?.();
+      steps.forEach(step => step.removeEventListener("focus", focusHandlers.get(step)));
+      element.__teloceScrollySteps = null;
+      element.__teloceScrollyCleanup = null;
+    };
+  };
+
+  const bindAnnotation = element => {
+    const expression = element.getAttribute("data-teloce-chart-annotation") || "";
+    if (element.__teloceAnnotationCleanup && element.__teloceAnnotationSignature === expression && element.__teloceAnnotation?.isConnected) return;
+    if (element.__teloceAnnotationCleanup) element.__teloceAnnotationCleanup();
+    const value = evaluate(__teloceDecodeAttribute(expression), state);
+    if (!value || typeof value !== "object") return;
+    const annotation = document.createElement("aside");
+    annotation.className = "teloce-chart-annotation";
+    annotation.textContent = String(value.text ?? "");
+    annotation.setAttribute("role", "note");
+    annotation.dataset.target = String(value.target ?? "");
+    annotation.style.position = "absolute";
+    annotation.style.zIndex = "2";
+    annotation.style[value.position === "bottom" ? "bottom" : "top"] = "0.75rem";
+    annotation.style.left = value.x == null ? "0.75rem" : `${Number(value.x)}%`;
+    if (getComputedStyle(element).position === "static") element.style.position = "relative";
+    element.append(annotation);
+    element.__teloceAnnotation = annotation;
+    element.__teloceAnnotationSignature = expression;
+    element.__teloceAnnotationCleanup = () => { annotation.remove(); element.__teloceAnnotation = null; element.__teloceAnnotationSignature = null; element.__teloceAnnotationCleanup = null; };
+  };
+
+  const bindPoll = element => {
+    const url = element.getAttribute("poll");
+    if (!url) return;
+    const signature = [url, element.getAttribute("interval"), element.getAttribute("poll-target")].join("\u0000");
+    if (element.__telocePollCleanup && element.__telocePollSignature === signature) return;
+    if (element.__telocePollCleanup) element.__telocePollCleanup();
+    let stopped = false;
+    let controller = null;
+    let timer = null;
+    let delay = Math.max(1000, Number(element.getAttribute("interval") || 10000));
+    const apply = payload => {
+      const targetPath = element.getAttribute("poll-target");
+      if (targetPath) __setSafePath(targetPath, payload, state);
+      else if (payload && typeof payload === "object" && !Array.isArray(payload)) Object.assign(state, payload);
+      element.dispatchEvent?.(new CustomEvent("teloce:poll", { detail: payload, bubbles: true }));
+    };
+    const fetchData = async () => {
+      if (stopped || document.hidden) return;
+      controller?.abort?.();
+      controller = typeof AbortController === "function" ? new AbortController() : null;
+      try {
+        const response = await fetch(url, { signal: controller?.signal, headers: { Accept: "application/json" } });
+        if (!response.ok) throw new Error(`Polling failed: ${response.status}`);
+        apply(await response.json());
+        delay = Math.max(1000, Number(element.getAttribute("interval") || 10000));
+      } catch (error) {
+        if (error?.name !== "AbortError") { delay = Math.min(delay * 2, 120000); handleError(error, "poll"); }
+      } finally { if (!stopped) timer = setTimeout(fetchData, delay); }
+    };
+    const onVisibility = () => { if (!document.hidden) fetchData(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    fetchData();
+    element.__telocePollSignature = signature;
+    element.__telocePollCleanup = () => { stopped = true; controller?.abort?.(); clearTimeout(timer); document.removeEventListener("visibilitychange", onVisibility); element.__telocePollSignature = null; element.__telocePollCleanup = null; };
+  };
+
+  const bindLive = element => {
+    const source = element.getAttribute("live");
+    if (!source) return;
+    const targetPath = element.getAttribute("live-target");
+    let socket = null;
+    let stopped = false;
+    let retryTimer = null;
+    let retryDelay = 1000;
+    const signature = [source, targetPath].join("\u0000");
+    if (element.__teloceLiveCleanup && element.__teloceLiveSignature === signature) return;
+    if (element.__teloceLiveCleanup) element.__teloceLiveCleanup();
+    const apply = payload => {
+      if (targetPath) __setSafePath(targetPath, payload, state);
+      else if (payload && typeof payload === "object" && !Array.isArray(payload)) Object.assign(state, payload);
+      element.dispatchEvent?.(new CustomEvent("teloce:live", { detail: payload, bubbles: true }));
+    };
+    const scheduleReconnect = () => {
+      if (stopped || retryTimer || document.hidden) return;
+      retryTimer = setTimeout(() => { retryTimer = null; connect(); }, retryDelay);
+      retryDelay = Math.min(retryDelay * 2, 120000);
+    };
+    const connect = () => {
+      if (stopped || document.hidden) return;
+      try {
+        if (/^wss?:/i.test(source) && typeof WebSocket === "function") {
+          socket?.close?.();
+          socket = new WebSocket(source);
+          socket.onopen = () => { retryDelay = 1000; };
+          socket.onmessage = event => { try { apply(JSON.parse(event.data)); } catch (_) { apply(event.data); } };
+          socket.onerror = error => handleError(error, "live");
+          socket.onclose = () => { socket = null; scheduleReconnect(); };
+        } else {
+          const adapter = globalThis.__teloceLiveAdapters?.[source];
+          if (typeof adapter === "function") {
+            const result = adapter(apply);
+            if (typeof result === "function") element.__teloceLiveAdapterCleanup = result;
+            else if (result?.destroy) element.__teloceLiveAdapterCleanup = result.destroy;
+          }
+        }
+      } catch (error) { handleError(error, "live"); scheduleReconnect(); }
+    };
+    const onVisibility = () => { if (!document.hidden && !socket) connect(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    element.__teloceLiveSignature = signature;
+    element.__teloceLiveCleanup = () => {
+      stopped = true;
+      clearTimeout(retryTimer);
+      retryTimer = null;
+      socket?.close?.();
+      socket = null;
+      element.__teloceLiveAdapterCleanup?.();
+      element.__teloceLiveAdapterCleanup = null;
+      document.removeEventListener("visibilitychange", onVisibility);
+      element.__teloceLiveSignature = null;
+      element.__teloceLiveCleanup = null;
+    };
+    connect();
+  };
+
+  const bindDataTable = element => {
+    const expression = element.getAttribute("data-teloce-data-table") || "";
+    if (!expression || typeof tableFactory !== "function") return;
+    const value = evaluate(__teloceDecodeAttribute(expression), state);
+    const config = value && typeof value === "object" ? value : {};
+    const signature = expression;
+    const previous = element.__teloceDataTable;
+    if (previous && previous.signature === signature) {
+      previous.instance?.update?.(config);
+      previous.config = config;
+      return;
+    }
+    previous?.instance?.unmount?.();
+    try {
+      const instance = tableFactory(element, config);
+      element.__teloceDataTable = { signature, config, instance };
+    } catch (error) { handleError(error, "data-table"); }
+  };
+
+  const bindAdvancedDirectives = element => {
+    if (element.hasAttribute("data-teloce-virtual-for")) renderVirtualList(element);
+    else element.__teloceVirtualCleanup?.();
+    if (element.hasAttribute("data-teloce-scrolly")) bindScrolly(element);
+    else element.__teloceScrollyCleanup?.();
+    if (element.hasAttribute("data-teloce-chart-annotation")) bindAnnotation(element);
+    else element.__teloceAnnotationCleanup?.();
+    if (element.hasAttribute("poll")) bindPoll(element);
+    else element.__telocePollCleanup?.();
+    if (element.hasAttribute("live")) bindLive(element);
+    else element.__teloceLiveCleanup?.();
+    if (element.hasAttribute("data-teloce-data-table")) bindDataTable(element);
+    else {
+      element.__teloceDataTable?.instance?.unmount?.();
+      element.__teloceDataTable = null;
+    }
+    const seenActions = new Set();
+    const sameActionParams = (left, right) => {
+      if (Object.is(left, right)) return true;
+      try { return JSON.stringify(left) === JSON.stringify(right); } catch (_) { return false; }
+    };
+    for (const attribute of Array.from(element.attributes || [])) {
+      const match = attribute.name.match(/^use:(.+)$/);
+      if (!match) continue;
+      const name = match[1];
+      // HTML normalizes attribute names to lowercase. Resolve against the
+      // case-sensitive JavaScript action map so `use:focusPanel` still finds
+      // the declared `focusPanel` function in every browser.
+      const actionName = Object.keys(actions).find(key => key.toLowerCase() === name.toLowerCase()) || name;
+      seenActions.add(actionName);
+      const action = actions[actionName]
+        || (typeof globalThis[actionName] === "function" ? globalThis[actionName] : undefined);
+      if (typeof action !== "function") { if (dev) console.warn(`Teloce action not found: ${name}`); continue; }
+      const params = readActionParams(attribute.value);
+      const signature = `${actionName}:${attribute.name}`;
+      element.__teloceActions ||= new Map();
+      const previous = element.__teloceActions.get(actionName);
+      if (previous && previous.signature === signature && sameActionParams(previous.params, params)) continue;
+      if (previous && previous.signature === signature && typeof previous.update === "function") {
+        try { previous.update(params); previous.params = params; continue; } catch (error) { handleError(error, `action:${actionName}:update`); }
+      }
+      try { previous?.destroy?.(); } catch (error) { handleError(error, `action:${actionName}`); }
+      try {
+        const result = action(element, params);
+        const record = { signature, params, destroy: typeof result === "function" ? result : result?.destroy, update: result?.update };
+        element.__teloceActions.set(actionName, record);
+      } catch (error) { handleError(error, `action:${actionName}`); }
+    }
+    for (const [name, record] of element.__teloceActions || []) {
+      if (seenActions.has(name)) continue;
+      try { record.destroy?.(); } catch (error) { handleError(error, `action:${name}:destroy`); }
+      element.__teloceActions.delete(name);
+    }
   };
 
   const bindEventsAndDirectives = element => {
@@ -603,6 +1073,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
         }
       }
     }
+    bindAdvancedDirectives(element);
   };
 
   const mountChildren = () => {
@@ -675,6 +1146,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
         previousWatchValues[name] = value;
       }
     }
+    syncQueryState();
   };
 
   const normalizedProps = normalizeProps(options.props || {});
@@ -715,6 +1187,9 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       suppressUpdates = true;
       let changed = false;
       try {
+        const nextAttrs = nextProps?.$attrs || nextProps?.__attrs || {};
+        const filteredAttrs = Object.fromEntries(Object.entries(nextAttrs).filter(([name]) => !declaredPropNames.has(camelizeProp(name)) && !name.startsWith("data-teloce-")));
+        if (JSON.stringify(state.$attrs) !== JSON.stringify(filteredAttrs)) { state.$attrs = filteredAttrs; changed = true; }
         for (const [key, value] of Object.entries(normalized)) if (!Object.is(state[key], value)) { state[key] = value; changed = true; }
         for (const key of Object.keys(propDefinitions)) if (!(key in normalized) && state[key] !== undefined) { state[key] = undefined; changed = true; }
       } finally { suppressUpdates = false; }
@@ -726,6 +1201,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       if (!target) throw new Error("Teloce mount target was not found");
       if (mounted) instance.unmount();
       destroyed = false;
+      registerQueryListener();
       hmrRecord.target = target;
       if (!hmrRegistry.has(hmrKey)) hmrRegistry.set(hmrKey, new Set());
       hmrRegistry.get(hmrKey).add(hmrRecord);
@@ -750,6 +1226,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       hmrRegistry.get(hmrKey)?.delete(hmrRecord);
       if (hmrRegistry.get(hmrKey)?.size === 0) hmrRegistry.delete(hmrKey);
       hmrRecord.target = null;
+      if (queryListenerActive && typeof window !== "undefined") { window.removeEventListener("popstate", onPopState); queryListenerActive = false; }
       callHook("unmounted");
       return instance;
     },

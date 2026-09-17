@@ -1,16 +1,17 @@
-"""Dependency-free JavaScript lexical and top-level syntax parser.
+"""Compatibility JavaScript lexical and top-level syntax parser.
 
-This parser intentionally owns only the syntax Teloce must understand at the
-SFC boundary. It does not execute JavaScript or attempt to be a formatter. It
-provides balanced, source-located tokens and top-level import/export records;
-the original script text remains available for code generation.
+The public token and AST classes remain dependency-free compatibility types.
+The exported ``parse_javascript`` and ``parse_javascript_language`` functions
+prefer the Tree-sitter backend when it is installed, while the legacy lexer
+and parsers remain available as an explicit fallback. Neither backend
+executes JavaScript or attempts to be a formatter.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
-from typing import Iterable, Optional
+from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -707,11 +708,46 @@ def tokenize_javascript(source: str) -> list[JSToken]:
     return JavaScriptLexer(source).tokenize()
 
 
-def parse_javascript(source: str) -> JSProgram:
-    """Parse top-level JavaScript structure and return a source-located AST."""
+def parse_javascript(
+    source: str,
+    *,
+    language: str = "js",
+    backend: str = "auto",
+) -> JSProgram:
+    """Parse top-level JavaScript structure and return a source-located AST.
+
+    Tree-sitter is the default structural backend when installed.  ``legacy``
+    retains the dependency-free parser for constrained environments and for
+    projects that explicitly need the historical behavior.
+    """
+    if backend not in {"auto", "tree-sitter", "legacy"}:
+        raise ValueError("backend must be 'auto', 'tree-sitter', or 'legacy'")
+    if backend != "legacy":
+        try:
+            from .tree_sitter_backend import parse_as_teloce_program
+
+            return parse_as_teloce_program(source, language)
+        except ImportError:
+            if backend == "tree-sitter":
+                raise
     return JavaScriptParser(source).parse()
 
 
-def parse_javascript_language(source: str) -> JSProgram:
-    """Parse JavaScript into the dependency-free language-level AST."""
+def parse_javascript_language(
+    source: str,
+    *,
+    language: str = "js",
+    backend: str = "auto",
+) -> JSProgram:
+    """Parse JavaScript into a source-preserving language-level AST."""
+    if backend not in {"auto", "tree-sitter", "legacy"}:
+        raise ValueError("backend must be 'auto', 'tree-sitter', or 'legacy'")
+    if backend != "legacy":
+        try:
+            from .tree_sitter_backend import parse_as_teloce_program
+
+            return parse_as_teloce_program(source, language)
+        except ImportError:
+            if backend == "tree-sitter":
+                raise
     return JavaScriptLanguageParser(source).parse()

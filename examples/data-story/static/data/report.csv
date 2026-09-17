@@ -1,0 +1,12 @@
+id,title,category,value,reported
+1,Open data,Nature,128,2026-01-05
+2,Public transit,City,256,2026-02-11
+3,Community energy,Climate,384,2026-03-19
+4,Healthy streets,City,512,2026-04-02
+5,Local libraries,Culture,640,2026-04-28
+6,Safe routes,Community,768,2026-05-14
+7,Clean rivers,Climate,896,2026-06-21
+8,New gardens,Nature,1024,2026-07-09
+9,Open classrooms,Education,1152,2026-08-17
+10,Better broadband,Technology,1280,2026-09-03
+11,Public art,Culture,1408,2026-09-11
