@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 
 from flask import Flask, jsonify, send_from_directory
 from teloce.build import build_project
@@ -29,4 +30,8 @@ def stats():
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5060, debug=True, use_reloader=False)
+    # 5060 is rejected by Chromium as an unsafe port. 5057 keeps the
+    # one-command example browser-compatible on Windows and CI. Override it
+    # when another local service already owns the default port.
+    port = int(os.environ.get("TELOCE_DATA_STORY_PORT", "5057"))
+    app.run(host="127.0.0.1", port=port, debug=True, use_reloader=False)

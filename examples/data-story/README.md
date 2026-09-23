@@ -13,5 +13,5 @@ python build.py
 python app.py
 ```
 
-Open <http://127.0.0.1:5060>. The Flask API returns live summary data and the
+Open <http://127.0.0.1:5057>. The Flask API returns live summary data and the
 browser loads `static/data/report.csv` through the shared Teloce runtime.
