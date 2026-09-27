@@ -67,6 +67,7 @@ teloce build
 teloce build --out-dir dist --source-map
 teloce build --minify --hash-assets --bundle
 teloce build --no-clean
+teloce build --direct-dom-updates
 ```
 
 Options:
@@ -74,6 +75,12 @@ Options:
 - `--out-dir`, `-o`: output directory, default `dist`.
 - `--minify` and `--no-minify`: enable or disable minification.
 - `--source-map`: emit source maps.
+- `--direct-dom-updates`: enable dependency-aware in-place updates for safe
+  components. Structural or unsupported components keep the compatibility
+  reconciler.
+- `--no-direct-dom-updates`: force compatibility reconciliation.
+- `--strict-direct-dom`: fail when direct dependency analysis cannot safely
+  handle an expression instead of allowing compatibility fallback.
 - `--no-clean`: preserve the existing output directory.
 - `--hash-assets`: add content hashes to JavaScript and CSS filenames.
 - `--bundle`: create a dependency-aware production bundle.

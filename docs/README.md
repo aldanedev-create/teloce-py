@@ -31,6 +31,7 @@ Then open the URL printed by the server. You do not need to manually run a separ
 - [Multiple HTML pages](multiple-html-pages.md)
 - [Team workflow](team-workflow.md)
 - [Compiler configuration](compiler-config.md)
+- [Direct DOM updates](direct-dom.md) — dependency-aware updates and safe fallback behavior
 - [Runtime API reference](runtime-reference.md)
 - [Security guide](security.md)
 - [Vercel deployment](deployment-vercel.md)

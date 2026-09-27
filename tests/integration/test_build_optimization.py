@@ -132,6 +132,39 @@ def test_cli_build_honors_teloce_config_json(tmp_path: Path):
     _node_check(app)
 
 
+def test_cli_build_honors_direct_dom_config(tmp_path: Path):
+    _write_project(tmp_path, static_dir="client")
+    (tmp_path / "teloce.config.json").write_text(
+        json.dumps({
+            "compiler": {"source_maps": False},
+            "build": {
+                "out_dir": "release-assets",
+                "static_dir": "client",
+                "clean": True,
+                "minify": False,
+                "shared_runtime": True,
+                "direct_dom_updates": True,
+            },
+        }),
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [sys.executable, "-m", "teloce", "build"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    app = next((tmp_path / "release-assets" / "client" / "js").glob("App.*.js"))
+    generated = app.read_text(encoding="utf-8")
+    assert "direct: __directPlan.enabled" in generated
+    assert "teloce-text:t0" in generated
+    _node_check(app)
+
+
 def test_create_scaffold_writes_production_build_defaults(tmp_path: Path):
     result = subprocess.run(
         [

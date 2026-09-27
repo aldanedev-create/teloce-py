@@ -12,6 +12,7 @@ This module coordinates the entire compilation pipeline:
 from pathlib import Path
 from typing import Optional, Dict, Any
 import re
+import inspect
 
 from teloce.compiler.transformer import Transformer
 from teloce.compiler.optimizer import Optimizer
@@ -131,6 +132,9 @@ class Compiler:
                 - ast: Abstract Syntax Tree
         """
         self.diagnostics = Diagnostics()
+        source = self._run_preprocessors(source, filename)
+        if source is None:
+            return self._empty_result()
         source = self._run_plugin_hooks("before_compile", source)
 
         # Step 1: Parse SFC
@@ -201,7 +205,31 @@ class Compiler:
 
         # Step 3: Optimization
         optimizer = Optimizer(self.options)
-        optimized_ast = optimizer.optimize(transformed_ast)
+        optimized_ast = optimizer.optimize(transformed_ast, computed=component.script_computed)
+        for record in optimizer.direct_plan.get("unsupported", []):
+            strict_direct = bool(self.options.get("strict_dependency_analysis", False))
+            self.diagnostics.add(
+                DiagnosticLevel.ERROR if strict_direct else DiagnosticLevel.WARNING,
+                "Expression cannot be analyzed safely for direct DOM updates; the compatibility renderer will be used for this component: "
+                + str(record.get("expression", "")),
+                filename=filename,
+                line=record.get("line"),
+                column=record.get("column"),
+                code="E3001" if strict_direct else "W3001",
+                suggestions=[
+                    "Move complex logic into a computed value or method, or disable direct_dom_updates for this component."
+                ],
+            )
+        if optimizer.direct_plan.get("enabled") and optimizer.direct_plan.get("structural"):
+            self.diagnostics.add(
+                DiagnosticLevel.INFO,
+                "Direct DOM updates are enabled, but this component contains a structural block; using keyed reconciliation for v-if/v-for compatibility.",
+                filename=filename,
+                code="I3001",
+                suggestions=[
+                    "Keep a stable :key on v-for items. Structural direct updates can be enabled for this component after its block is converted to a direct plan."
+                ],
+            )
 
         # Step 4: Code generation
         generator_options = dict(self.options)
@@ -215,6 +243,7 @@ class Compiler:
                     **generator_options.get("filter_js", {}),
                     **plugin_api.get_js_filters(),
                 }
+        generator_options["direct_plan"] = optimizer.direct_plan
         generator = Generator(generator_options)
         js_code = generator.generate(optimized_ast, component)
         js_code = self._run_plugin_hooks("after_compile", js_code)
@@ -224,7 +253,35 @@ class Compiler:
         source_map = None
         if self.source_map_enabled:
             source_map_generator = SourceMapGenerator()
-            source_map = source_map_generator.generate(js_code, filename, source)
+            line_hints = {}
+            for record in optimizer.direct_plan.get("bindings", []):
+                marker = f"teloce-text:{record.get('id')}"
+                if marker not in js_code:
+                    marker = f"data-teloce-direct-bindings=\\\"{record.get('id')}"
+                generated_line = next(
+                    (index for index, line in enumerate(js_code.splitlines()) if marker in line),
+                    None,
+                )
+                if generated_line is not None and record.get("line"):
+                    line_hints[generated_line] = (
+                        max(0, int(record["line"]) - 1),
+                        max(0, int(record.get("column") or 1) - 1),
+                    )
+            source_map = source_map_generator.generate(js_code, filename, source, line_hints=line_hints)
+            source_map.setdefault("x_teloce", {})["direct_plan"] = {
+                "version": optimizer.direct_plan.get("version", 1),
+                "bindings": [
+                    {
+                        "id": record.get("id"),
+                        "expression": record.get("expression"),
+                        "source": {
+                            "line": record.get("line"),
+                            "column": record.get("column"),
+                        },
+                    }
+                    for record in optimizer.direct_plan.get("bindings", [])
+                ],
+            }
 
         return {
             "code": js_code,
@@ -233,6 +290,7 @@ class Compiler:
             "diagnostics": self.diagnostics.to_dict(),
             "ast": optimized_ast,
             "component": component,
+            "direct_plan": optimizer.direct_plan,
             "success": not self.diagnostics.has_errors(),
         }
 
@@ -250,6 +308,16 @@ class Compiler:
                     column=node.column,
                     code="W2001",
                     suggestions=["Add :key=\"item.id\" (or another stable unique key) to the virtual loop."],
+                )
+            if isinstance(node, ForNode) and not node.key:
+                self.diagnostics.add(
+                    DiagnosticLevel.WARNING,
+                    "v-for has no stable key; item identity, input focus, and component state may be lost when the collection changes.",
+                    filename=filename,
+                    line=node.line,
+                    column=node.column,
+                    code="W2002",
+                    suggestions=["Add :key=\"item.id\" (or another stable unique key) to the loop."],
                 )
             if isinstance(node, ElementNode) and node.attributes.get("live") and not str(node.attributes.get("live", "")).lower().startswith(("ws:", "wss:")):
                 self.diagnostics.add(
@@ -293,6 +361,60 @@ class Compiler:
                 value = result
         return value
 
+    def _run_preprocessors(self, source: str, filename: str) -> Optional[str]:
+        """Run optional source preprocessors before SFC parsing.
+
+        A preprocessor may be a callable, an object exposing ``process`` or
+        ``transform``, or a mapping containing one of those callables. It may
+        return a string, ``(source, metadata)``, or ``{"code": source}`` /
+        ``{"source": source}``. The hook is intentionally optional so normal
+        JavaScript/CSS projects remain dependency-free.
+        """
+        preprocessors = self.options.get("preprocessors") or []
+        if callable(preprocessors) or hasattr(preprocessors, "process") or hasattr(preprocessors, "transform"):
+            preprocessors = [preprocessors]
+        for index, preprocessor in enumerate(preprocessors):
+            name = getattr(preprocessor, "name", None) or f"preprocessor-{index + 1}"
+            callback = preprocessor
+            if isinstance(preprocessor, dict):
+                name = preprocessor.get("name") or name
+                callback = preprocessor.get("process") or preprocessor.get("transform")
+            elif not callable(callback):
+                callback = getattr(preprocessor, "process", None) or getattr(preprocessor, "transform", None)
+            if not callable(callback):
+                self.diagnostics.add(
+                    DiagnosticLevel.ERROR,
+                    f"Invalid {name}: expected a callable or an object with process()/transform().",
+                    filename=filename,
+                    code="E1100",
+                    suggestions=["Pass a preprocessor callable or remove it from the compiler options."],
+                )
+                return None
+            try:
+                signature = inspect.signature(callback)
+                accepts_filename = "filename" in signature.parameters or any(
+                    parameter.kind == inspect.Parameter.VAR_KEYWORD
+                    for parameter in signature.parameters.values()
+                )
+                result = callback(source, filename=filename) if accepts_filename else callback(source)
+                if isinstance(result, dict):
+                    result = result.get("code", result.get("source", source))
+                elif isinstance(result, tuple):
+                    result = result[0]
+                if result is None:
+                    raise TypeError("returned None; preprocessors must return source text")
+                source = str(result)
+            except Exception as error:
+                self.diagnostics.add(
+                    DiagnosticLevel.ERROR,
+                    f"{name} failed: {error}",
+                    filename=filename,
+                    code="E1101",
+                    suggestions=["Fix the preprocessor error or remove the optional preprocessor."],
+                )
+                return None
+        return source
+
     @staticmethod
     def _message_location(message: str) -> tuple[Optional[int], Optional[int]]:
         """Extract source coordinates emitted by the JS/template parsers."""
@@ -329,6 +451,7 @@ class Compiler:
             "diagnostics": self.diagnostics.to_dict(),
             "ast": None,
             "component": None,
+            "direct_plan": None,
             "success": False,
         }
 

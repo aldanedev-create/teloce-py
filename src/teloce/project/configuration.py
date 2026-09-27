@@ -34,6 +34,11 @@ class ProjectConfiguration:
                 'extract_css': True,
                 'css_bundle': True,
                 'shared_runtime': True,
+                # Opt into targeted DOM updates while the structural plan is
+                # being rolled out. Structural templates retain the keyed
+                # compatibility reconciler.
+                'direct_dom_updates': False,
+                'strict_dependency_analysis': False,
                 # Discover static/js/pages automatically. Set false for a
                 # deliberately multi-page build or true to require a router.
                 'spa': 'auto',

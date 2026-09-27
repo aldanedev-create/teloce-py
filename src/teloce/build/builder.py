@@ -57,6 +57,9 @@ class Builder:
         # should not duplicate runtime helpers into every component module.
         self.options = {
             "shared_runtime": True,
+            # Direct updates are opt-in while the structural/component paths
+            # complete their migration. The compiler option is documented and
+            # exercised by dedicated browser tests.
             "mode": mode,
             # A pages directory is enough to opt a project into the file-based
             # SPA router. False remains available for libraries and

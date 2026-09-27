@@ -88,24 +88,24 @@ const __runEventExpression = (expression, scope) => { let result; for (const sta
 SHARED_DOM_RUNTIME = r'''
 export const __createReactive = (initial, notify) => {
   const cache = new WeakMap();
-  const wrap = value => {
+  const wrap = (value, rootKey = null) => {
     if (!value || typeof value !== "object") return value;
     if (cache.has(value)) return cache.get(value);
     const proxy = new Proxy(value, {
       get(object, key, receiver) {
         const result = Reflect.get(object, key, receiver);
-        return result && typeof result === "object" ? wrap(result) : result;
+        return result && typeof result === "object" ? wrap(result, rootKey ?? String(key)) : result;
       },
       set(object, key, next, receiver) {
         const changed = !Object.is(object[key], next);
         const result = Reflect.set(object, key, next, receiver);
-        if (changed) notify();
+        if (changed) notify(rootKey ?? String(key));
         return result;
       },
       deleteProperty(object, key) {
         const existed = Object.prototype.hasOwnProperty.call(object, key);
         const result = Reflect.deleteProperty(object, key);
-        if (existed) notify();
+        if (existed) notify(rootKey ?? String(key));
         return result;
       },
     });
@@ -240,6 +240,8 @@ class Generator:
         self.module_mapping = {}
         self._used_components = set()
         self._used_filters = set()
+        self._direct_plan = {"enabled": False, "structural": False, "bindings": []}
+        self._direct_cursor = 0
     
     def generate(self, nodes: List[ASTNode], component: Component) -> str:
         """Generate JavaScript code."""
@@ -247,6 +249,8 @@ class Generator:
         self.scope_id = HashGenerator().generate_scope_id(component.name) if component.style.scoped else None
         self._used_components = self._collect_component_tags(nodes)
         self._used_filters = self._collect_filter_names(nodes)
+        self._direct_plan = dict(self.options.get("direct_plan") or {})
+        self._direct_cursor = 0
         all_style_css = "\n".join(style.css for style in getattr(component, "styles", []) or [component.style])
         self.module_mapping = CSSModules.mapping(all_style_css, component.name) if component.style.module else {}
         
@@ -691,7 +695,8 @@ class Generator:
                 f'const __styleClasses = {style_classes_literal};',
                 f'const __filters = {{ {self._generate_builtin_filters(component)}{", " if self._generate_builtin_filters(component) and custom_filters else ""}{custom_filters} }};',
                 f'const __actions = {self._generate_actions(self._collect_actions_from_template(template_code))};',
-                f'const __runtimeOptions = {{ components: __components, template: __template, style: __style, styleId: "teloce-style-{style_id}", styleClasses: __styleClasses, filters: __filters, actions: __actions, table: typeof createDataTable === "function" ? createDataTable : undefined, dev: {str(bool(self.dev)).lower()}, moduleUrl: import.meta.url }};',
+                f'const __directPlan = {self._direct_plan_literal()};',
+                f'const __runtimeOptions = {{ components: __components, template: __template, style: __style, styleId: "teloce-style-{style_id}", styleClasses: __styleClasses, filters: __filters, actions: __actions, table: typeof createDataTable === "function" ? createDataTable : undefined, direct: __directPlan.enabled, directPlan: __directPlan, dev: {str(bool(self.dev)).lower()}, moduleUrl: import.meta.url }};',
                 'export const mount = (target, props = {}) => __teloceCreateCompiledComponent(__component, { ...__runtimeOptions, props }).mount(target, props);',
                 'export const createApp = mount;',
                 '__component.mount = mount;',
@@ -1094,6 +1099,51 @@ class Generator:
             for name in sorted(names)
         ]
         return "{ " + ", ".join(entries) + " }"
+
+    def _next_direct_record(self, kind: str, expression: str, name: str = "") -> Optional[dict]:
+        """Consume optimizer metadata in AST/generator traversal order."""
+        if (
+            not self._direct_plan.get("enabled")
+            or self._direct_plan.get("structural")
+            or self._direct_plan.get("fallback")
+        ):
+            return None
+        records = self._direct_plan.get("bindings") or []
+        for index in range(self._direct_cursor, len(records)):
+            record = records[index]
+            if (
+                record.get("kind") == kind
+                and record.get("expression", "") == str(expression or "")
+                and (not name or record.get("name") == name)
+            ):
+                self._direct_cursor = index + 1
+                return record
+        # A transformed AST can merge or normalize nodes. Keep compilation
+        # deterministic even if an optimizer record is no longer available.
+        prefix = "t" if kind == "text" else "b"
+        fallback_index = sum(1 for record in records if record.get("kind") == kind)
+        return {
+            "id": f"{prefix}{fallback_index}",
+            "kind": kind,
+            "name": name,
+            "expression": str(expression or ""),
+            "dependencies": [],
+            "line": None,
+            "column": None,
+        }
+
+    def _direct_plan_literal(self) -> str:
+        """Serialize only stable direct-update metadata into the module."""
+        if not self._direct_plan.get("enabled"):
+            return "{ enabled: false, structural: false, fallback: false, refreshIntegrations: false, bindings: [] }"
+        return json.dumps({
+            "version": self._direct_plan.get("version", 1),
+            "enabled": True,
+            "structural": bool(self._direct_plan.get("structural")),
+            "fallback": bool(self._direct_plan.get("fallback")),
+            "refreshIntegrations": bool(self._direct_plan.get("refreshIntegrations")),
+            "bindings": self._direct_plan.get("bindings", []),
+        }, ensure_ascii=False)
     
     def _generate_template(self, nodes: List[ASTNode]) -> str:
         """Generate template code from AST nodes."""
@@ -1121,6 +1171,7 @@ class Generator:
         """Generate code for an element."""
         tag = node.tag
         attrs = []
+        direct_binding_ids = []
 
         dynamic_expression = None
         if tag.lower() == "component":
@@ -1156,6 +1207,12 @@ class Generator:
         
         # Bindings
         for binding in node.bindings:
+            direct_record = (
+                self._next_direct_record("binding", binding.value, binding.name)
+                if binding.name != "attrs" else None
+            )
+            if direct_record:
+                direct_binding_ids.append(direct_record["id"])
             if dynamic_expression is not None and binding.name == "is":
                 continue
             if binding.name == 'model':
@@ -1170,6 +1227,11 @@ class Generator:
                 attrs.append(f'data-teloce-bind-hide="{html.escape(binding.value, quote=True)}"')
             else:
                 attrs.append(f'data-teloce-bind-{binding.name}="{html.escape(binding.value, quote=True)}"')
+
+        if direct_binding_ids:
+            attrs.append(
+                f'data-teloce-direct-bindings="{html.escape(",".join(direct_binding_ids), quote=True)}"'
+            )
         
         # Events
         for event in node.events:
@@ -1199,7 +1261,15 @@ class Generator:
     
     def _generate_interpolation(self, node: InterpolationNode) -> str:
         """Generate code for interpolation."""
-        return f'{{{{ {node.expression} }}}}'
+        record = self._next_direct_record("text", node.expression)
+        if not record:
+            return f'{{{{ {node.expression} }}}}'
+        marker = record["id"]
+        # Paired comments force the browser to keep the interpolation's text
+        # node separate from any authored prefix/suffix text. Without the end
+        # anchor, `Hello {{ name }}!` becomes one `Hello`/`name!` text node and
+        # a direct update would accidentally delete the exclamation mark.
+        return f'<!--teloce-text:{marker}-->{{{{ {node.expression} }}}}<!--teloce-text-end:{marker}-->'
     
     def _generate_for(self, node: ForNode) -> str:
         """Generate code for for loop."""

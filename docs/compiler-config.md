@@ -17,6 +17,8 @@ configuration is:
     "hash_assets": false,
     "extract_css": false,
     "shared_runtime": true,
+    "direct_dom_updates": true,
+    "strict_dependency_analysis": false,
     "tree_shake": true,
     "bundle": false,
     "lazy_components": [],
@@ -77,6 +79,13 @@ Production switches:
 - `shared_runtime` writes one `teloce-runtime.<hash>.js` barrel and keeps
   component modules small. The barrel also contains the compiled component
   glue; it is not duplicated in every generated module.
+- `direct_dom_updates` enables dependency-aware in-place updates for safe
+  components. Text nodes and dynamic attributes update without reparsing the
+  template. Components with structural `v-if`/`v-for` blocks retain the
+  existing keyed reconciliation path until their structural plan is eligible.
+- `strict_dependency_analysis` turns an unsafe direct expression from warning
+  `W3001` into build-stopping `E3001`. Keep it false while migrating a project
+  so the compatibility renderer can keep working.
 - `minify` compacts generated JavaScript, extracted CSS, and the shared
   runtime. With `bundler: "esbuild"`, esbuild also minifies the whole bundle.
 - `extract_css` writes component stylesheets beside their modules and adds

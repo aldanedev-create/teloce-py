@@ -105,6 +105,24 @@ def main(args: Optional[list] = None) -> int:
         action='store_true',
         help='Generate source maps'
     )
+    build_parser.add_argument(
+        '--direct-dom-updates',
+        dest='direct_dom_updates',
+        action='store_true',
+        help='Enable dependency-aware in-place DOM updates for safe components'
+    )
+    build_parser.add_argument(
+        '--no-direct-dom-updates',
+        dest='no_direct_dom_updates',
+        action='store_true',
+        help='Disable direct DOM updates and use compatibility reconciliation'
+    )
+    build_parser.add_argument(
+        '--strict-direct-dom',
+        dest='strict_dependency_analysis',
+        action='store_true',
+        help='Fail the build when a direct-update expression requires fallback'
+    )
 
     compile_parser = subparsers.add_parser('compile', help='Compile one .vel component')
     compile_parser.add_argument('source', help='Path to a .vel file')

@@ -41,10 +41,21 @@ def build_command(args: Any) -> int:
     compiler_config = config.get_compiler_config()
     source_map = args.source_map or compiler_config.get('source_maps', build_config.get('source_maps', False))
     clean = not getattr(args, 'no_clean', False) and build_config.get('clean', True)
+    if getattr(args, 'direct_dom_updates', False):
+        direct_dom_updates = True
+    elif getattr(args, 'no_direct_dom_updates', False):
+        direct_dom_updates = False
+    else:
+        direct_dom_updates = build_config.get('direct_dom_updates', False)
+    strict_dependency_analysis = (
+        getattr(args, 'strict_dependency_analysis', False)
+        or build_config.get('strict_dependency_analysis', False)
+    )
     
     print(f"📂 Output: {out_dir}")
     print(f"⚡ Minify: {'Yes' if minify else 'No'}")
     print(f"🗺️  Source Maps: {'Yes' if source_map else 'No'}")
+    print(f"🎯 Direct DOM updates: {'Yes' if direct_dom_updates else 'No'}")
     print()
     
     # Build
@@ -79,6 +90,8 @@ def build_command(args: Any) -> int:
         'ssr': getattr(args, 'ssr', False) or build_config.get('ssr', False) or static_mode,
         'static': static_mode,
         'shared_runtime': build_config.get('shared_runtime', True),
+        'direct_dom_updates': direct_dom_updates,
+        'strict_dependency_analysis': strict_dependency_analysis,
         'lazy_components': ([item.strip() for item in args.lazy_components.split(',') if item.strip()]
                             if getattr(args, 'lazy_components', None) is not None
                             else build_config.get('lazy_components', [])),
