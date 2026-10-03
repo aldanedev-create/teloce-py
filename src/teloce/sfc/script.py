@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from teloce.javascript.parser import parse_javascript, tokenize_javascript
+from teloce.javascript.ts_transpile import transpile as transpile_ts      
 from teloce.javascript.tree_sitter_backend import (
     TreeSitterUnavailable,
     default_export_object_source,
@@ -255,9 +256,11 @@ class ScriptParser:
         script_language = str(self.options.get("lang", "js")).lower()
         is_typescript = script_language in {"ts", "tsx", "typescript"}
         if is_typescript:
-            source = strip_typescript_annotations(source)
+            try:
+                source = transpile_ts(source, "<script lang=ts>")
+            except Exception:
+                source = strip_typescript_annotations(source)
         script = ComponentScript(raw=original_source)
-        script.module_code = self._extract_module_code(source)
         
         if not source or not source.strip():
             self.warnings.append("Empty script section")

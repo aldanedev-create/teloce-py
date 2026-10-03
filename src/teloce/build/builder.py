@@ -28,6 +28,7 @@ from teloce.project.extensions import normalize_source_extensions, source_extens
 from teloce.project.scanner import ProjectScanner
 from teloce.router.facade import generate_spa_router
 from teloce.ssr import to_jinax_template
+from teloce.javascript.ts_transpile import rewrite_ts_specifiers, transpile as transpile_ts
 
 
 class Builder:
@@ -267,7 +268,9 @@ class Builder:
                     'file': str(vel_file),
                     'error': str(e),
                 })
-
+        
+        if self.options.get('typescript', True):                  # NEW
+            self._compile_ts_modules(source_root, results)
         results['components'] = self._component_manifest(vel_files, results)
         self._write_css_bundle(results)
         
@@ -922,6 +925,52 @@ class Builder:
             raise ValueError("Refusing to clean a project root or its parent")
         if output.exists():
             shutil.rmtree(output)
+
+
+
+    def _ts_source_files(self, source_root: Path) -> List[Path]:
+        """Find authored .ts modules (never .d.ts, node_modules or the output dir)."""
+        roots = self.options.get("source_roots") or [source_root]
+        if isinstance(roots, (str, Path)):
+            roots = [roots]
+        found: Dict[Path, None] = {}
+        for configured in roots:
+            base = Path(configured)
+            if not base.is_absolute():
+                base = self.root_dir / base
+            if not base.is_dir():
+                continue
+            for ts_file in sorted(base.rglob("*.ts")):
+                if (ts_file.name.endswith(".d.ts") or "node_modules" in ts_file.parts
+                        or self.out_dir in ts_file.parents):
+                    continue
+                found[ts_file] = None
+        return list(found)
+
+    def _compile_ts_modules(self, source_root: Path, results: Dict[str, Any]) -> None:
+        """Compile plain .ts modules to browser-ready .js (pure Python, no Node)."""
+        for ts_file in self._ts_source_files(source_root):
+            input_name = ts_file.relative_to(self.root_dir).as_posix()
+            try:
+                source = ts_file.read_text(encoding='utf-8')
+                code = transpile_ts(source, str(ts_file))
+                if self.options.get('minify', False):
+                    code = self._minify_generated_js(code)
+                output_path = (self.out_dir / ts_file.relative_to(self.root_dir)).with_suffix('.js')
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                self.writer.write_js(output_path, code)
+                results['total'] += 1
+                results['compiled'] += 1
+                results['files'].append({
+                    'input': input_name,
+                    'output': output_path.relative_to(self.out_dir).as_posix(),
+                    'size': output_path.stat().st_size,
+                    'source_hash': hashlib.sha256(source.encode('utf-8')).hexdigest(),
+                })
+            except Exception as e:
+                results['total'] += 1
+                results['failed'] += 1
+                results['errors'].append({'file': str(ts_file), 'error': str(e)})
     
     def _compile_file(self, vel_file: Path) -> Dict[str, Any]:
         """Compile a single Teloce component source file."""
@@ -945,6 +994,8 @@ class Builder:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
         code = result['code']
+        if self.options.get('typescript', True):        # NEW
+            code = rewrite_ts_specifiers(code) 
         if self.options.get('minify', False):
             code = self._minify_generated_js(code)
         if result.get('map'):
