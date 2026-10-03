@@ -70,6 +70,67 @@ def test_generated_component_renders_and_reacts_in_real_chrome(tmp_path: Path):
 
 
 @pytest.mark.skipif(_chrome() is None, reason="Chrome/Chromium is not installed")
+def test_native_browser_objects_are_not_wrapped_by_reactivity(tmp_path: Path):
+    source_dir = tmp_path / "static" / "js"
+    source_dir.mkdir(parents=True)
+    (source_dir / "App.vel").write_text(
+        '<template><p>{{ result }}</p></template>'
+        '<script>export default { data() { return { url: null, result: "pending" }; }, '
+        'mounted() { this.url = new URL("https://example.com/orders"); this.result = this.url.href; } };</script>',
+        encoding="utf-8",
+    )
+    build_project(tmp_path, options={"dev": True, "source_maps": False})
+    (tmp_path / "dist" / "index.html").write_text(
+        '<div id="app"></div><script type="module">import { mount } from "/static/js/App.js"; '
+        'mount("#app"); setTimeout(() => document.title = document.querySelector("p").textContent, 75);</script>',
+        encoding="utf-8",
+    )
+    server = start_dev_server("127.0.0.1", 0, tmp_path / "dist")
+    try:
+        time.sleep(0.1)
+        result = _dump_dom(f"http://127.0.0.1:{server.server_port}/?no_hmr=1", 1200)
+        assert result.returncode == 0, result.stderr
+        assert "<title>https://example.com/orders</title>" in result.stdout
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.skipif(_chrome() is None, reason="Chrome/Chromium is not installed")
+def test_compiled_custom_directive_updates_and_cleans_up(tmp_path: Path):
+    source_dir = tmp_path / "static" / "js"
+    source_dir.mkdir(parents=True)
+    (source_dir / "App.vel").write_text(
+        '<template><main><p v-highlight.flash="label">{{ label }}</p><button @click="label = \'two\'">Change</button></main></template>'
+        '<script>export default { data() { return { label: "one" }; } };</script>',
+        encoding="utf-8",
+    )
+    build_project(tmp_path, options={"dev": True, "source_maps": False})
+    (tmp_path / "dist" / "index.html").write_text(
+        '<div id="app"></div><script type="module">'
+        'globalThis.teloce = { directives: { highlight: {'
+        'render(el, binding) { el.dataset.value = binding.value; el.dataset.modifiers = binding.modifiers.join(","); '
+        'return { update(next) { el.dataset.value = next.value; }, destroy() { globalThis.cleaned = true; } }; }, '
+        'unmounted() { globalThis.unmounted = true; } } } }; '
+        'const { mount } = await import("/static/js/App.js"); const app = mount("#app"); '
+        'setTimeout(() => { document.querySelector("button").click(); setTimeout(() => { '
+        'const before = document.querySelector("p").dataset.value + ":" + document.querySelector("p").dataset.modifiers; '
+        'app.unmount(); document.title = before + ":" + globalThis.cleaned + ":" + globalThis.unmounted; }, 75); }, 75);'
+        '</script>',
+        encoding="utf-8",
+    )
+    server = start_dev_server("127.0.0.1", 0, tmp_path / "dist")
+    try:
+        time.sleep(0.1)
+        result = _dump_dom(f"http://127.0.0.1:{server.server_port}/?no_hmr=1", 1400)
+        assert result.returncode == 0, result.stderr
+        assert "<title>two:flash:true:true</title>" in result.stdout
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.skipif(_chrome() is None, reason="Chrome/Chromium is not installed")
 def test_shared_runtime_nested_component_slots_and_events_in_real_chrome(tmp_path: Path):
     source_dir = tmp_path / "static" / "js"
     source_dir.mkdir(parents=True)

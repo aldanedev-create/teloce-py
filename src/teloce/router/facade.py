@@ -101,7 +101,7 @@ def generate_router(
 
 def generate_spa_router(
     output: str | Path,
-    pages_dir: str | Path,
+    pages_dir: str | Path | Sequence[str | Path],
     *,
     mode: str = "hash",
     base: str = "/",
@@ -123,28 +123,40 @@ def generate_spa_router(
     present, so the same call works in development and production builds.
     """
     output_path = Path(output)
-    pages_path = Path(pages_dir)
-    if not pages_path.is_dir():
-        raise ValueError(f"SPA pages directory does not exist: {pages_path}")
+    page_roots = (
+        [Path(item) for item in pages_dir]
+        if isinstance(pages_dir, Sequence) and not isinstance(pages_dir, (str, bytes, Path))
+        else [Path(pages_dir)]
+    )
+    missing = [path for path in page_roots if not path.is_dir()]
+    if missing:
+        raise ValueError(f"SPA pages directory does not exist: {missing[0]}")
 
     overrides = {
         str(key).replace("\\", "/"): value
         for key, value in (route_overrides or {}).items()
     }
     modules = []
-    for module in sorted(pages_path.rglob("*.js")):
-        relative = module.relative_to(pages_path).as_posix()
-        if module.name.endswith(".map") or re.search(r"\.[0-9a-fA-F]{8}\.js$", module.name):
-            continue
-        modules.append((module, relative))
+    for pages_path in page_roots:
+        for module in sorted(pages_path.rglob("*.js")):
+            relative = module.relative_to(pages_path).as_posix()
+            if module.name.endswith(".map") or re.search(r"\.[0-9a-fA-F]{8}\.js$", module.name):
+                continue
+            modules.append((module, relative, pages_path))
     if not modules:
-        raise ValueError(f"SPA pages directory has no JavaScript page modules: {pages_path}")
+        raise ValueError("SPA pages directories have no JavaScript page modules")
 
     route_definitions: list[dict[str, Any]] = []
     seen_routes: set[str] = set()
     seen_names: set[str] = set()
-    for module, relative in modules:
-        route = overrides.get(relative) or overrides.get(module.name) or _page_route(relative)
+    for module, relative, pages_path in modules:
+        qualified = f"{pages_path.as_posix()}::{relative}"
+        route = (
+            overrides.get(qualified)
+            or overrides.get(relative)
+            or overrides.get(module.name)
+            or _page_route(relative)
+        )
         component = _page_component_name(relative, seen_names)
         if route in seen_routes:
             raise ValueError(f"Duplicate SPA route discovered: {route}")
@@ -207,7 +219,13 @@ def _page_component_name(relative: str, used: set[str]) -> str:
 def _page_route(relative: str) -> str:
     """Convert a page module path into a conventional SPA route."""
     segments = list(Path(relative).with_suffix("").parts)
-    if segments and segments[-1].lower() in {"index", "home", "homepage"}:
+    if segments and segments[-1].lower() in {
+        "index",
+        "home",
+        "homepage",
+        "dashboard",
+        "dashboardpage",
+    }:
         segments.pop()
     converted: list[str] = []
     for index, segment in enumerate(segments):

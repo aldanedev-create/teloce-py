@@ -118,3 +118,12 @@ class TestDirectives:
         
         assert registry.has('event')
         assert registry.get('event') is not None
+
+    def test_register_builtin_is_idempotent(self):
+        registry = DirectiveRegistry()
+
+        registry.register_builtin()
+        registry.register_builtin()
+
+        names = [item.name for item in registry.get_by_type(DirectiveType.CUSTOM)]
+        assert len(names) == len(set(names))

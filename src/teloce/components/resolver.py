@@ -72,7 +72,12 @@ class ComponentResolver:
         relative = import_path.lstrip('.').replace('/', '.')
         for base in self.paths:
             candidate = Path(base) / import_path.lstrip('./')
-            candidates = [candidate, candidate.with_suffix('.py'), candidate.with_suffix('.vel')]
+            candidates = [
+                candidate,
+                candidate.with_suffix('.py'),
+                candidate.with_suffix('.vel'),
+                candidate.with_suffix('.html'),
+            ]
             for path in candidates:
                 if path.exists() and path.suffix == '.py':
                     module_name = '.'.join(path.with_suffix('').parts)
@@ -81,7 +86,7 @@ class ComponentResolver:
                         return getattr(module, component_name, None)
                     except (ImportError, AttributeError):
                         continue
-                if path.exists() and path.suffix == '.vel':
+                if path.exists() and path.suffix in {'.vel', '.html'}:
                     return path
         return None
     

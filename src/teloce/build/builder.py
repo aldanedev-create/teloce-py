@@ -24,6 +24,7 @@ from teloce.compiler.compiler import Compiler
 from teloce.compiler.generator import Generator, SAFE_EXPRESSION_RUNTIME, SHARED_DOM_RUNTIME
 from teloce.compiler.minifier import minify_css, minify_js
 from teloce.components.dependency_graph import DependencyGraph
+from teloce.project.extensions import normalize_source_extensions, source_extension_pattern
 from teloce.project.scanner import ProjectScanner
 from teloce.router.facade import generate_spa_router
 from teloce.ssr import to_jinax_template
@@ -69,10 +70,15 @@ class Builder:
             **requested,
         }
         self.production = production and mode == "production" and not self.options.get("dev", False)
+        self.source_extensions = normalize_source_extensions(
+            self.options.get("source_extensions"),
+            html_mode=bool(self.options.get("html_mode", False)),
+        )
+        self.options["source_extensions"] = list(self.source_extensions)
         self.compiler = Compiler(self.options)
         self.writer = FileWriter()
         self.manifest = ManifestGenerator()
-        self.scanner = ProjectScanner()
+        self.scanner = ProjectScanner(self.source_extensions)
         self.dependency_graph = DependencyGraph()
         self.clean_output = bool(self.options.get("clean", False))
         self.hash_assets = bool(self.options.get("hash_assets", False))
@@ -110,20 +116,43 @@ class Builder:
         # Ensure output directory exists
         self.out_dir.mkdir(parents=True, exist_ok=True)
         
-        # Scan for .vel files
+        # Scan component source roots. A list is used by Flaxon modules so a
+        # feature can own its pages and components without a separate build.
         # The output directory is frequently inside the project (for example
         # ``public`` on Vercel).  Never treat generated .vel files there as
         # new source files on the same build.
         # The CLI passes the configured static source directory.  Keep the
         # programmatic API's historical root scan unless callers opt in, so
         # existing projects that keep components elsewhere remain compatible.
-        source_root = self.root_dir
-        static_dir = self.options.get("static_dir")
-        if static_dir:
-            configured_source = self.root_dir / str(static_dir)
-            if configured_source.is_dir():
-                source_root = configured_source
-        vel_files = self.scanner.scan(source_root, exclude_paths=[self.out_dir])
+        configured_roots = self.options.get("source_roots")
+        if configured_roots:
+            if isinstance(configured_roots, (str, Path)):
+                configured_roots = [configured_roots]
+            vel_files = []
+            seen_sources: set[Path] = set()
+            for configured in configured_roots:
+                source_root = Path(configured)
+                if not source_root.is_absolute():
+                    source_root = self.root_dir / source_root
+                source_root = source_root.resolve()
+                try:
+                    source_root.relative_to(self.root_dir.resolve())
+                except ValueError as exc:
+                    raise ValueError("source_roots must stay inside the project root") from exc
+                for source_file in self.scanner.scan(source_root, exclude_paths=[self.out_dir]):
+                    resolved = source_file.resolve()
+                    if resolved not in seen_sources:
+                        seen_sources.add(resolved)
+                        vel_files.append(source_file)
+            vel_files.sort(key=lambda item: item.as_posix().lower())
+        else:
+            source_root = self.root_dir
+            static_dir = self.options.get("static_dir")
+            if static_dir:
+                configured_source = self.root_dir / str(static_dir)
+                if configured_source.is_dir():
+                    source_root = configured_source
+            vel_files = self.scanner.scan(source_root, exclude_paths=[self.out_dir])
         self._build_dependency_graph(vel_files)
         cache = self._load_build_cache()
         source_hashes = {
@@ -332,7 +361,7 @@ class Builder:
                         generated_entries = [
                             self.out_dir / str(file_info['output'])
                             for file_info in results['files']
-                            if str(file_info.get('input', '')).endswith('.vel')
+                            if self._is_source_input(str(file_info.get('input', '')))
                             and str(file_info.get('output', '')).endswith('.js')
                         ]
                         app_entries = [
@@ -527,7 +556,7 @@ class Builder:
         if not pages_path.is_dir():
             return False
         return any(
-            path.is_file() and path.suffix.lower() in {".vel", ".js"}
+            path.is_file() and path.suffix.lower() in {*self.source_extensions, ".js"}
             for path in pages_path.rglob("*")
         )
 
@@ -546,7 +575,7 @@ class Builder:
         for item in manifest.get('files', []):
             input_name = item.get('input')
             output_name = str(item.get('output', ''))
-            if not input_name or not str(input_name).endswith('.vel'):
+            if not input_name or not self._is_source_input(str(input_name)):
                 continue
             # SSR emits a second record for the same input; the JavaScript
             # record is the cache authority for incremental compilation.
@@ -655,8 +684,8 @@ class Builder:
         for file_info in results.get('files', []):
             input_name = str(file_info.get('input', ''))
             output_name = str(file_info.get('output', ''))
-            if input_name.endswith('.vel') and output_name:
-                self.assets.asset_map[input_name[:-4] + '.js'] = output_name
+            if self._is_source_input(input_name) and output_name:
+                self.assets.asset_map[str(Path(input_name).with_suffix('.js')).replace('\\', '/')] = output_name
                 css_output = output_name[:-3] + '.css'
                 if (self.out_dir / css_output).exists():
                     self.assets.asset_map[css_output] = css_output
@@ -676,7 +705,7 @@ class Builder:
         mappings = list(self.assets.asset_map.items())
         generated = [
             file_info for file_info in results.get('files', [])
-            if str(file_info.get('input', '')).endswith('.vel')
+            if self._is_source_input(str(file_info.get('input', '')))
             and str(file_info.get('output', '')).endswith('.js')
         ]
         for file_info in generated:
@@ -782,9 +811,9 @@ class Builder:
         for file_info in results.get('files', []):
             input_name = str(file_info.get('input', ''))
             output_name = str(file_info.get('output', ''))
-            if not input_name.endswith('.vel') or not output_name.endswith('.js'):
+            if not self._is_source_input(input_name) or not output_name.endswith('.js'):
                 continue
-            logical_name = input_name[:-4] + '.js'
+            logical_name = str(Path(input_name).with_suffix('.js')).replace('\\', '/')
             if logical_name == output_name:
                 continue
             alias = self.out_dir / logical_name
@@ -895,7 +924,7 @@ class Builder:
             shutil.rmtree(output)
     
     def _compile_file(self, vel_file: Path) -> Dict[str, Any]:
-        """Compile a single .vel file."""
+        """Compile a single Teloce component source file."""
         source = vel_file.read_text(encoding='utf-8')
         output_path = self._output_path(vel_file)
         component_imports = self._resolve_component_imports(vel_file, source)
@@ -950,22 +979,19 @@ class Builder:
         return output_path.relative_to(self.out_dir).as_posix()
 
     def _resolve_component_imports(self, vel_file: Path, source: str) -> Dict[str, str]:
-        """Resolve local `.vel` imports to paths in the build output."""
+        """Resolve local component imports to paths in the build output."""
         resolved: Dict[str, str] = {}
         script_match = re.search(r'<script(?:\s[^>]*)?>([\s\S]*?)</script\s*>', source, re.I)
         source = script_match.group(1) if script_match else source
         output_path = self._output_path(vel_file)
-        pattern = re.compile(r'(?m)^\s*import\s+([A-Za-z_$][\w$]*)(?:\s*,\s*\{[^}]*\})?\s+from\s+[\'\"]([^\'\"]+\.vel)[\'\"]\s*;?')
+        extensions = source_extension_pattern(self.source_extensions)
+        pattern = re.compile(rf'(?m)^\s*import\s+([A-Za-z_$][\w$]*)(?:\s*,\s*\{{[^}}]*\}})?\s+from\s+[\'\"]([^\'\"]+{extensions})[\'\"]\s*;?')
         for match in pattern.finditer(source):
             name, import_path = match.groups()
             if not import_path.startswith('.'):
                 continue
             requested = (vel_file.parent / import_path).resolve()
-            candidates = [requested]
-            if requested.suffix == '':
-                candidates.extend([requested.with_suffix('.vel'), requested / 'index.vel'])
-            elif requested.suffix != '.vel':
-                candidates.append(requested.with_suffix('.vel'))
+            candidates = self._source_candidates(requested)
             child = next((candidate for candidate in candidates if candidate.is_file()), None)
             if child is None:
                 raise FileNotFoundError(f"Component import not found: {import_path} in {vel_file}")
@@ -974,15 +1000,11 @@ class Builder:
             if not specifier.startswith('.'):
                 specifier = './' + specifier
             resolved[name] = specifier
-        named_pattern = re.compile(r'(?m)^\s*import\s*\{([^}]+)\}\s*from\s+[\'\"]([^\'\"]+\.vel)[\'\"]\s*;?')
+        named_pattern = re.compile(rf'(?m)^\s*import\s*\{{([^}}]+)\}}\s*from\s+[\'\"]([^\'\"]+{extensions})[\'\"]\s*;?')
         for match in named_pattern.finditer(source):
             import_path = match.group(2)
             requested = (vel_file.parent / import_path).resolve()
-            candidates = [requested]
-            if requested.suffix == '':
-                candidates.extend([requested.with_suffix('.vel'), requested / 'index.vel'])
-            elif requested.suffix != '.vel':
-                candidates.append(requested.with_suffix('.vel'))
+            candidates = self._source_candidates(requested)
             child = next((candidate for candidate in candidates if candidate.is_file()), None)
             if child is None:
                 raise FileNotFoundError(f"Component import not found: {import_path} in {vel_file}")
@@ -998,7 +1020,7 @@ class Builder:
         return resolved
 
     def _build_dependency_graph(self, vel_files: List[Path]) -> None:
-        """Build a stable graph of relative `.vel` component imports."""
+        """Build a stable graph of relative component imports."""
         self.dependency_graph.clear()
         known = {path.resolve(): path.relative_to(self.root_dir).as_posix() for path in vel_files}
         pattern = re.compile(r'(?m)^\s*import\s+(?:[A-Za-z_$][\w$]*(?:\s*,\s*\{[^}]+\})?|\{[^}]+\}|\*\s+as\s+[A-Za-z_$][\w$]*)\s+from\s+[\'\"]([^\'\"]+)[\'\"]\s*;?')
@@ -1012,9 +1034,7 @@ class Builder:
                 if not import_path.startswith('.'):
                     continue
                 requested = (vel_file.parent / import_path).resolve()
-                candidates = [requested]
-                if requested.suffix == '':
-                    candidates.extend([requested.with_suffix('.vel'), requested / 'index.vel'])
+                candidates = self._source_candidates(requested)
                 child = next((candidate for candidate in candidates if candidate in known), None)
                 if child is not None:
                     self.dependency_graph.add_dependency(component, known[child])
@@ -1026,6 +1046,22 @@ class Builder:
             return (self.out_dir / relative).with_suffix('.js')
         digest = hashlib.sha256(vel_file.read_bytes()).hexdigest()[:8]
         return self.out_dir / relative.parent / f"{relative.stem}.{digest}.js"
+
+    def _is_source_input(self, value: str | Path) -> bool:
+        return Path(value).suffix.lower() in self.source_extensions
+
+    def _source_candidates(self, requested: Path) -> list[Path]:
+        candidates = [requested]
+        if requested.suffix == "":
+            for extension in self.source_extensions:
+                candidates.extend(
+                    [requested.with_suffix(extension), requested / f"index{extension}"]
+                )
+        elif requested.suffix.lower() not in self.source_extensions:
+            candidates.extend(
+                requested.with_suffix(extension) for extension in self.source_extensions
+            )
+        return candidates
     
     def get_stats(self) -> Dict[str, Any]:
         """Get build statistics."""

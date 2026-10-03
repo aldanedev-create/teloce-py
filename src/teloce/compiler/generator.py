@@ -14,6 +14,7 @@ from teloce.ast.elements import ElementFactory
 from teloce.css.hashing import HashGenerator
 from teloce.css.modules import CSSModules
 from teloce.compiler.minifier import minify_js
+from teloce.project.extensions import normalize_source_extensions, source_extension_pattern
 
 from teloce.ast.nodes import ASTNode, ElementNode, TextNode, InterpolationNode, ForNode, IfNode, ComponentNode, SlotNode, FragmentNode
 from teloce.sfc.component import Component
@@ -88,8 +89,17 @@ const __runEventExpression = (expression, scope) => { let result; for (const sta
 SHARED_DOM_RUNTIME = r'''
 export const __createReactive = (initial, notify) => {
   const cache = new WeakMap();
+  const canObserve = value => {
+    if (!value || typeof value !== "object") return false;
+    if (Array.isArray(value)) return true;
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+  };
   const wrap = (value, rootKey = null) => {
-    if (!value || typeof value !== "object") return value;
+    // Browser host objects (WebSocket, URL, EventTarget, File, etc.) and
+    // class instances require their real receiver. Proxying them causes
+    // native getters and methods to throw "Illegal invocation".
+    if (!canObserve(value)) return value;
     if (cache.has(value)) return cache.get(value);
     const proxy = new Proxy(value, {
       get(object, key, receiver) {
@@ -233,6 +243,10 @@ class Generator:
     
     def __init__(self, options: Optional[dict] = None):
         self.options = options or {}
+        self.source_extensions = normalize_source_extensions(
+            self.options.get("source_extensions"),
+            html_mode=bool(self.options.get("html_mode", False)),
+        )
         self.dev = self.options.get("dev", True)
         self.minify = self.options.get("minify", False)
         self.indent_level = 0
@@ -262,7 +276,9 @@ class Generator:
         lines.extend(self._generate_signal_imports(component))
         module_code = getattr(component.script, "module_code", "")
         if module_code:
-            lines.append(module_code)
+            cleaned_module_code = self._strip_component_imports(module_code)
+            if cleaned_module_code:
+                lines.append(cleaned_module_code)
         lines.append('')
         
         # Generate component code
@@ -981,22 +997,23 @@ class Generator:
         """Return local component names and their generated import paths."""
         configured = self.options.get("component_imports", {})
         imports = {}
-        pattern = r'(?m)^\s*import\s+([A-Za-z_$][\w$]*)(?:\s*,\s*\{[^}]*\})?\s+from\s+[\'\"]([^\'\"]+\.vel)[\'\"]\s*;?'
+        extensions = source_extension_pattern(self.source_extensions)
+        pattern = rf'(?m)^\s*import\s+([A-Za-z_$][\w$]*)(?:\s*,\s*\{{[^}}]*\}})?\s+from\s+[\'\"]([^\'\"]+{extensions})[\'\"]\s*;?'
         for match in re.finditer(pattern, component.script.raw):
             name, source = match.groups()
-            imports[name] = configured.get(name, source[:-4] + ".js")
-        named_pattern = r'(?m)^\s*import\s*\{([^}]+)\}\s*from\s+[\'\"]([^\'\"]+\.vel)[\'\"]\s*;?'
+            imports[name] = configured.get(name, self._compiled_import(source))
+        named_pattern = rf'(?m)^\s*import\s*\{{([^}}]+)\}}\s*from\s+[\'\"]([^\'\"]+{extensions})[\'\"]\s*;?'
         for match in re.finditer(named_pattern, component.script.raw):
             source = match.group(2)
             for item in match.group(1).split(','):
                 parts = re.split(r'\s+as\s+', item.strip())
                 name = parts[-1].strip()
                 if name:
-                    imports[name] = configured.get(name, source[:-4] + ".js")
+                    imports[name] = configured.get(name, self._compiled_import(source))
         return imports
 
     def _generate_component_imports(self, component: Component) -> List[str]:
-        """Emit browser imports for local `.vel` component dependencies."""
+        """Emit browser imports for local component dependencies."""
         configured = self.options.get("component_imports", {})
         lazy_components = set(self.options.get("lazy_components", ()) or ())
         lines = []
@@ -1004,10 +1021,10 @@ class Generator:
         emitted = set()
         for item in getattr(component.script, "imports", []):
             source = item.source
-            if not source.endswith(".vel"):
+            if not source.endswith(self.source_extensions):
                 continue
             local = item.alias or (item.names[0] if item.names else "")
-            path = configured.get(local, source[:-4] + ".js")
+            path = configured.get(local, self._compiled_import(source))
             if not local or (local, path, item.is_default, item.is_namespace) in emitted:
                 continue
             if self.options.get("tree_shake", False) and item.is_default and local not in self._used_components:
@@ -1043,6 +1060,26 @@ class Generator:
                 lines.append(helper)
             lines.extend(lazy_lines)
         return lines
+
+    def _compiled_import(self, source: str) -> str:
+        for extension in self.source_extensions:
+            if source.endswith(extension):
+                return source[: -len(extension)] + ".js"
+        return source
+
+    def _strip_component_imports(self, source: str) -> str:
+        """Defensively remove imports emitted by component import generation."""
+        if not source:
+            return ""
+        extensions = source_extension_pattern(self.source_extensions)
+        patterns = (
+            rf'(?m)^\s*import\s+[^;\n]+?\s+from\s+[\'\"][^\'\"]+{extensions}[\'\"]\s*;?\s*$',
+            rf'(?m)^\s*import\s+[\'\"][^\'\"]+{extensions}[\'\"]\s*;?\s*$',
+        )
+        cleaned = source
+        for pattern in patterns:
+            cleaned = re.sub(pattern, "", cleaned)
+        return cleaned.strip()
 
     def _collect_component_tags(self, nodes: List[ASTNode]) -> set[str]:
         """Collect custom element names referenced by the template AST."""
@@ -1215,8 +1252,11 @@ class Generator:
                 direct_binding_ids.append(direct_record["id"])
             if dynamic_expression is not None and binding.name == "is":
                 continue
-            if binding.name == 'model':
+            if binding.name == 'model' or binding.name.startswith('model.'):
                 attrs.append(f'data-teloce-model="{html.escape(binding.value, quote=True)}"')
+                modifiers = binding.name.partition('.')[2]
+                if modifiers:
+                    attrs.append(f'data-teloce-model-modifiers="{html.escape(modifiers, quote=True)}"')
             elif binding.name == 'class':
                 attrs.append(f'data-teloce-bind-class="{html.escape(binding.value, quote=True)}"')
             elif binding.name == 'style':

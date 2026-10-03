@@ -22,7 +22,8 @@ class SFCParser:
     Extracts and validates template, script, and style sections.
     """
     
-    def __init__(self):
+    def __init__(self, options: Optional[Dict[str, Any]] = None):
+        self.options = options or {}
         self.errors: List[str] = []
         self.warnings: List[str] = []
         self._last_sections: Optional[SFCSections] = None
@@ -57,7 +58,7 @@ class SFCParser:
             self.warnings.extend(template_parser.warnings)
         
         # Parse script
-        script_parser = ScriptParser({"lang": sections.script_lang})
+        script_parser = ScriptParser({**self.options, "lang": sections.script_lang})
         script = script_parser.parse(sections.script, filename)
         script.lang = sections.script_lang
         script.setup = sections.script_setup

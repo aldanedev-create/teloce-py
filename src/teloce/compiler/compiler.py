@@ -138,7 +138,10 @@ class Compiler:
         source = self._run_plugin_hooks("before_compile", source)
 
         # Step 1: Parse SFC
-        sfc_parser = SFCParser()
+        parser_options = dict(self.options)
+        if "source_extensions" not in parser_options and Path(filename).suffix.lower() == ".html":
+            parser_options["html_mode"] = True
+        sfc_parser = SFCParser(parser_options)
         component = sfc_parser.parse(source, filename)
         if component:
             self._check_cdn_imports(source, filename)
@@ -233,6 +236,8 @@ class Compiler:
 
         # Step 4: Code generation
         generator_options = dict(self.options)
+        if "source_extensions" not in generator_options and Path(filename).suffix.lower() == ".html":
+            generator_options["html_mode"] = True
         filter_registry = generator_options.get("filter_registry")
         if filter_registry and hasattr(filter_registry, "get_js_filters"):
             generator_options["filter_js"] = filter_registry.get_js_filters()

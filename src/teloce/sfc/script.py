@@ -15,6 +15,7 @@ from teloce.javascript.tree_sitter_backend import (
     TreeSitterUnavailable,
     default_export_object_source,
 )
+from teloce.project.extensions import normalize_source_extensions, source_extension_pattern
 from teloce.sfc.component import ComponentScript
 
 
@@ -211,6 +212,10 @@ class ScriptParser:
     
     def __init__(self, options: Optional[Dict[str, Any]] = None):
         self.options = options or {}
+        self.source_extensions = normalize_source_extensions(
+            self.options.get("source_extensions"),
+            html_mode=bool(self.options.get("html_mode", False)),
+        )
         self.errors: List[str] = []
         self.warnings: List[str] = []
         self.imports: List[ScriptImport] = []
@@ -329,11 +334,15 @@ class ScriptParser:
             code = code[:start] + code[end:]
         # Local component imports are re-emitted with resolved build URLs by
         # the generator; package imports and ordinary module code remain.
+        extensions = source_extension_pattern(self.source_extensions)
         code = re.sub(
-            r'(?m)^\s*import\s+(?:[^\n;]+)\s+from\s+[\'\"]([^\'\"]+\.vel)[\'\"]\s*;?\s*$',
+            rf'(?m)^\s*import\s+(?:[^\n;]+)\s+from\s+[\'\"]([^\'\"]+{extensions})[\'\"]\s*;?\s*$',
             '', code,
         )
-        code = re.sub(r'(?m)^\s*import\s+[\'\"]([^\'\"]+\.vel)[\'\"]\s*;?\s*$', '', code)
+        code = re.sub(
+            rf'(?m)^\s*import\s+[\'\"]([^\'\"]+{extensions})[\'\"]\s*;?\s*$',
+            '', code,
+        )
         return code.strip()
 
     @staticmethod

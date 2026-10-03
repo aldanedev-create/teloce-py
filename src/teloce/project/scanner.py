@@ -6,8 +6,9 @@ Discovers all .vel files and their locations.
 
 from pathlib import Path
 from typing import List, Optional, Set, Dict, Any
-import os
 import fnmatch
+
+from teloce.project.extensions import normalize_source_extensions
 
 
 class ProjectScanner:
@@ -17,8 +18,9 @@ class ProjectScanner:
     Discovers all .vel files in a project directory.
     """
     
-    def __init__(self):
+    def __init__(self, source_extensions: str | list[str] | tuple[str, ...] | None = None):
         self.vel_files: List[Path] = []
+        self.source_extensions = normalize_source_extensions(source_extensions)
         self.ignored_patterns: Set[str] = {
             'node_modules',
             '.git',
@@ -49,7 +51,12 @@ class ProjectScanner:
             return []
         
         excluded = [Path(item).resolve() for item in (exclude_paths or [])]
-        for path in sorted(root.rglob('*.vel'), key=lambda item: item.as_posix().lower()):
+        candidates = {
+            path
+            for extension in self.source_extensions
+            for path in root.rglob(f'*{extension}')
+        }
+        for path in sorted(candidates, key=lambda item: item.as_posix().lower()):
             resolved = path.resolve()
             if any(resolved == item or item in resolved.parents for item in excluded):
                 continue
@@ -79,7 +86,7 @@ class ProjectScanner:
         if not root.exists():
             return []
         
-        include_patterns = include or ['**/*.vel']
+        include_patterns = include or [f'**/*{extension}' for extension in self.source_extensions]
         exclude_patterns = exclude or []
         
         seen: Set[Path] = set()

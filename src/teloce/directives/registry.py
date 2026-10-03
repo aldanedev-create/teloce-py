@@ -26,6 +26,10 @@ class DirectiveRegistry:
     
     def register(self, directive: Directive):
         """Register a directive."""
+        previous = self._directives.get(directive.name)
+        if previous is not None:
+            existing = self._by_type.get(previous.type, [])
+            self._by_type[previous.type] = [item for item in existing if item.name != directive.name]
         self._directives[directive.name] = directive
         self._by_type[directive.type].append(directive)
         self._handler.register(directive)
@@ -36,7 +40,7 @@ class DirectiveRegistry:
     
     def get_by_type(self, type: DirectiveType) -> List[Directive]:
         """Get directives by type."""
-        return self._by_type.get(type, [])
+        return list(self._by_type.get(type, []))
     
     def has(self, name: str) -> bool:
         """Check if a directive exists."""
@@ -75,5 +79,5 @@ class DirectiveRegistry:
     def clear(self):
         """Clear all directives."""
         self._directives.clear()
-        for list in self._by_type.values():
-            list.clear()
+        for directives in self._by_type.values():
+            directives.clear()

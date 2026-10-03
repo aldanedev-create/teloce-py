@@ -536,6 +536,18 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     return props;
   };
 
+  const destroyDirectiveRecord = (element, name, record) => {
+    if (!record) return;
+    try { record.directive?.beforeUnmount?.(element, record.context); }
+    catch (error) { handleError(error, `directive:${name}:beforeUnmount`); }
+    try { record.cleanup?.(); }
+    catch (error) { handleError(error, `directive:${name}:cleanup`); }
+    try { record.directive?.destroy?.(element, record.context); }
+    catch (error) { handleError(error, `directive:${name}:destroy`); }
+    try { record.directive?.unmounted?.(element, record.context); }
+    catch (error) { handleError(error, `directive:${name}:unmounted`); }
+  };
+
   const cleanupElement = element => {
     if (element.__teloceHandlers) {
       for (const record of element.__teloceHandlers.values()) element.removeEventListener(record.actualEvent, record.listener, record.options);
@@ -545,8 +557,8 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       element.removeEventListener(element.__teloceModelListener.eventName, element.__teloceModelListener.listener);
       element.__teloceModelListener = null;
     }
-    for (const record of element.__teloceDirectives?.values?.() || []) {
-      try { record.cleanup?.(); record.directive?.destroy?.(element, record.context); } catch (_) {}
+    for (const [name, record] of element.__teloceDirectives?.entries?.() || []) {
+      destroyDirectiveRecord(element, name, record);
     }
     element.__teloceDirectives?.clear?.();
     for (const record of element.__teloceActions?.values?.() || []) {
@@ -809,10 +821,16 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
 
   const bindAnnotation = element => {
     const expression = element.getAttribute("data-teloce-chart-annotation") || "";
-    if (element.__teloceAnnotationCleanup && element.__teloceAnnotationSignature === expression && element.__teloceAnnotation?.isConnected) return;
-    if (element.__teloceAnnotationCleanup) element.__teloceAnnotationCleanup();
     const value = evaluate(__teloceDecodeAttribute(expression), state);
-    if (!value || typeof value !== "object") return;
+    if (!value || typeof value !== "object") {
+      element.__teloceAnnotationCleanup?.();
+      return;
+    }
+    let valueSignature;
+    try { valueSignature = JSON.stringify(value); } catch (_) { valueSignature = String(value); }
+    const signature = `${expression}\u0000${valueSignature}`;
+    if (element.__teloceAnnotationCleanup && element.__teloceAnnotationSignature === signature && element.__teloceAnnotation?.isConnected) return;
+    if (element.__teloceAnnotationCleanup) element.__teloceAnnotationCleanup();
     const annotation = document.createElement("aside");
     annotation.className = "teloce-chart-annotation";
     annotation.textContent = String(value.text ?? "");
@@ -825,7 +843,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     if (getComputedStyle(element).position === "static") element.style.position = "relative";
     element.append(annotation);
     element.__teloceAnnotation = annotation;
-    element.__teloceAnnotationSignature = expression;
+    element.__teloceAnnotationSignature = signature;
     element.__teloceAnnotationCleanup = () => { annotation.remove(); element.__teloceAnnotation = null; element.__teloceAnnotationSignature = null; element.__teloceAnnotationCleanup = null; };
   };
 
@@ -889,9 +907,13 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     const connect = () => {
       if (stopped || document.hidden) return;
       try {
-        if (/^wss?:/i.test(source) && typeof WebSocket === "function") {
+        const websocketSource = /^wss?:/i.test(source) || source.startsWith("/");
+        if (websocketSource && typeof WebSocket === "function") {
           socket?.close?.();
-          socket = new WebSocket(source);
+          const socketUrl = /^wss?:/i.test(source)
+            ? source
+            : `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}${source}`;
+          socket = new WebSocket(socketUrl);
           socket.onopen = () => { retryDelay = 1000; };
           socket.onmessage = event => { try { apply(JSON.parse(event.data)); } catch (_) { apply(event.data); } };
           socket.onerror = error => handleError(error, "live");
@@ -999,6 +1021,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
   };
 
   const bindEventsAndDirectives = element => {
+    const seenDirectives = new Set();
     for (const attribute of Array.from(element.attributes || [])) {
       if (attribute.name.startsWith("data-teloce-event-")) {
         const eventKey = attribute.name.slice("data-teloce-event-".length);
@@ -1053,10 +1076,21 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
 
       if (attribute.name === "data-teloce-model" && !element.__teloceModelListener) {
         const expression = attribute.value;
-        const eventName = element.type === "checkbox" || element.tagName === "SELECT" ? "change" : "input";
+        const modifiers = new Set(String(element.getAttribute("data-teloce-model-modifiers") || "").split(".").filter(Boolean));
+        const eventName = modifiers.has("lazy") || element.type === "checkbox" || element.type === "radio" || element.tagName === "SELECT" ? "change" : "input";
         const initialValue = __safeEvaluate(expression, state);
-        if (element.type === "checkbox") element.checked = Boolean(initialValue);
-        else if (initialValue !== undefined && initialValue !== null) element.value = String(initialValue);
+        if (element.type === "checkbox") {
+          element.checked = Array.isArray(initialValue)
+            ? initialValue.map(String).includes(String(element.value))
+            : Boolean(initialValue);
+        } else if (element.type === "radio") {
+          element.checked = String(initialValue ?? "") === String(element.value);
+        } else if (element.tagName === "SELECT" && element.multiple && Array.isArray(initialValue)) {
+          const selected = new Set(initialValue.map(String));
+          Array.from(element.options).forEach(option => { option.selected = selected.has(String(option.value)); });
+        } else if (initialValue !== undefined && initialValue !== null && element.value !== String(initialValue)) {
+          element.value = String(initialValue);
+        }
         const listener = () => {
           const scopeElement = element.closest?.("[data-teloce-loop-scope]");
           const loopScope = scopeElement ? loopScopes.get(scopeElement.getAttribute("data-teloce-loop-scope")) : null;
@@ -1064,7 +1098,23 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
             get(object, key, receiver) { return Reflect.has(object, key) ? Reflect.get(object, key, receiver) : state[key]; },
             set(object, key, value) { if (Reflect.has(state, key)) state[key] = value; else object[key] = value; return true; },
           });
-          __setSafePath(expression, element.type === "checkbox" ? element.checked : element.value, values);
+          let next;
+          if (element.type === "checkbox" && Array.isArray(__safeEvaluate(expression, values))) {
+            const current = [...__safeEvaluate(expression, values)];
+            const index = current.map(String).indexOf(String(element.value));
+            if (element.checked && index < 0) current.push(element.value);
+            if (!element.checked && index >= 0) current.splice(index, 1);
+            next = current;
+          } else if (element.type === "checkbox") next = element.checked;
+          else if (element.type === "radio") { if (!element.checked) return; next = element.value; }
+          else if (element.tagName === "SELECT" && element.multiple) next = Array.from(element.selectedOptions).map(option => option.value);
+          else next = element.value;
+          if (modifiers.has("trim") && typeof next === "string") next = next.trim();
+          if (modifiers.has("number") && typeof next === "string" && next.trim() !== "") {
+            const number = Number(next);
+            if (Number.isFinite(number)) next = number;
+          }
+          __setSafePath(expression, next, values);
         };
         element.__teloceModelListener = { eventName, listener };
         element.addEventListener(eventName, listener);
@@ -1077,21 +1127,54 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
         applyBinding(element, name, value);
       }
 
-      const directiveMatch = attribute.name.match(/^v-([\w-]+)$/);
+      const directiveMatch = attribute.name.match(/^v-([\w-]+)(?:\.(.+))?$/);
       const directive = directiveMatch && globalThis.teloce?.directives?.[directiveMatch[1]];
-      if (directive?.render) {
+      if (directive && (directive.render || directive.mounted)) {
         const name = directiveMatch[1];
+        seenDirectives.add(name);
         const signature = `${name}=${attribute.value}`;
         if (!element.__teloceDirectives) element.__teloceDirectives = new Map();
         const previous = element.__teloceDirectives.get(name);
-        if (!previous || previous.signature !== signature) {
-          try { previous?.cleanup?.(); previous?.directive?.destroy?.(element, previous.context); } catch (_) {}
-          const context = { name, expression: attribute.value, value: evaluate(attribute.value, state), state, modifiers: [] };
-          let cleanup;
-          try { cleanup = directive.render(element, context); } catch (error) { handleError(error, `directive:${name}`); }
-          element.__teloceDirectives.set(name, { signature, directive, context, cleanup: typeof cleanup === "function" ? cleanup : null });
+        const value = evaluate(attribute.value, state);
+        let valueSignature;
+        try { valueSignature = JSON.stringify(value); } catch (_) { valueSignature = String(value); }
+        const context = {
+          name,
+          expression: attribute.value,
+          value,
+          oldValue: previous?.context?.value,
+          state,
+          modifiers: directiveMatch[2]?.split(".").filter(Boolean) || [],
+        };
+        if (!previous || previous.signature !== signature || previous.directive !== directive) {
+          destroyDirectiveRecord(element, name, previous);
+          let result;
+          try {
+            const mountHook = directive.render || directive.mounted;
+            result = mountHook.call(directive, element, context);
+          } catch (error) { handleError(error, `directive:${name}:mounted`); }
+          element.__teloceDirectives.set(name, {
+            signature,
+            valueSignature,
+            directive,
+            context,
+            cleanup: typeof result === "function" ? result : result?.destroy,
+            update: result?.update,
+          });
+        } else if (previous.valueSignature !== valueSignature) {
+          try {
+            if (previous.update) previous.update(context);
+            else directive.updated?.call(directive, element, context);
+          } catch (error) { handleError(error, `directive:${name}:updated`); }
+          previous.valueSignature = valueSignature;
+          previous.context = context;
         }
       }
+    }
+    for (const [name, record] of element.__teloceDirectives || []) {
+      if (seenDirectives.has(name)) continue;
+      destroyDirectiveRecord(element, name, record);
+      element.__teloceDirectives.delete(name);
     }
     bindAdvancedDirectives(element);
   };

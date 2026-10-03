@@ -75,6 +75,9 @@ def build_command(args: Any) -> int:
         'dev': False,
         'clean': clean,
         'static_dir': build_config.get('static_dir', 'static'),
+        'html_mode': build_config.get('html_mode', False),
+        'source_extensions': build_config.get('source_extensions'),
+        'source_roots': build_config.get('source_roots'),
         'hash_assets': (not getattr(args, 'no_hash_assets', False)
                         and (getattr(args, 'hash_assets', False)
                              or build_config.get('hash_assets', True))),

@@ -329,7 +329,15 @@ class Lexer:
                 start = self.position
                 for _ in range(7):
                     self.advance()
-                self.tokens.append(Token(TokenType.MODEL, 'model', self.line, start))
+                modifiers = ""
+                if self.current_char() == '.':
+                    modifier_start = self.position
+                    while self.position < len(self.source) and (
+                        self.current_char().isalnum() or self.current_char() in '-_.'
+                    ):
+                        self.advance()
+                    modifiers = self.source[modifier_start:self.position]
+                self.tokens.append(Token(TokenType.MODEL, f'model{modifiers}', self.line, start))
                 if self.current_char() == '=':
                     self.advance()
                 self._tokenize_attribute_value()
@@ -365,6 +373,26 @@ class Lexer:
                     TokenType.TRANSITION_DIRECTIVE,
                     f'{transition_prefix}:{modifier_name}',
                     self.line, start,
+                ))
+                if self.current_char() == '=':
+                    self.advance()
+                    self._tokenize_attribute_value()
+                continue
+
+            # Preserve dot-separated modifiers on custom directives. Without
+            # this branch ``v-highlight.flash`` becomes two unrelated
+            # attributes and the directive receives an empty expression.
+            if self.source.startswith('v-', self.position):
+                start = self.position
+                while self.position < len(self.source) and (
+                    self.current_char().isalnum() or self.current_char() in '-_.'
+                ):
+                    self.advance()
+                self.tokens.append(Token(
+                    TokenType.ATTRIBUTE_NAME,
+                    self.source[start:self.position],
+                    self.line,
+                    self.column - (self.position - start),
                 ))
                 if self.current_char() == '=':
                     self.advance()
