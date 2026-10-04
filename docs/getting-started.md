@@ -55,7 +55,7 @@ export default {
 ```html
 <div id="app"></div>
 <script type="module">
-  import { mount } from "/static/js/components/App.js";
+  import { mount } from "/static/js/App.js";
   mount("#app");
 </script>
 ```
