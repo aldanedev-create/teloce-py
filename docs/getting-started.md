@@ -54,7 +54,10 @@ export default {
 
 ```html
 <div id="app"></div>
-<script type="module" src="/static/js/App.js"></script>
+<script type="module">
+  import { mount } from "/static/js/components/App.js";
+  mount("#app");
+</script>
 ```
 
 `app.py`:
