@@ -606,7 +606,8 @@ class Builder:
         path.write_text(content, encoding='utf-8')
         relative = path.relative_to(self.out_dir).as_posix()
         results['files'].append({'input': '<component-css-bundle>', 'output': relative, 'size': path.stat().st_size})
-        self.assets.asset_map[f"{self.options.get('static_dir', 'static').strip('/\\')}/styles.css"] = relative
+        static_dir = self.options.get("static_dir", "static").strip("/\\")
+        self.assets.asset_map[f"{static_dir}/styles.css"] = relative
 
     def _spa_enabled(self, pages_relative: str) -> bool:
         """Resolve the SPA setting without making normal apps configure routes.
