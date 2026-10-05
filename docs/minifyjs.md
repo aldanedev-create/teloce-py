@@ -145,3 +145,20 @@ Input size is the sum of MinifyJS metafile input bytes for the exact generated
 module graph, not `.vel` source size. This measures one example, not a promise
 for every application. The script compares the actual entry before Teloce
 writes its public aliases, ensuring neither tool receives the other's output.
+
+## Experimental development backend
+
+Development defaults remain unchanged. To opt into native transforms in the
+existing dev server, set `build.dev_minifier` to `"minifyjs"` in the project
+configuration. Programmatic builds use `Builder({"dev": True,
+"minifier": "minifyjs", "minify": False, "source_maps": True})`.
+Compression and name mangling are disabled; generated component maps are composed
+back to `.vel`. Teloce keeps responsibility for compilation, watching and reload.
+Bundling remains optional. Use `"teloce"` to restore the existing development path.
+
+A local single-component Flask fixture experiment (20 edited rebuilds, shared
+runtime, source maps, no bundling) measured median rebuild times of 8.117 ms for
+existing Teloce versus 47.624 ms for MinifyJS 0.1.3. Cold builds measured 13.134 ms
+and 68.841 ms respectively. These are environment-specific measurements, not
+performance guarantees; native subprocess startup adds overhead. This experiment
+does not justify switching the development default yet.

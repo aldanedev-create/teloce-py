@@ -114,10 +114,13 @@ class Builder:
         if self.options['bundler'] not in ('teloce', 'minifyjs', 'esbuild'):
             raise ValueError('bundler must be teloce, minifyjs or esbuild')
         self.native_adapter = TeloceMinifyJSAdapter(MinifyJSOptions(
-            compress=True, mangle=True, format='esm',
+            compress=bool(self.options.get("minify", False)),
+            mangle=bool(self.options.get("minify", False)), format='esm',
             target=self.options.get('target') or 'es2020',
             legal_comments=self.options.get('legal_comments'),
         ))
+        self.process_js = bool(self.options.get("minify", False) or (
+            self.options.get("dev") and self.options.get("minifier") == "minifyjs"))
         self.production = production and mode == "production" and not self.options.get("dev", False)
         self.source_extensions = normalize_source_extensions(
             self.options.get("source_extensions"),
@@ -258,7 +261,7 @@ class Builder:
             for runtime_name in ("scheduler.js", "signals.js", "data.js", "table.js"):
                 runtime_module_path = runtime_path.parent / runtime_name
                 runtime_module_source = runtime_package.joinpath(runtime_name).read_text(encoding="utf-8")
-                if self.options.get('minify', False):
+                if self.process_js:
                     runtime_module_source = self._minify_generated_js(runtime_module_source)
                 runtime_module_path.write_text(runtime_module_source, encoding="utf-8")
                 results['files'].append({
@@ -762,7 +765,7 @@ class Builder:
             + 'export * from "./data.js";\n'
             + 'export * from "./table.js";\n'
         )
-        return self._minify_generated_js(runtime_source) if self.options.get("minify", False) else runtime_source
+        return self._minify_generated_js(runtime_source) if self.process_js else runtime_source
 
     def _minify_generated_js(self, source: str) -> str:
         """Optimize compiler-owned JS using the selected production backend."""
@@ -943,7 +946,7 @@ class Builder:
             if not relative.startswith('.'):
                 relative = './' + relative
             content = f'export * from "{relative}"; export {{ default }} from "{relative}";\n'
-            if self.options.get('minify', False):
+            if self.process_js:
                 content = self._minify_generated_js(content)
             alias.parent.mkdir(parents=True, exist_ok=True)
             alias.write_text(content, encoding='utf-8')
@@ -1131,7 +1134,7 @@ class Builder:
         """Compile one .ts module to a browser-ready .js file (pure Python, no Node)."""
         source = ts_file.read_text(encoding='utf-8')
         code = transpile_ts(source, str(ts_file))
-        if self.options.get('minify', False):
+        if self.process_js:
             code = self._minify_generated_js(code)
         output_path = (self.out_dir / ts_file.relative_to(self.root_dir)).with_suffix('.js')
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1224,7 +1227,7 @@ class Builder:
         if source_map:
             source_map['file'] = output_path.name
             source_map['sources'] = [vel_file.relative_to(self.root_dir).as_posix()]
-        if self.options.get('minify', False):
+        if self.process_js:
             if self.options.get('minifier') == 'minifyjs' and not (
                 self.options.get('bundle') and self.options.get('bundler') == 'minifyjs'
             ):

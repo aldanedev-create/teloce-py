@@ -56,6 +56,8 @@ def dev_command(args: Any) -> int:
     print("📦 Building project...")
     builder = Builder({
         'dev': True,
+        'minifier': build_config.get('dev_minifier', 'teloce'),
+        'minify': False,
         'source_maps': True,
         'clean': True,
         'static_dir': build_config.get('static_dir', 'static'),
