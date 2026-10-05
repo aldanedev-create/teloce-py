@@ -64,6 +64,7 @@ def test_native_production_browser(tmp_path, shared, hashed, splitting, mode, bu
                             'hash_assets':hashed,'code_splitting':splitting,
                             'source_maps':True,'spa':False})
                         assert not rebuilt['failed']
+                        (output / 'test.html').write_text('<div id="app"></div><script type="module" src="' + rebuilt.get('bundle', 'static/js/main.js') + '"></script>')
                         page.reload()
                         page.get_by_role('heading', name=f'Edited {i}').wait_for()
             finally:
