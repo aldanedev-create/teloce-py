@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- First-class MinifyJS production minifier and bundler, installed as a Python dependency.
+- Native split bundles, hashed outputs, original .vel source map composition, metadata and build reporting.
+- Adapter and bundler APIs, backend configuration, production browser tests and Node esbuild parity checks.
 - Initial project setup
 - .vel file parser (SFC)
 - Template lexer and parser
@@ -32,7 +35,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - N/A
 
 ### Fixed
-- N/A
+- Authored import/export and lazy-import paths now resolve hashed copied assets.
+- `jobs=0` correctly selects automatic worker count instead of matching `False`.
 
 ### Security
 - N/A

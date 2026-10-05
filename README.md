@@ -15,6 +15,10 @@ the template, browser behavior, and component CSS into normal browser assets;
 Flask, FastAPI, Django, or Flaxon remains responsible for routes, APIs,
 databases, authentication, and security.
 
+Production JavaScript builds use [MinifyJS](docs/minifyjs.md), a native esbuild
+engine shipped in Python wheels. Use `teloce build --bundle` for tree shaking,
+identifier mangling, and lazy chunks without installing Node.js.
+
 ## The problem it solves
 
 Python teams often maintain a backend template system and a separate frontend

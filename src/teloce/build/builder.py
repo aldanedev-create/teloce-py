@@ -20,6 +20,8 @@ from typing import Any, Dict, List, Optional
 from teloce.javascript.ts_transpile import rewrite_ts_specifiers, transpile as transpile_ts
 from teloce.build.assets import AssetManager
 from teloce.build.bundler import ModuleBundler
+from teloce.build.minifyjs import MinifyJSBundler, TeloceMinifyJSAdapter, rewrite_module_paths
+from minifyjs import Options as MinifyJSOptions, __version__ as minifyjs_version
 from teloce.build.esbuild import EsbuildBundler
 from teloce.build.manifest import ManifestGenerator
 from teloce.build.writer import FileWriter
@@ -94,6 +96,8 @@ class Builder:
         # should not duplicate runtime helpers into every component module.
         self.options = {
             "shared_runtime": True,
+            "minifier": "minifyjs" if production else "teloce",
+            "bundler": "minifyjs",
             # Direct updates are opt-in while the structural/component paths
             # complete their migration. The compiler option is documented and
             # exercised by dedicated browser tests.
@@ -105,6 +109,15 @@ class Builder:
             **release_defaults,
             **requested,
         }
+        if self.options['minifier'] not in ('teloce', 'minifyjs'):
+            raise ValueError('minifier must be teloce or minifyjs')
+        if self.options['bundler'] not in ('teloce', 'minifyjs', 'esbuild'):
+            raise ValueError('bundler must be teloce, minifyjs or esbuild')
+        self.native_adapter = TeloceMinifyJSAdapter(MinifyJSOptions(
+            compress=True, mangle=True, format='esm',
+            target=self.options.get('target') or 'es2020',
+            legal_comments=self.options.get('legal_comments'),
+        ))
         self.production = production and mode == "production" and not self.options.get("dev", False)
         self.source_extensions = normalize_source_extensions(
             self.options.get("source_extensions"),
@@ -143,8 +156,8 @@ class Builder:
         """
         start_time = time.time()
         
-        self.root_dir = Path(root_dir)
-        self.out_dir = Path(out_dir) if out_dir else self.root_dir / 'dist'
+        self.root_dir = Path(root_dir).resolve()
+        self.out_dir = Path(out_dir).resolve() if out_dir else self.root_dir / 'dist'
 
         if self.clean_output:
             self._clean_generated_output()
@@ -203,6 +216,8 @@ class Builder:
         }
         
         results = {
+            'minifier': self.options.get('minifier'),
+            'minifyjs_version': minifyjs_version,
             'mode': ('development' if self.options.get('dev', False)
                      else 'static' if self.options.get('static', False)
                      else 'production'),
@@ -418,7 +433,29 @@ class Builder:
                                  if generated_entries else next(self.out_dir.rglob('*.js')))
                 entry = self._resolve_bundle_entry(entry)
                 output = self.options.get('bundle_output')
-                if self.options.get('bundler', 'teloce') == 'esbuild':
+                native_bundler = None
+                if self.options.get('bundler') == 'minifyjs':
+                    native_bundler = MinifyJSBundler(self.root_dir)
+                    bundle_path = native_bundler.bundle(
+                        entry, output,
+                        splitting=bool(self.options.get('code_splitting', True)),
+                        minify=bool(self.options.get('minify', False)),
+                        sourcemap=bool(self.options.get('source_maps', False)),
+                        metafile=(self.out_dir / 'minifyjs-meta.json') if self.options.get('report') else None,
+                        target=self.options.get('target'), drop=self.options.get('drop'),
+                        legal_comments=self.options.get('legal_comments'), charset=self.options.get('charset'),
+                        hash_assets=self.hash_assets, external=self.options.get('external'),
+                        packages=self.options.get('packages', 'bundle'), define=self.options.get('define'),
+                        tree_shaking=bool(self.options.get('tree_shake', True)),
+                    )
+                    results['bundler'] = 'minifyjs'
+                    results['minifyjs_version'] = minifyjs_version
+                    results['bundle_outputs'] = [
+                        {'output': Path(item['path']).relative_to(self.out_dir.resolve()).as_posix(),
+                         'size': item['bytes']} for item in native_bundler.result.output_files
+                    ]
+                    results['bundle_bytes'] = native_bundler.result.minified_bytes
+                elif self.options.get('bundler') == 'esbuild':
                     bundle_path = EsbuildBundler(self.root_dir).bundle(
                         entry,
                         output,
@@ -439,22 +476,18 @@ class Builder:
                             self._minify_generated_js(bundle_path.read_text(encoding='utf-8')),
                             encoding='utf-8',
                         )
-                bundle_path = self._finalize_bundle_path(bundle_path)
+                if native_bundler is None:
+                    bundle_path = self._finalize_bundle_path(bundle_path)
                 results['bundle'] = bundle_path.relative_to(self.out_dir).as_posix()
                 self._map_bundle_entry(results, entry, results['bundle'])
-                results['files'].append({
-                    'input': str(entry),
-                    'output': results['bundle'],
-                    'size': bundle_path.stat().st_size,
-                })
-                results['total_bytes'] += bundle_path.stat().st_size
-                if self.max_asset_size and bundle_path.stat().st_size > self.max_asset_size:
-                    results['size_warnings'].append({
-                        'output': results['bundle'],
-                        'size': bundle_path.stat().st_size,
-                        'limit': self.max_asset_size,
-                        'message': f"Generated asset exceeds {self.max_asset_size} bytes",
-                    })
+                emitted = results.get('bundle_outputs') or [{
+                    'output': results['bundle'], 'size': bundle_path.stat().st_size}]
+                for item in emitted:
+                    results['files'].append({'input': str(entry), **item})
+                    results['total_bytes'] += item['size']
+                    if self.max_asset_size and item['size'] > self.max_asset_size:
+                        results['size_warnings'].append({**item, 'limit': self.max_asset_size,
+                            'message': f"Generated asset exceeds {self.max_asset_size} bytes"})
             except Exception as error:
                 results['failed'] += 1
                 results['errors'].append({'file': str(entry), 'error': str(error)})
@@ -475,6 +508,11 @@ class Builder:
                          else 'static' if self.options.get('static', False)
                          else 'production'),
                 'duration_seconds': round(time.time() - start_time, 4),
+                'bundler': results.get('bundler', self.options.get('bundler')),
+                'minifier': self.options.get('minifier'),
+                'minifyjs_version': minifyjs_version,
+                'bundle_bytes': results.get('bundle_bytes', 0),
+                'bundle_outputs': results.get('bundle_outputs', []),
                 'total_bytes': results['total_bytes'],
                 'asset_bytes': results.get('asset_bytes', 0),
                 'files': results['files'],
@@ -642,11 +680,13 @@ class Builder:
             Path(inspect.getfile(Compiler)),
             Path(inspect.getfile(Generator)),
             Path(inspect.getfile(Builder)),
+            Path(inspect.getfile(TeloceMinifyJSAdapter)),
             Path(inspect.getfile(AssetManager)),
             Path(inspect.getfile(ManifestGenerator)),
             Path(inspect.getfile(transpile_ts)),
         ]
         digest = hashlib.sha256()
+        digest.update(minifyjs_version.encode())
         for source in sources:
             try:
                 digest.update(source.resolve().read_bytes())
@@ -723,9 +763,13 @@ class Builder:
         )
         return self._minify_generated_js(runtime_source) if self.options.get("minify", False) else runtime_source
 
-    @staticmethod
-    def _minify_generated_js(source: str) -> str:
-        """Compact compiler-owned JavaScript without altering literals."""
+    def _minify_generated_js(self, source: str) -> str:
+        """Optimize compiler-owned JS using the selected production backend."""
+        # Let the bundler optimize once, after it resolves the module graph.
+        if self.options.get('bundle') and self.options.get('bundler') == 'minifyjs':
+            return source
+        if self.options.get('minifier') == 'minifyjs':
+            return self.native_adapter.transform(source).code
         return minify_js(source)
 
     @staticmethod
@@ -782,6 +826,26 @@ class Builder:
                     content = content.replace(f'{quote}{original}{quote}', f'{quote}{replacement}{quote}')
             output.write_text(content, encoding='utf-8')
             file_info['size'] = output.stat().st_size
+
+        # Authored JS assets also import hashed modules and lazy chunks. Parse
+        # specifiers so a matching application string is never rewritten.
+        for copied in self.assets.copied_assets:
+            output = Path(copied)
+            if output.suffix not in ('.js', '.mjs') or not output.is_file():
+                continue
+            replacements = {}
+            for source_name, target_name in mappings:
+                target = self.out_dir / target_name
+                if source_name == target_name or not target.is_file():
+                    continue
+                original = Path(os.path.relpath(self.out_dir / source_name, output.parent)).as_posix()
+                replacement = Path(os.path.relpath(target, output.parent)).as_posix()
+                replacements[original if original.startswith('.') else './' + original] = (
+                    replacement if replacement.startswith('.') else './' + replacement)
+            content = output.read_text(encoding='utf-8')
+            rewritten = rewrite_module_paths(content, replacements)
+            if rewritten != content:
+                output.write_text(rewritten, encoding='utf-8')
 
         # CSS url() references may point at images/fonts that were hashed by
         # AssetManager.  Use a relative replacement from each stylesheet.
@@ -997,7 +1061,7 @@ class Builder:
     def _resolve_jobs(self, pending: int) -> int:
         """Worker-process count: 1 (default), an integer, or 0/'auto' for all cores."""
         raw = self.options.get('jobs', 1)
-        if raw in (None, False, ''):
+        if raw is None or raw is False or raw == '':
             return 1
         if isinstance(raw, str) and raw.strip().lower() == 'auto':
             jobs = os.cpu_count() or 1
@@ -1155,11 +1219,27 @@ class Builder:
         if self.options.get('typescript', True):
             # ``import x from "./util.ts"`` -> ``./util.js`` (the .ts is emitted below).
             code = rewrite_ts_specifiers(code)
+        source_map = result.get('map')
+        if source_map:
+            source_map['file'] = output_path.name
+            source_map['sources'] = [vel_file.relative_to(self.root_dir).as_posix()]
         if self.options.get('minify', False):
-            code = self._minify_generated_js(code)
-        if result.get('map'):
-            result['map']['file'] = output_path.name
-            result['map']['sources'] = [vel_file.relative_to(self.root_dir).as_posix()]
+            if self.options.get('minifier') == 'minifyjs' and not (
+                self.options.get('bundle') and self.options.get('bundler') == 'minifyjs'
+            ):
+                transformed = self.native_adapter.transform(code, source_name=output_path.name,
+                                                            source_map=source_map)
+                code = transformed.code
+                if transformed.map:
+                    composed = json.loads(transformed.map)
+                    composed.update({key: value for key, value in (source_map or {}).items()
+                                     if key.startswith('x_')})
+                    source_map = composed
+                    source_map['file'] = output_path.name
+                    result['map'] = source_map
+            else:
+                code = self._minify_generated_js(code)
+        if source_map:
             code += f"\n//# sourceMappingURL={output_path.name}.map"
         self.writer.write_js(output_path, code)
 

@@ -6,6 +6,10 @@ Compile at build time and deploy the generated artifact:
 teloce build --out-dir dist --bundle --source-map --hash-assets
 ```
 
+MinifyJS is the default production minifier and bundle backend; it requires no
+Node.js. See [native MinifyJS builds](minifyjs.md) for configuration, source maps,
+external dependencies, and build reports.
+
 Before deploying:
 
 1. pin the Teloce-Py version and Python version;

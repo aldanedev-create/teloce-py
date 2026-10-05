@@ -176,12 +176,14 @@ def main(args: Optional[list] = None) -> int:
         help='Create a dependency-aware production ES module bundle'
     )
     build_parser.add_argument(
-        '--bundler', choices=('teloce', 'esbuild'), default=None,
-        help='Bundler backend: dependency-free Teloce or optional industrial esbuild',
+        '--bundler', choices=('minifyjs', 'teloce', 'esbuild'), default=None,
+        help='Bundler backend: native MinifyJS (default), Teloce or Node esbuild',
     )
+    build_parser.add_argument('--minifier', choices=('minifyjs', 'teloce'), default=None,
+                              help='Production JS minifier (default: minifyjs)')
     build_parser.add_argument(
         '--no-splitting', action='store_true',
-        help='Disable code splitting when using esbuild',
+        help='Disable code splitting with MinifyJS or esbuild',
     )
     build_parser.add_argument(
         '--entry',

@@ -9,6 +9,7 @@ from teloce.build.writer import FileWriter
 from teloce.build.manifest import ManifestGenerator
 from teloce.build.assets import AssetManager
 from teloce.build.bundler import ModuleBundler, BundleError
+from teloce.build.minifyjs import MinifyJSBundler, TeloceMinifyJSAdapter
 from teloce.build.esbuild import EsbuildBundler, EsbuildUnavailable
 
 
@@ -34,6 +35,8 @@ __all__ = [
     "AssetManager",
     "ModuleBundler",
     "BundleError",
+    "MinifyJSBundler",
+    "TeloceMinifyJSAdapter",
     "EsbuildBundler",
     "EsbuildUnavailable",
     "build_project",
