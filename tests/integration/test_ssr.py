@@ -1,5 +1,6 @@
 import asyncio
 import json
+import pytest
 
 from jinja2 import Environment
 
@@ -15,6 +16,7 @@ def test_teloce_template_translates_to_jinax_directives():
 
 
 def test_jinax_renders_teloce_template_server_side():
+    pytest.importorskip('flaxon.jinax', reason='optional Flaxon adapter requires Python >=3.11')
     html = asyncio.run(render_ssr('<h1>{{ title }}</h1><p v-if="visible">Ready</p>', {"title": "Teloce", "visible": True}))
     assert html == '<h1>Teloce</h1><p>Ready</p>'
 
