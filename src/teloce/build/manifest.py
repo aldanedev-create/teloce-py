@@ -49,6 +49,12 @@ class ManifestGenerator:
             'size_warnings': build_result.get('size_warnings', []),
             'build_signature': build_result.get('build_signature'),
             'components': build_result.get('components', {}),
+            'bundler': build_result.get('bundler'),
+            'minifier': build_result.get('minifier'),
+            'minifyjs_version': build_result.get('minifyjs_version'),
+            'bundle': build_result.get('bundle'),
+            'bundle_bytes': build_result.get('bundle_bytes', 0),
+            'bundle_outputs': build_result.get('bundle_outputs', []),
         }
         
         for file_info in build_result.get('files', []):
