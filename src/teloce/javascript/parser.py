@@ -9,6 +9,8 @@ executes JavaScript or attempts to be a formatter.
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 import re
 from dataclasses import dataclass
 from typing import Optional
@@ -703,12 +705,44 @@ class JavaScriptLexer:
         self._advance("*/")
 
 
+@lru_cache(maxsize=1024)
+def _tokenize_cached(source: str) -> tuple[JSToken, ...]:
+    return tuple(JavaScriptLexer(source).tokenize())
+
+
 def tokenize_javascript(source: str) -> list[JSToken]:
-    """Return source-located JavaScript tokens."""
-    return JavaScriptLexer(source).tokenize()
+    """Return source-located JavaScript tokens.
+
+    Compiling one component tokenizes the same script several times, so the
+    result is memoized per source text.  JSToken is frozen; callers get a new
+    list each time so they may still mutate the list itself.
+    """
+    return list(_tokenize_cached(source))
 
 
 def parse_javascript(
+    source: str,
+    *,
+    language: str = "js",
+    backend: str = "auto",
+) -> JSProgram:
+    """Memoized front door for :func:`_parse_javascript_uncached`.
+
+    The same script text is parsed repeatedly while one component compiles
+    (validation, imports, methods, data).  Syntax errors are never cached
+    because ``lru_cache`` does not store raised exceptions.
+    """
+    if backend not in {"auto", "tree-sitter", "legacy"}:
+        raise ValueError("backend must be 'auto', 'tree-sitter', or 'legacy'")
+    return _parse_javascript_cached(source, language, backend)
+
+
+@lru_cache(maxsize=1024)
+def _parse_javascript_cached(source: str, language: str, backend: str) -> JSProgram:
+    return _parse_javascript_uncached(source, language=language, backend=backend)
+
+
+def _parse_javascript_uncached(
     source: str,
     *,
     language: str = "js",

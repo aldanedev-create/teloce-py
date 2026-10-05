@@ -1,4 +1,5 @@
-"""Tree-sitter based TypeScript -> JavaScript type stripping.
+"""Tree-sitter based TypeScript -> JavaScript type stripping .
+
 
 Strategy: parse with tree-sitter-typescript, collect the byte ranges of every
 type-only construct, and blank them out. Blanked ranges keep their newlines so

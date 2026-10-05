@@ -4,6 +4,8 @@ Builder - builds the project.
 Orchestrates the build process for .vel files.
 """
 
+import copy
+from concurrent.futures import ProcessPoolExecutor
 import hashlib
 import inspect
 import json
@@ -15,6 +17,7 @@ from importlib.resources import files as package_files
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from teloce.javascript.ts_transpile import rewrite_ts_specifiers, transpile as transpile_ts
 from teloce.build.assets import AssetManager
 from teloce.build.bundler import ModuleBundler
 from teloce.build.esbuild import EsbuildBundler
@@ -28,7 +31,39 @@ from teloce.project.extensions import normalize_source_extensions, source_extens
 from teloce.project.scanner import ProjectScanner
 from teloce.router.facade import generate_spa_router
 from teloce.ssr import to_jinax_template
-from teloce.javascript.ts_transpile import rewrite_ts_specifiers, transpile as transpile_ts
+
+
+# Options that only affect how a build is scheduled, not what it produces.
+_OUTPUT_NEUTRAL_OPTIONS = frozenset({"jobs", "parallel_min_files"})
+
+
+# --- parallel compilation workers -------------------------------------------------
+# Module-level so they can be pickled by ProcessPoolExecutor on every platform
+# (fork, forkserver and spawn).
+_WORKER_BUILDER: "Builder | None" = None
+
+
+def _init_compile_worker(builder: "Builder") -> None:
+    global _WORKER_BUILDER
+    _WORKER_BUILDER = builder
+
+
+def _compile_one(path: str):
+    """Compile one component in a worker; never raises (errors travel as text)."""
+    try:
+        if path.lower().endswith('.ts'):
+            result = _WORKER_BUILDER._compile_ts_file(Path(path))
+        else:
+            result = _WORKER_BUILDER._compile_file(Path(path))
+        # Drop the full compiler result: only these keys are used by the parent
+        # and shipping generated code back would double the IPC cost.
+        return path, {
+            'output': result['output'],
+            'size': result['size'],
+            'source_hash': result['source_hash'],
+        }, None
+    except Exception as e:  # noqa: BLE001 - reported by the parent per file
+        return path, None, str(e)
 
 
 class Builder:
@@ -217,22 +252,22 @@ class Builder:
                     'size': runtime_module_path.stat().st_size,
                 })
         
-        # Compile each .vel file
+        # Compile each .vel file.  Files that cannot be reused from the
+        # incremental cache are compiled up front, optionally in parallel
+        # (``jobs`` option); the loop below then assembles results in the
+        # original order so output is identical to a sequential build.
+        ts_files = self._ts_source_files(source_root) if self.options.get('typescript', True) else []
+        ts_reusable = {f: self._reusable_ts_output(f, cache) for f in ts_files}
+        precompiled = self._compile_parallel(
+            [f for f in vel_files
+             if not self._can_reuse_cached(f, cache, source_hashes, changed_inputs)]
+            + [f for f in ts_files if ts_reusable[f] is None]
+        )
         for vel_file in vel_files:
             try:
                 input_name = vel_file.relative_to(self.root_dir).as_posix()
                 cached = cache.get(input_name)
-                dependencies = self.dependency_graph.get_dependencies(input_name)
-                dependency_changed = any(dep in changed_inputs for dep in dependencies)
-                can_reuse = bool(
-                    self.options.get('incremental', self.options.get('dev', False))
-                    and not self.clean_output
-                    and cached
-                    and cached.get('source_hash') == source_hashes[input_name]
-                    and not dependency_changed
-                    and cached.get('output')
-                    and (self.out_dir / cached['output']).is_file()
-                )
+                can_reuse = self._can_reuse_cached(vel_file, cache, source_hashes, changed_inputs)
                 if can_reuse:
                     result_info = {
                         'input': input_name,
@@ -242,7 +277,13 @@ class Builder:
                     }
                     results['cache_hits'] += 1
                 else:
-                    result = self._compile_file(vel_file)
+                    if vel_file in precompiled:
+                        info, error = precompiled[vel_file]
+                        if error is not None:
+                            raise Exception(error)
+                        result = info
+                    else:
+                        result = self._compile_file(vel_file)
                     result_info = {
                         'input': input_name,
                         'output': result['output'],
@@ -268,9 +309,10 @@ class Builder:
                     'file': str(vel_file),
                     'error': str(e),
                 })
-        
-        if self.options.get('typescript', True):                  # NEW
-            self._compile_ts_modules(source_root, results)
+
+        if ts_files:
+            self._compile_ts_modules(ts_files, ts_reusable, precompiled, results)
+
         results['components'] = self._component_manifest(vel_files, results)
         self._write_css_bundle(results)
         
@@ -578,7 +620,9 @@ class Builder:
         for item in manifest.get('files', []):
             input_name = item.get('input')
             output_name = str(item.get('output', ''))
-            if not input_name or not self._is_source_input(str(input_name)):
+            if not input_name or not (
+                self._is_source_input(str(input_name)) or str(input_name).lower().endswith('.ts')
+            ):
                 continue
             # SSR emits a second record for the same input; the JavaScript
             # record is the cache authority for incremental compilation.
@@ -600,6 +644,7 @@ class Builder:
             Path(inspect.getfile(Builder)),
             Path(inspect.getfile(AssetManager)),
             Path(inspect.getfile(ManifestGenerator)),
+            Path(inspect.getfile(transpile_ts)),
         ]
         digest = hashlib.sha256()
         for source in sources:
@@ -639,7 +684,13 @@ class Builder:
                 return f"<{type(value).__module__}.{type(value).__qualname__}>"
             return value
 
-        digest.update(json.dumps(serializable(self.options), sort_keys=True, separators=(",", ":")).encode("utf-8"))
+        # Scheduling knobs never change generated output, so they must not
+        # invalidate the incremental cache (e.g. ``--jobs 4`` after ``--jobs 1``).
+        output_options = {
+            key: value for key, value in self.options.items()
+            if key not in _OUTPUT_NEUTRAL_OPTIONS
+        }
+        digest.update(json.dumps(serializable(output_options), sort_keys=True, separators=(",", ":")).encode("utf-8"))
         return digest.hexdigest()
 
     def _shared_runtime_path(self) -> Path:
@@ -925,8 +976,72 @@ class Builder:
             raise ValueError("Refusing to clean a project root or its parent")
         if output.exists():
             shutil.rmtree(output)
+    
+    def _can_reuse_cached(self, vel_file: Path, cache: Dict[str, Dict[str, Any]],
+                          source_hashes: Dict[str, str], changed_inputs: set) -> bool:
+        """True when the previous build output for this file is still valid."""
+        input_name = vel_file.relative_to(self.root_dir).as_posix()
+        cached = cache.get(input_name)
+        dependencies = self.dependency_graph.get_dependencies(input_name)
+        dependency_changed = any(dep in changed_inputs for dep in dependencies)
+        return bool(
+            self.options.get('incremental', self.options.get('dev', False))
+            and not self.clean_output
+            and cached
+            and cached.get('source_hash') == source_hashes[input_name]
+            and not dependency_changed
+            and cached.get('output')
+            and (self.out_dir / cached['output']).is_file()
+        )
 
+    def _resolve_jobs(self, pending: int) -> int:
+        """Worker-process count: 1 (default), an integer, or 0/'auto' for all cores."""
+        raw = self.options.get('jobs', 1)
+        if raw in (None, False, ''):
+            return 1
+        if isinstance(raw, str) and raw.strip().lower() == 'auto':
+            jobs = os.cpu_count() or 1
+        else:
+            try:
+                jobs = int(raw)
+            except (TypeError, ValueError):
+                return 1
+            if jobs <= 0:
+                jobs = os.cpu_count() or 1
+        # Process start-up costs more than compiling a handful of files.
+        if pending < int(self.options.get('parallel_min_files', 32)):
+            return 1
+        return max(1, min(jobs, pending))
 
+    def _compile_parallel(self, files: List[Path]) -> Dict[Path, Any]:
+        """Compile ``files`` in a process pool; returns {path: (info, error)}.
+
+        Returns an empty/partial mapping when parallelism is off or the pool
+        fails; the caller compiles any missing file sequentially, so a broken
+        pool can never lose a file.
+        """
+        jobs = self._resolve_jobs(len(files))
+        if jobs <= 1:
+            return {}
+        worker = copy.copy(self)
+        # Workers only call _compile_file; keep the pickled payload tiny even
+        # with very large projects.
+        worker.dependency_graph = DependencyGraph()
+        worker.stats = {}
+        paths = [str(f) for f in files]
+        chunk = max(1, min(64, len(paths) // (jobs * 4) or 1))
+        done: Dict[Path, Any] = {}
+        try:
+            with ProcessPoolExecutor(
+                max_workers=jobs,
+                initializer=_init_compile_worker,
+                initargs=(worker,),
+            ) as pool:
+                for path, info, error in pool.map(_compile_one, paths, chunksize=chunk):
+                    done[Path(path)] = (info, error)
+        except Exception:  # BrokenProcessPool, pickling errors, resource limits
+            pass
+        return done
 
     def _ts_source_files(self, source_root: Path) -> List[Path]:
         """Find authored .ts modules (never .d.ts, node_modules or the output dir)."""
@@ -947,31 +1062,74 @@ class Builder:
                 found[ts_file] = None
         return list(found)
 
-    def _compile_ts_modules(self, source_root: Path, results: Dict[str, Any]) -> None:
-        """Compile plain .ts modules to browser-ready .js (pure Python, no Node)."""
-        for ts_file in self._ts_source_files(source_root):
+    def _compile_ts_file(self, ts_file: Path) -> Dict[str, Any]:
+        """Compile one .ts module to a browser-ready .js file (pure Python, no Node)."""
+        source = ts_file.read_text(encoding='utf-8')
+        code = transpile_ts(source, str(ts_file))
+        if self.options.get('minify', False):
+            code = self._minify_generated_js(code)
+        output_path = (self.out_dir / ts_file.relative_to(self.root_dir)).with_suffix('.js')
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        self.writer.write_js(output_path, code)
+        return {
+            'output': output_path.relative_to(self.out_dir).as_posix(),
+            'size': output_path.stat().st_size,
+            'source_hash': hashlib.sha256(source.encode('utf-8')).hexdigest(),
+        }
+
+    def _reusable_ts_output(self, ts_file: Path, cache: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Previous build record for an unchanged .ts file, else None.
+
+        A .ts module is transpiled on its own (imports are only re-pointed from
+        .ts to .js), so it depends on nothing but its own text and the
+        compiler signature already baked into the cache.
+        """
+        if not self.options.get('incremental', self.options.get('dev', False)) or self.clean_output:
+            return None
+        try:
+            cached = cache.get(ts_file.relative_to(self.root_dir).as_posix())
+            if not cached or not cached.get('output') or not (self.out_dir / cached['output']).is_file():
+                return None
+            digest = hashlib.sha256(ts_file.read_text(encoding='utf-8').encode('utf-8')).hexdigest()
+            if cached.get('source_hash') != digest:
+                return None
+            return {
+                'output': cached['output'],
+                'size': cached.get('size', (self.out_dir / cached['output']).stat().st_size),
+                'source_hash': digest,
+            }
+        except Exception:
+            return None  # let the normal compile path report any real problem
+
+    def _compile_ts_modules(self, ts_files: List[Path], reusable: Dict[Path, Optional[Dict[str, Any]]],
+                            precompiled: Dict[Path, Any], results: Dict[str, Any]) -> None:
+        """Record .ts outputs: reuse unchanged ones, take pool results, compile the rest."""
+        for ts_file in ts_files:
             input_name = ts_file.relative_to(self.root_dir).as_posix()
+            results['total'] += 1
             try:
-                source = ts_file.read_text(encoding='utf-8')
-                code = transpile_ts(source, str(ts_file))
-                if self.options.get('minify', False):
-                    code = self._minify_generated_js(code)
-                output_path = (self.out_dir / ts_file.relative_to(self.root_dir)).with_suffix('.js')
-                output_path.parent.mkdir(parents=True, exist_ok=True)
-                self.writer.write_js(output_path, code)
-                results['total'] += 1
-                results['compiled'] += 1
+                info = reusable.get(ts_file)
+                if info is not None:
+                    results['cache_hits'] += 1
+                else:
+                    if ts_file in precompiled:
+                        info, error = precompiled[ts_file]
+                        if error is not None:
+                            raise Exception(error)
+                    else:
+                        info = self._compile_ts_file(ts_file)
+                    results['compiled'] += 1
+                    results['cache_misses'] += 1
                 results['files'].append({
                     'input': input_name,
-                    'output': output_path.relative_to(self.out_dir).as_posix(),
-                    'size': output_path.stat().st_size,
-                    'source_hash': hashlib.sha256(source.encode('utf-8')).hexdigest(),
+                    'output': info['output'],
+                    'size': info['size'],
+                    'source_hash': info['source_hash'],
                 })
             except Exception as e:
-                results['total'] += 1
                 results['failed'] += 1
                 results['errors'].append({'file': str(ts_file), 'error': str(e)})
-    
+
     def _compile_file(self, vel_file: Path) -> Dict[str, Any]:
         """Compile a single Teloce component source file."""
         source = vel_file.read_text(encoding='utf-8')
@@ -994,8 +1152,9 @@ class Builder:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
         code = result['code']
-        if self.options.get('typescript', True):        # NEW
-            code = rewrite_ts_specifiers(code) 
+        if self.options.get('typescript', True):
+            # ``import x from "./util.ts"`` -> ``./util.js`` (the .ts is emitted below).
+            code = rewrite_ts_specifiers(code)
         if self.options.get('minify', False):
             code = self._minify_generated_js(code)
         if result.get('map'):

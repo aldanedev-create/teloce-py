@@ -140,22 +140,22 @@ class CSSScoper:
         if slotted:
             return f'[{scope_id}] > {slotted.group(1).strip()}'
 
-        pseudo_at = self._first_top_level_pseudo(selector)
-        base = selector[:pseudo_at] if pseudo_at is not None else selector
-        pseudo = selector[pseudo_at:] if pseudo_at is not None else ''
-
-        # Scope the last compound selector. This uniformly handles type,
-        # class, ID, universal, and attribute selectors and also constrains
-        # selectors beginning with :is/:where/:not.
-        split_at = self._last_top_level_combinator(base)
-        prefix = base[:split_at] if split_at is not None else ''
-        compound = base[split_at:] if split_at is not None else base
-        if not compound.strip():
-            return f"{prefix}[{scope_id}]{pseudo}"
+        # Scope the *last* compound selector (the element the rule finally
+        # targets), then insert the attribute before that compound's own
+        # pseudo-classes/elements.  Splitting at the first pseudo-class of the
+        # whole selector would mis-scope ``.a:hover .b`` as ``.a[id]:hover .b``
+        # and leave ``.b`` unscoped.
+        split_at = self._last_top_level_combinator(selector)
+        prefix = selector[:split_at] if split_at is not None else ''
+        compound = selector[split_at:] if split_at is not None else selector
         trailing = len(compound) - len(compound.rstrip())
         whitespace = compound[len(compound) - trailing:] if trailing else ''
         compound = compound.rstrip()
-        return f"{prefix}{compound}[{scope_id}]{whitespace}{pseudo}"
+
+        pseudo_at = self._first_top_level_pseudo(compound)
+        base = compound[:pseudo_at] if pseudo_at is not None else compound
+        pseudo = compound[pseudo_at:] if pseudo_at is not None else ''
+        return f"{prefix}{base}[{scope_id}]{pseudo}{whitespace}"
 
     @staticmethod
     def _first_top_level_pseudo(selector: str) -> Optional[int]:

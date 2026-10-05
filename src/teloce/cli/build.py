@@ -76,6 +76,7 @@ def build_command(args: Any) -> int:
         'clean': clean,
         'static_dir': build_config.get('static_dir', 'static'),
         'html_mode': build_config.get('html_mode', False),
+        'jobs': (args.jobs if getattr(args, 'jobs', None) is not None else build_config.get('jobs', 1)),
         'source_extensions': build_config.get('source_extensions'),
         'source_roots': build_config.get('source_roots'),
         'hash_assets': (not getattr(args, 'no_hash_assets', False)

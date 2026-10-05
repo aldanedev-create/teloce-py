@@ -45,7 +45,7 @@ def main(args: Optional[list] = None) -> int:
     parser = argparse.ArgumentParser(
         prog='teloce',
         description='Teloce - A Python compiler for .vel Single File Components',
-        epilog='For more information, visit https://teloce.dev'
+        epilog='For more information, visit https://github.com/aldanedev-create/teloce-py/tree/main/docs'
     )
     
     parser.add_argument(
@@ -144,6 +144,12 @@ def main(args: Optional[list] = None) -> int:
         command_parser.add_argument('--json', action='store_true')
         if name == 'test':
             command_parser.add_argument('--browser', action='store_true', help='Also document the project browser harness')
+    build_parser.add_argument(
+        '-j', '--jobs',
+        default=None,
+        metavar='N|auto',
+        help='Compile components in N worker processes (auto = all CPU cores)'
+    )
     build_parser.add_argument(
         '--no-clean',
         action='store_true',
