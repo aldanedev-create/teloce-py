@@ -166,7 +166,7 @@ def test_release_build_extracts_shared_component_glue_and_styles(tmp_path: Path)
     assert result["failed"] == 0, result["errors"]
     runtime = next((tmp_path / "dist" / "static").glob("teloce-runtime.*.js"))
     generated = list((tmp_path / "dist" / "static" / "js").glob("*.js"))
-    app = next(path for path in generated if path.name.startswith("App."))
+    app = next(path for path in generated if path.name.startswith("App.") and path.name != "App.js")
     css = list((tmp_path / "dist" / "static" / "js").glob("*.css"))
     assert runtime.exists()
     assert app.stat().st_size < 10_000

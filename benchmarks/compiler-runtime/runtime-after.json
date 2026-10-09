@@ -1,0 +1,197 @@
+{
+  "browser": "145.0.7632.6",
+  "counter": {
+    "text": [
+      {
+        "milliseconds": 0.8999999999068677,
+        "iterations": 200,
+        "patches": 0
+      },
+      {
+        "milliseconds": 0.9000000000232831,
+        "iterations": 200,
+        "patches": 0
+      },
+      {
+        "milliseconds": 1.3000000000465661,
+        "iterations": 200,
+        "patches": 0
+      },
+      {
+        "milliseconds": 0.5999999999767169,
+        "iterations": 200,
+        "patches": 0
+      },
+      {
+        "milliseconds": 1,
+        "iterations": 200,
+        "patches": 0
+      }
+    ],
+    "structure": [],
+    "count": 1020,
+    "rows": 0,
+    "median_ms": {
+      "text": 0.9000000000232831
+    }
+  },
+  "typing": {
+    "text": [
+      {
+        "milliseconds": 2.800000000046566,
+        "iterations": 200,
+        "patches": 0
+      },
+      {
+        "milliseconds": 2.599999999976717,
+        "iterations": 200,
+        "patches": 0
+      },
+      {
+        "milliseconds": 3.099999999976717,
+        "iterations": 200,
+        "patches": 0
+      },
+      {
+        "milliseconds": 1.8000000000465661,
+        "iterations": 200,
+        "patches": 0
+      },
+      {
+        "milliseconds": 2.099999999976717,
+        "iterations": 200,
+        "patches": 0
+      }
+    ],
+    "structure": [],
+    "count": 0,
+    "rows": 0,
+    "median_ms": {
+      "text": 2.599999999976717
+    }
+  },
+  "conditional": {
+    "text": [
+      {
+        "milliseconds": 1,
+        "iterations": 200,
+        "patches": 0
+      },
+      {
+        "milliseconds": 1.1999999999534339,
+        "iterations": 200,
+        "patches": 0
+      },
+      {
+        "milliseconds": 0.9000000000232831,
+        "iterations": 200,
+        "patches": 0
+      },
+      {
+        "milliseconds": 0.5999999999767169,
+        "iterations": 200,
+        "patches": 0
+      },
+      {
+        "milliseconds": 4.200000000069849,
+        "iterations": 200,
+        "patches": 0
+      }
+    ],
+    "structure": [
+      {
+        "milliseconds": 6.5,
+        "iterations": 200,
+        "patches": 200
+      },
+      {
+        "milliseconds": 5.899999999906868,
+        "iterations": 200,
+        "patches": 200
+      },
+      {
+        "milliseconds": 4.200000000069849,
+        "iterations": 200,
+        "patches": 200
+      },
+      {
+        "milliseconds": 3.900000000023283,
+        "iterations": 200,
+        "patches": 200
+      },
+      {
+        "milliseconds": 3.400000000023283,
+        "iterations": 200,
+        "patches": 200
+      }
+    ],
+    "count": 1020,
+    "rows": 0,
+    "median_ms": {
+      "text": 1,
+      "structure": 4.200000000069849
+    }
+  },
+  "keyed_list": {
+    "text": [
+      {
+        "milliseconds": 0.2000000000698492,
+        "iterations": 40,
+        "patches": 0
+      },
+      {
+        "milliseconds": 0.09999999997671694,
+        "iterations": 40,
+        "patches": 0
+      },
+      {
+        "milliseconds": 0.19999999995343387,
+        "iterations": 40,
+        "patches": 0
+      },
+      {
+        "milliseconds": 0.2000000000698492,
+        "iterations": 40,
+        "patches": 0
+      },
+      {
+        "milliseconds": 0.09999999997671694,
+        "iterations": 40,
+        "patches": 0
+      }
+    ],
+    "structure": [
+      {
+        "milliseconds": 613.4000000000233,
+        "iterations": 20,
+        "patches": 20
+      },
+      {
+        "milliseconds": 1237.1999999999534,
+        "iterations": 20,
+        "patches": 20
+      },
+      {
+        "milliseconds": 2673.9000000000233,
+        "iterations": 20,
+        "patches": 20
+      },
+      {
+        "milliseconds": 4480.800000000047,
+        "iterations": 20,
+        "patches": 20
+      },
+      {
+        "milliseconds": 7039.5,
+        "iterations": 20,
+        "patches": 20
+      }
+    ],
+    "count": 220,
+    "rows": 1000,
+    "median_ms": {
+      "text": 0.19999999995343387,
+      "structure": 2673.9000000000233
+    }
+  }
+}

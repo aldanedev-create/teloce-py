@@ -57,6 +57,9 @@ export function createFor(container, source, renderItem, key = (_, index) => ind
   const records = new Map();
   const read = value => typeof value === 'function' && value.__teloce_signal ? value() : value;
   const update = value => {
+    const focused = container.contains?.(document.activeElement) ? document.activeElement : null;
+    const selection = focused && typeof focused.selectionStart === 'number'
+      ? [focused.selectionStart, focused.selectionEnd, focused.selectionDirection] : null;
     const next = Array.from(read(value) || []);
     const active = new Set();
     const nodes = next.map((item, index) => {
@@ -89,17 +92,35 @@ export function createFor(container, source, renderItem, key = (_, index) => ind
         records.delete(id);
       }
     }
-    container.replaceChildren(...nodes.filter(Boolean));
+    // Move only out-of-order rows. Detaching every row with replaceChildren
+    // can drop focus even when the user's input row did not change.
+    let anchor = container.firstChild;
+    for (const node of nodes) {
+      if (node !== anchor) container.insertBefore(node, anchor);
+      anchor = node.nextSibling;
+    }
+    const retained = new Set(nodes);
+    for (const node of Array.from(container.childNodes)) if (!retained.has(node)) node.remove();
+    if (focused?.isConnected && document.activeElement !== focused) {
+      focused.focus({ preventScroll: true });
+      if (selection) focused.setSelectionRange(...selection);
+    }
   };
   update(source);
   const unsubscribe = source?.subscribe ? source.subscribe(update) : () => {};
-  return { update, unmount() { unsubscribe?.(); records.clear(); container.replaceChildren(); } };
+  return { update, unmount() { unsubscribe?.(); for (const record of records.values()) record.unmount?.(); records.clear(); container.replaceChildren(); } };
 }
 
 export function createIf(container, source, whenTrue, whenFalse = () => null) {
+  let previous;
+  let initialized = false;
   const read = value => typeof value === 'function' && value.__teloce_signal ? value() : value;
   const update = value => {
-    const node = (read(value) ? whenTrue : whenFalse)();
+    const condition = Boolean(read(value));
+    if (initialized && previous === condition) return;
+    initialized = true;
+    previous = condition;
+    const node = (condition ? whenTrue : whenFalse)();
     container.replaceChildren(...(node == null ? [] : Array.isArray(node) ? node : [node]));
   };
   update(source);

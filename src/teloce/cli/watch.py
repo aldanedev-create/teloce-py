@@ -55,6 +55,9 @@ def watch_command(args: Any) -> int:
     build_config = config.get_build_config()
     builder = Builder({
         'dev': True,
+        'jobs': build_config.get('jobs', 1),
+        'persistent_workers': build_config.get('persistent_workers', False),
+        'direct_dom_updates': build_config.get('direct_dom_updates', False),
         'source_maps': True,
         'incremental': True,
         'clean': False,
@@ -108,6 +111,7 @@ def watch_command(args: Any) -> int:
     except KeyboardInterrupt:
         print("\n🛑 Watch stopped")
     
+    builder.close()
     watcher.stop()
     server.shutdown()
     server.server_close()

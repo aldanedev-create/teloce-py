@@ -126,6 +126,9 @@ export const __createReactive = (initial, notify) => {
 };
 
 export const __patch = (target, html, options = {}) => {
+  const focused = target.contains?.(document.activeElement) ? document.activeElement : null;
+  const selection = focused && typeof focused.selectionStart === "number"
+    ? [focused.selectionStart, focused.selectionEnd, focused.selectionDirection] : null;
   const template = document.createElement("template");
   template.innerHTML = html;
   const playEnter = typeof options.playEnter === "function" ? options.playEnter : () => {};
@@ -156,13 +159,13 @@ export const __patch = (target, html, options = {}) => {
   };
   const patchNode = (oldNode, newNode) => {
     if (!oldNode || oldNode.nodeType !== newNode.nodeType || (oldNode.nodeType === 1 && oldNode.tagName !== newNode.tagName)) return cloneManaged(newNode);
-    if (oldNode.nodeType === 3) {
+    if (oldNode.nodeType === 3 || oldNode.nodeType === 8) {
       if (oldNode.nodeValue !== newNode.nodeValue) oldNode.nodeValue = newNode.nodeValue;
       return oldNode;
     }
             if (oldNode.hasAttribute("data-teloce-memo") && newNode.hasAttribute("data-teloce-memo") && oldNode.getAttribute("data-teloce-memo") === newNode.getAttribute("data-teloce-memo")) return oldNode;
     const managedAttributes = oldNode.__teloceManagedAttributes || new Set();
-    for (const attr of Array.from(oldNode.attributes)) if (managedAttributes.has(attr.name) && !newNode.hasAttribute(attr.name)) oldNode.removeAttribute(attr.name);
+    for (const attr of Array.from(oldNode.attributes)) if (managedAttributes.has(attr.name) && !newNode.hasAttribute(attr.name) && !newNode.hasAttribute("data-teloce-resolved-" + attr.name)) oldNode.removeAttribute(attr.name);
     for (const attr of Array.from(newNode.attributes)) if (oldNode.getAttribute(attr.name) !== attr.value) oldNode.setAttribute(attr.name, attr.value);
     oldNode.__teloceManagedAttributes = new Set(Array.from(newNode.attributes).map(attribute => attribute.name));
     if (oldNode.__teloceInstance) {
@@ -185,8 +188,11 @@ export const __patch = (target, html, options = {}) => {
     patchChildren(oldNode, newNode);
     return oldNode;
   };
-  const patchChildren = (parent, templateParent) => {
-    const old = Array.from(parent.childNodes);
+  const patchChildren = (parent, templateParent, region = false) => {
+    const children = Array.from(parent.childNodes);
+    const old = region && options.start && options.end
+      ? children.slice(children.indexOf(options.start) + 1, children.indexOf(options.end))
+      : children;
     // Mark server-rendered/pre-existing nodes on first hydration so they are
     // reconciled and disposed exactly like client-created nodes. Without
     // this, an SSR host containing HTML before mount would receive a second
@@ -197,7 +203,7 @@ export const __patch = (target, html, options = {}) => {
     const keyed = new Map(managed.filter(node => node.nodeType === 1 && node.dataset.teloceKey).map(node => [node.dataset.teloceKey, node]));
     const used = new Set();
     let cursor = 0;
-    let anchor = parent.firstChild;
+    let anchor = old[0] || (region ? options.end : null);
     next.forEach(newNode => {
       const key = newNode.nodeType === 1 ? newNode.dataset.teloceKey : null;
       let oldNode = key && keyed.has(key) ? keyed.get(key) : (key ? null : managed[cursor++]);
@@ -206,13 +212,17 @@ export const __patch = (target, html, options = {}) => {
       const result = oldNode ? patchNode(oldNode, newNode) : cloneManaged(newNode);
       if (result !== oldNode) {
         if (oldNode && oldNode.parentNode === parent) { disposeNode(oldNode); parent.replaceChild(result, oldNode); }
-        else parent.insertBefore(result, anchor || null);
-      } else if (result !== anchor) parent.insertBefore(result, anchor || null);
+        else parent.insertBefore(result, anchor || (region ? options.end : null));
+      } else if (result !== anchor) parent.insertBefore(result, anchor || (region ? options.end : null));
       anchor = result.nextSibling;
     });
     for (const oldNode of managed) if (!used.has(oldNode) && oldNode.parentNode === parent) { disposeNode(oldNode); parent.removeChild(oldNode); }
   };
-  patchChildren(target, template.content);
+  patchChildren(target, template.content, Boolean(options.start && options.end));
+  if (focused?.isConnected && document.activeElement !== focused) {
+    focused.focus({ preventScroll: true });
+    if (selection) focused.setSelectionRange(...selection);
+  }
 };
 '''
 
@@ -264,7 +274,18 @@ class Generator:
         self._used_components = self._collect_component_tags(nodes)
         self._used_filters = self._collect_filter_names(nodes)
         self._direct_plan = dict(self.options.get("direct_plan") or {})
+        # Child-owned DOM and projected slots need the compatibility renderer
+        # until binding ownership can be represented explicitly in the plan.
+        if self._used_components or self._direct_plan.get("components") or self._has_unsupported_regions(nodes):
+            self._direct_plan["fallback"] = True
         self._direct_cursor = 0
+        self._direct_regions = []
+        self._direct_region_depth = 0
+        self._emitted_direct_ids = set()
+        self._computed_bodies = dict(getattr(component, "script_computed", {}) or {})
+        self._targeted_structural = bool(not self._direct_plan.get("fallback") and self._direct_plan.get("structural") and not self._direct_plan.get("components") and not self._direct_plan.get("refreshIntegrations") and not self._has_unsupported_regions(nodes))
+        if self._direct_plan.get("structural") and not self._targeted_structural:
+            self._direct_plan["fallback"] = True
         all_style_css = "\n".join(style.css for style in getattr(component, "styles", []) or [component.style])
         self.module_mapping = CSSModules.mapping(all_style_css, component.name) if component.style.module else {}
         
@@ -384,6 +405,7 @@ class Generator:
         
         # Template
         template_code = self._generate_template(nodes)
+        self._direct_plan.update({"version": 2, "regions": self._direct_regions, "targetedStructural": self._targeted_structural})
         # The generated component is intentionally runnable as a plain browser
         # ES module.  Keep the CSS/template contract together by embedding the
         # compiled stylesheet in the component runtime and installing it once
@@ -780,8 +802,8 @@ class Generator:
             *(['  const __flipSnapshot = root => { if (!root) return []; return Array.from(root.children || []).filter(node => node.dataset && node.dataset.teloceAnimate === "flip").map(node => [node, node.getBoundingClientRect()]); };'] if uses_flip else []),
             '  const patchNode = (oldNode, newNode) => {',
             '    if (!oldNode || oldNode.nodeType !== newNode.nodeType || (oldNode.nodeType === 1 && oldNode.tagName !== newNode.tagName)) return cloneManaged(newNode);',
-            '    if (oldNode.nodeType === 3) { if (oldNode.nodeValue !== newNode.nodeValue) oldNode.nodeValue = newNode.nodeValue; return oldNode; }',
-            '    const managedAttributes = oldNode.__teloceManagedAttributes || new Set(); for (const attr of Array.from(oldNode.attributes)) if (managedAttributes.has(attr.name) && !newNode.hasAttribute(attr.name)) oldNode.removeAttribute(attr.name);',
+            '    if (oldNode.nodeType === 3 || oldNode.nodeType === 8) { if (oldNode.nodeValue !== newNode.nodeValue) oldNode.nodeValue = newNode.nodeValue; return oldNode; }',
+            '    const managedAttributes = oldNode.__teloceManagedAttributes || new Set(); for (const attr of Array.from(oldNode.attributes)) if (managedAttributes.has(attr.name) && !newNode.hasAttribute(attr.name) && !newNode.hasAttribute("data-teloce-resolved-" + attr.name)) oldNode.removeAttribute(attr.name);',
             '    for (const attr of Array.from(newNode.attributes)) if (oldNode.getAttribute(attr.name) !== attr.value) oldNode.setAttribute(attr.name, attr.value);',
             '    oldNode.__teloceManagedAttributes = new Set(Array.from(newNode.attributes).map(attribute => attribute.name));',
             '    if (oldNode.__teloceInstance) { oldNode.__telocePendingPropsSource = newNode.cloneNode(true); return oldNode; }',
@@ -1141,7 +1163,7 @@ class Generator:
         """Consume optimizer metadata in AST/generator traversal order."""
         if (
             not self._direct_plan.get("enabled")
-            or self._direct_plan.get("structural")
+            or self._direct_region_depth
             or self._direct_plan.get("fallback")
         ):
             return None
@@ -1154,6 +1176,7 @@ class Generator:
                 and (not name or record.get("name") == name)
             ):
                 self._direct_cursor = index + 1
+                self._emitted_direct_ids.add(record["id"])
                 return record
         # A transformed AST can merge or normalize nodes. Keep compilation
         # deterministic even if an optimizer record is no longer available.
@@ -1169,19 +1192,93 @@ class Generator:
             "column": None,
         }
 
+    @staticmethod
+    def _has_unsupported_regions(nodes: List[ASTNode]) -> bool:
+        for node in nodes:
+            if isinstance(node, (SlotNode, ComponentNode)) or getattr(node, 'virtual', False):
+                return True
+            if isinstance(node, ElementNode) and node.tag.lower() in {'component', 'slot', 'table', 'select', 'svg'}:
+                return True
+            if Generator._has_unsupported_regions(getattr(node, 'children', []) or []):
+                return True
+            if Generator._has_unsupported_regions(getattr(node, 'else_children', []) or []):
+                return True
+        return False
+
+    def _generate_region(self, node: ASTNode) -> str:
+        """Anchor one outer structural block without changing HTML semantics."""
+        from teloce.compiler.optimizer import Optimizer
+        index = len(self._direct_regions)
+        record = {'id': f'r{index}', 'dependencies': [], 'template': ''}
+        self._direct_regions.append(record)
+        def collect(current):
+            expressions = [getattr(current, name, '') for name in ('expression', 'condition', 'collection', 'key')]
+            expressions.extend(binding.value for binding in getattr(current, 'bindings', []) or [])
+            expressions.extend((getattr(current, 'props', {}) or {}).values())
+            for expression in expressions:
+                for dependency in Optimizer._dependencies(str(expression or '')):
+                    if dependency not in record['dependencies']:
+                        record['dependencies'].append(dependency)
+                # Arbitrary calls can read other state through methods/filters.
+                if '(' in str(expression or '') or '|' in str(expression or ''):
+                    if '*' not in record['dependencies']:
+                        record['dependencies'].append('*')
+            for child in [*(getattr(current, 'children', []) or []), *(getattr(current, 'else_children', []) or [])]:
+                collect(child)
+        collect(node)
+        pending = list(record['dependencies'])
+        while pending:
+            dependency = pending.pop()
+            for root in Optimizer._dependencies(self._computed_bodies.get(dependency, '')):
+                if root not in record['dependencies']:
+                    record['dependencies'].append(root)
+                    pending.append(root)
+        self._direct_region_depth += 1
+        try:
+            markup = self._generate_for(node) if isinstance(node, ForNode) else self._generate_if(node)
+        finally:
+            self._direct_region_depth -= 1
+        record['template'] = markup
+        return f'<!--teloce-region:{record["id"]}-->{markup}<!--teloce-region-end:{record["id"]}-->'
+
+    @staticmethod
+    def _binding_reader(expression: str) -> Optional[str]:
+        """Emit simple safe state reads; complex expressions keep the evaluator."""
+        expression = expression.strip()
+        if not re.fullmatch(r'[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*', expression):
+            return None
+        parts = expression.split('.')
+        blocked = {'__proto__', 'prototype', 'constructor', 'caller', 'callee', 'arguments'}
+        builtins = {'true', 'false', 'null', 'undefined', 'Math', 'Number', 'String', 'Boolean', 'Array', 'Object', 'JSON', 'Date', 'parseInt', 'parseFloat', 'isNaN', 'this'}
+        if parts[0] in builtins or any(part in blocked for part in parts):
+            return None
+        root = json.dumps(parts[0])
+        read = 'scope[' + root + ']' + ''.join('?.[' + json.dumps(part) + ']' for part in parts[1:])
+        return 'scope => Object.prototype.hasOwnProperty.call(scope, ' + root + ') ? ' + read + ' : undefined'
+
     def _direct_plan_literal(self) -> str:
-        """Serialize only stable direct-update metadata into the module."""
-        if not self._direct_plan.get("enabled"):
-            return "{ enabled: false, structural: false, fallback: false, refreshIntegrations: false, bindings: [] }"
-        return json.dumps({
-            "version": self._direct_plan.get("version", 1),
-            "enabled": True,
-            "structural": bool(self._direct_plan.get("structural")),
-            "fallback": bool(self._direct_plan.get("fallback")),
-            "refreshIntegrations": bool(self._direct_plan.get("refreshIntegrations")),
-            "bindings": self._direct_plan.get("bindings", []),
-        }, ensure_ascii=False)
-    
+        """Serialize stable metadata and compiler-generated safe readers."""
+        if not self._direct_plan.get('enabled'):
+            return '{ enabled: false, structural: false, fallback: false, refreshIntegrations: false, bindings: [] }'
+        plan = {
+            'version': 2, 'enabled': True,
+            'structural': bool(self._direct_plan.get('structural')),
+            'targetedStructural': self._targeted_structural,
+            'fallback': bool(self._direct_plan.get('fallback')),
+            'refreshIntegrations': bool(self._direct_plan.get('refreshIntegrations')),
+            'regions': self._direct_regions,
+        }
+        bindings = []
+        for record in self._direct_plan.get('bindings', []):
+            if record['id'] not in self._emitted_direct_ids:
+                continue
+            literal = json.dumps(record, ensure_ascii=False)
+            reader = self._binding_reader(record['expression'])
+            if reader:
+                literal = literal[:-1] + ', read: ' + reader + '}'
+            bindings.append(literal)
+        return json.dumps(plan, ensure_ascii=False)[:-1] + ', "bindings": [' + ', '.join(bindings) + ']}'
+
     def _generate_template(self, nodes: List[ASTNode]) -> str:
         """Generate template code from AST nodes."""
         result = []
@@ -1198,8 +1295,12 @@ class Generator:
         elif isinstance(node, InterpolationNode):
             return self._generate_interpolation(node)
         elif isinstance(node, ForNode):
+            if self._targeted_structural and not self._direct_region_depth and self._direct_plan.get("enabled") and not self._direct_plan.get("fallback"):
+                return self._generate_region(node)
             return self._generate_for(node)
         elif isinstance(node, IfNode):
+            if self._targeted_structural and not self._direct_region_depth and self._direct_plan.get("enabled") and not self._direct_plan.get("fallback"):
+                return self._generate_region(node)
             return self._generate_if(node)
         else:
             return ''

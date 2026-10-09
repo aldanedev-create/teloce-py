@@ -146,6 +146,8 @@ class Optimizer:
                 "column": getattr(node, "column", None),
                 "safe": self._direct_expression_supported(expression),
             }
+            if "(" in record["expression"] or "|" in record["expression"]:
+                record["dependencies"].append("*")
             self.direct_plan["bindings"].append(record)
             if not record["safe"]:
                 self.direct_plan["fallback"] = True
@@ -230,10 +232,13 @@ class Optimizer:
         }
         for record in self.direct_plan["bindings"]:
             expanded = list(record.get("dependencies") or [])
-            for dependency in tuple(expanded):
+            pending = list(expanded)
+            while pending:
+                dependency = pending.pop()
                 for root in computed_roots.get(dependency, []):
                     if root not in expanded:
                         expanded.append(root)
+                        pending.append(root)
             record["dependencies"] = expanded
 
     def _static_node_records(self, nodes: List[ASTNode]) -> list[dict]:

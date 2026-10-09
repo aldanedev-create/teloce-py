@@ -36,5 +36,17 @@ export function flushJobs() {
   scheduled = false;
   const jobs = [...pending];
   pending.clear();
-  for (const job of jobs) job();
+  const errors = [];
+  for (const job of jobs) {
+    try { job(); } catch (error) { errors.push(error); }
+  }
+  // Report failures after running unrelated work; never discard the rest of
+  // the snapshot just because one application effect throws.
+  if (errors.length === 1) throw errors[0];
+  if (errors.length) {
+    const failure = typeof AggregateError === 'function'
+      ? new AggregateError(errors, 'Teloce scheduled jobs failed')
+      : Object.assign(new Error('Teloce scheduled jobs failed'), { errors });
+    throw failure;
+  }
 }

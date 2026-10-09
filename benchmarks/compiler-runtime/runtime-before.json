@@ -1,0 +1,197 @@
+{
+  "browser": "145.0.7632.6",
+  "counter": {
+    "text": [
+      {
+        "milliseconds": 6.5,
+        "iterations": 200,
+        "patches": 0
+      },
+      {
+        "milliseconds": 6.5,
+        "iterations": 200,
+        "patches": 0
+      },
+      {
+        "milliseconds": 5.399999999906868,
+        "iterations": 200,
+        "patches": 0
+      },
+      {
+        "milliseconds": 3.900000000023283,
+        "iterations": 200,
+        "patches": 0
+      },
+      {
+        "milliseconds": 4.200000000069849,
+        "iterations": 200,
+        "patches": 0
+      }
+    ],
+    "structure": [],
+    "count": 1020,
+    "rows": 0,
+    "median_ms": {
+      "text": 5.399999999906868
+    }
+  },
+  "typing": {
+    "text": [
+      {
+        "milliseconds": 7.099999999976717,
+        "iterations": 200,
+        "patches": 0
+      },
+      {
+        "milliseconds": 2.6000000000931323,
+        "iterations": 200,
+        "patches": 0
+      },
+      {
+        "milliseconds": 2.699999999953434,
+        "iterations": 200,
+        "patches": 0
+      },
+      {
+        "milliseconds": 2.099999999976717,
+        "iterations": 200,
+        "patches": 0
+      },
+      {
+        "milliseconds": 2,
+        "iterations": 200,
+        "patches": 0
+      }
+    ],
+    "structure": [],
+    "count": 0,
+    "rows": 0,
+    "median_ms": {
+      "text": 2.6000000000931323
+    }
+  },
+  "conditional": {
+    "text": [
+      {
+        "milliseconds": 10.900000000023283,
+        "iterations": 200,
+        "patches": 200
+      },
+      {
+        "milliseconds": 7.5,
+        "iterations": 200,
+        "patches": 200
+      },
+      {
+        "milliseconds": 9.800000000046566,
+        "iterations": 200,
+        "patches": 200
+      },
+      {
+        "milliseconds": 9.300000000046566,
+        "iterations": 200,
+        "patches": 200
+      },
+      {
+        "milliseconds": 8.099999999976717,
+        "iterations": 200,
+        "patches": 200
+      }
+    ],
+    "structure": [
+      {
+        "milliseconds": 8.400000000023283,
+        "iterations": 200,
+        "patches": 200
+      },
+      {
+        "milliseconds": 8.29999999993015,
+        "iterations": 200,
+        "patches": 200
+      },
+      {
+        "milliseconds": 7,
+        "iterations": 200,
+        "patches": 200
+      },
+      {
+        "milliseconds": 7.400000000023283,
+        "iterations": 200,
+        "patches": 200
+      },
+      {
+        "milliseconds": 7.900000000023283,
+        "iterations": 200,
+        "patches": 200
+      }
+    ],
+    "count": 1020,
+    "rows": 0,
+    "median_ms": {
+      "text": 9.300000000046566,
+      "structure": 7.900000000023283
+    }
+  },
+  "keyed_list": {
+    "text": [
+      {
+        "milliseconds": 783.6999999999534,
+        "iterations": 40,
+        "patches": 40
+      },
+      {
+        "milliseconds": 722,
+        "iterations": 40,
+        "patches": 40
+      },
+      {
+        "milliseconds": 777.7000000000698,
+        "iterations": 40,
+        "patches": 40
+      },
+      {
+        "milliseconds": 652.5999999999767,
+        "iterations": 40,
+        "patches": 40
+      },
+      {
+        "milliseconds": 684.9000000000233,
+        "iterations": 40,
+        "patches": 40
+      }
+    ],
+    "structure": [
+      {
+        "milliseconds": 524.6999999999534,
+        "iterations": 20,
+        "patches": 20
+      },
+      {
+        "milliseconds": 1216.5999999999767,
+        "iterations": 20,
+        "patches": 20
+      },
+      {
+        "milliseconds": 2504.0999999999767,
+        "iterations": 20,
+        "patches": 20
+      },
+      {
+        "milliseconds": 4707,
+        "iterations": 20,
+        "patches": 20
+      },
+      {
+        "milliseconds": 7458.29999999993,
+        "iterations": 20,
+        "patches": 20
+      }
+    ],
+    "count": 220,
+    "rows": 1000,
+    "median_ms": {
+      "text": 722,
+      "structure": 2504.0999999999767
+    }
+  }
+}

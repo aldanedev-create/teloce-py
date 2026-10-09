@@ -6,7 +6,7 @@ changes, the shared runtime keeps the existing nodes and updates only the text
 node or DOM property that depends on that field.
 
 This feature is opt-in while the compatibility renderer remains the safety
-net for structural and unsupported components.
+net for unsupported components and layouts.
 
 ## Enable it
 
@@ -72,7 +72,9 @@ export default {
 The compiler records each expression, its conservative dependency roots, and
 the `.vel` source location. A change to `count` updates the button's text
 binding; it does not recreate the `section`, `h1`, or paragraph. Multiple
-synchronous changes are collected into one microtask update.
+synchronous changes are collected into one microtask update. Bindings are indexed
+by dependency; simple member reads use generated functions, while complex
+expressions keep the safe evaluator.
 
 Nested state is tracked at its root:
 
@@ -114,24 +116,29 @@ console.assert(heading === document.querySelector("h1"));
 console.assert(heading.textContent === "Updated");
 ```
 
-## Structural templates
+## Structural regions and fallback
 
-Components containing `v-if`, `v-for`, `<if>`, or `<for>` currently keep the
-compatibility reconciliation path. That path is still DOM reconciliation, not
-an unconditional `innerHTML` replacement: keyed rows are matched by
-`data-teloce-key`, existing nodes are moved, new nodes are cloned, and removed
-subtrees run lifecycle cleanup. Teloce emits an informational `I3001` message
-when direct mode is enabled for such a component.
+Supported outer `v-if` and regular `v-for` blocks have comment-delimited
+regions. A change to their dependencies renders and patches that region;
+unrelated text or attribute changes use direct bindings without rebuilding
+those regions. Nested blocks reconcile within their outer region.
 
-Always provide stable keys:
+The region reconciler matches `data-teloce-key`, moves existing rows, creates
+new rows, and cleans up removed subtrees. Retained focused inputs preserve
+focus and selection during keyed moves. Always provide stable keys:
 
 ```html
 <li v-for="item in items" :key="item.id">{{ item.name }}</li>
 ```
 
-Without a key, the compiler emits `W2002` because focus and child component
-identity cannot be guaranteed during reorder. `virtual-for` also emits `W2001`
-without a stable key.
+A changed list still renders its region. Child components, projected slots,
+virtual lists, integration directives, and restricted layouts such as tables,
+selects, and SVG retain the compatibility renderer. Both paths share lifecycle
+and cleanup behavior. `I3001` describes structural reconciliation; it does not
+promise every component uses a targeted region.
+
+Without a key, `W2002` warns that row identity cannot be guaranteed during
+reorder. Virtual lists emit `W2001` without a stable key.
 
 ## Unsupported expressions
 

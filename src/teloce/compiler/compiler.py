@@ -226,11 +226,11 @@ class Compiler:
         if optimizer.direct_plan.get("enabled") and optimizer.direct_plan.get("structural"):
             self.diagnostics.add(
                 DiagnosticLevel.INFO,
-                "Direct DOM updates are enabled, but this component contains a structural block; using keyed reconciliation for v-if/v-for compatibility.",
+                "Structural blocks use keyed reconciliation inside targeted regions when supported; other layouts use compatibility rendering.",
                 filename=filename,
                 code="I3001",
                 suggestions=[
-                    "Keep a stable :key on v-for items. Structural direct updates can be enabled for this component after its block is converted to a direct plan."
+                    "Keep a stable :key on v-for items to preserve row identity during updates."
                 ],
             )
 
@@ -251,6 +251,7 @@ class Compiler:
         generator_options["direct_plan"] = optimizer.direct_plan
         generator = Generator(generator_options)
         js_code = generator.generate(optimized_ast, component)
+        optimizer.direct_plan.update({key: generator._direct_plan.get(key) for key in ("version", "fallback", "regions", "targetedStructural")})
         js_code = self._run_plugin_hooks("after_compile", js_code)
         css_code = self._generate_css(component)
 

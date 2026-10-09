@@ -39,6 +39,6 @@ jobs:
       - name: Check production bundles in Chromium
         env:
           TELOCE_BROWSER_TESTS: '1'
-        run: python -m pytest tests/integration/test_minifyjs_browser.py -q
+        run: python -m pytest tests/integration/test_minifyjs_browser.py tests/integration/test_targeted_regions_browser.py -q
       - name: Compare identical inputs with Node esbuild
         run: python scripts/benchmark_minifyjs.py --esbuild browser-tools/node_modules/.bin/esbuild

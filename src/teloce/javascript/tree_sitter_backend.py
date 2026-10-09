@@ -9,7 +9,10 @@ all source offsets so callers can preserve the author's JavaScript exactly.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from collections import OrderedDict
 from dataclasses import dataclass
+from functools import lru_cache
+from threading import local
 from typing import Any
 
 from .parser import (
@@ -143,6 +146,7 @@ def _canonical_language(language: str) -> str:
         ) from exc
 
 
+@lru_cache(maxsize=3)
 def _language(language: str) -> Any:
     if not TREE_SITTER_AVAILABLE:
         raise TreeSitterUnavailable(
@@ -157,12 +161,42 @@ def _language(language: str) -> Any:
     return Language(_typescript.language_tsx())
 
 
+_parser_state = local()
+
+
 def parse_tree(source: str, language: str = "js") -> TreeSitterProgram:
     """Parse JavaScript/TypeScript without executing it."""
 
     canonical = _canonical_language(language)
-    parser = Parser(_language(canonical))
-    tree = parser.parse(str(source).encode("utf-8"))
+    parsers = getattr(_parser_state, "parsers", None)
+    if parsers is None:
+        parsers = _parser_state.parsers = {}
+    parser = parsers.get(canonical)
+    if parser is None:
+        parser = parsers[canonical] = Parser(_language(canonical))
+    source = str(source)
+    encoded = source.encode("utf-8")
+    trees = getattr(_parser_state, "trees", None)
+    if trees is None:
+        trees = _parser_state.trees = OrderedDict()
+        _parser_state.tree_bytes = 0
+    key = (canonical, source)
+    tree = trees.get(key)
+    if tree is None:
+        tree = parser.parse(encoded)
+        # Bound both count and retained source size. Large modules are parsed
+        # normally without retaining their trees in a long-running watcher.
+        if len(encoded) <= 131072:
+            trees[key] = tree
+            _parser_state.tree_bytes += len(encoded)
+            while len(trees) > 32 or _parser_state.tree_bytes > 1048576:
+                old_key, _ = trees.popitem(last=False)
+                _parser_state.tree_bytes -= len(old_key[1].encode("utf-8"))
+    else:
+        trees.move_to_end(key)
+    # Tree.edit() is public: callers receive their own tree so edits cannot
+    # corrupt cached analysis used by another compiler stage.
+    tree = tree.copy()
     return TreeSitterProgram(str(source), canonical, tree)
 
 

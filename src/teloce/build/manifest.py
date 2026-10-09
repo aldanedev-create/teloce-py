@@ -39,6 +39,8 @@ class ManifestGenerator:
             'asset_map': build_result.get('asset_map', {}),
             'files': [],
             'dependencies': build_result.get('dependencies', {}),
+            'dependency_imports': build_result.get('dependency_imports', {}),
+            'dependency_resolution_signature': build_result.get('dependency_resolution_signature'),
             'dependency_cycle': build_result.get('dependency_cycle'),
             'errors': build_result.get('errors', []),
             'mode': build_result.get('mode', 'production'),
