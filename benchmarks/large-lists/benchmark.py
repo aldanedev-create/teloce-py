@@ -10,8 +10,8 @@ from teloce.cli.server import start_dev_server
 
 SOURCE = '''<template><main><ul><li v-for="item in items" :key="item.id"><span>{{ item.name }}</span></li></ul></main></template><script>export default {data(){return {items:Array.from({length:SIZE},(_,id)=>({id,name:'Row '+id}))}}};</script>'''
 
-def run(output):
-    report={'sizes':{}, 'measurement':'microtask completion; excludes paint'}
+def run(output, iterations_override=None, warmup=1):
+    report={'sizes':{}, 'measurement':'microtask completion; excludes paint', 'warmup_updates':warmup}
     with tempfile.TemporaryDirectory() as directory, sync_playwright() as pw:
         root=Path(directory);source=root/'static';source.mkdir()
         browser=pw.chromium.launch(args=['--no-sandbox']);report['browser']=browser.version
@@ -24,7 +24,8 @@ def run(output):
             try:
                 page=browser.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
                 page.goto(f'http://127.0.0.1:{server.server_port}/?no_hmr=1');page.wait_for_function(f'window.app && document.querySelectorAll("li").length === {size}')
-                data=page.evaluate('''async size=>{
+                data=page.evaluate('''async config=>{
+                  const {size,warmup}=config;
                   const parent=document.querySelector('ul'),insert=parent.insertBefore.bind(parent),create=document.createElement.bind(document);
                   let moves=0,parses=0,serial=0;
                   parent.insertBefore=(...args)=>{moves++;return insert(...args)};
@@ -36,9 +37,9 @@ def run(output):
                     if(kind==='insert-delete'){app.state.items.push({id:size+serial++,name:'New'});app.state.items.shift()}
                     await Promise.resolve();
                   };
-                  const result={};const iterations=size===10000?2:10;
+                  const result={};const iterations=config.iterations || (size===10000?2:10);
                   for(const kind of ['edit','rotate','reverse','insert-delete']){
-                    await once(kind);const samples=[];
+                    for(let i=0;i<warmup;i++)await once(kind);const samples=[];
                     for(let batch=0;batch<5;batch++){
                       moves=0;parses=0;const start=performance.now();
                       for(let i=0;i<iterations;i++)await once(kind);
@@ -47,7 +48,7 @@ def run(output):
                     result[kind]=samples;
                   }
                   return result;
-                }''',size)
+                }''',{'size':size,'iterations':iterations_override,'warmup':warmup})
                 assert not errors,errors
                 report['sizes'][str(size)]={kind:{'median_ms':statistics.median(s['milliseconds'] for s in samples),'samples':samples} for kind,samples in data.items()}
                 page.close()
@@ -57,4 +58,4 @@ def run(output):
     Path(output).write_text(json.dumps(report,indent=2)+'\n')
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('--output',required=True);run(parser.parse_args().output)
+    parser=argparse.ArgumentParser();parser.add_argument('--output',required=True);parser.add_argument('--iterations',type=int);parser.add_argument('--warmup',type=int,default=1);args=parser.parse_args();run(args.output,args.iterations,args.warmup)

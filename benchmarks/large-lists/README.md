@@ -51,3 +51,42 @@ PYTHONPATH=src python benchmarks/large-lists/startup.py --output /tmp/list-start
 ```
 
 To compare the baseline, archive its `src/` directory into a separate folder and point PYTHONPATH there while retaining these identical benchmark scripts. Run revisions sequentially. The browser tests cover identity, minimum moves, single-row parsing, focus/selection, shared/index dependencies, source-type transitions, cleanup, scoped CSS virtualization, default native bundling, stable aliases, and lazy chunks.
+
+## Follow-up: initialize caches during the first render
+
+Baseline: `b91b59721a3ead1aa5ebc1e84713b6ffe48f1231` (tree `724d7e2af5e0bedde372e5a9da9edf12ddb0ba0c`). This follow-up captures row dependency snapshots and event scopes while generating the initial HTML, then attaches nodes during the existing binding walk. It avoids reevaluating the collection and constructing row scopes in a separate cache setup pass. Supported rows read only their required state roots; unrelated computed getters are not copied into every row.
+
+Same production startup script, five fresh pages per size, same machine and browser. Both revisions use native production bundling. The following paired results supersede the earlier startup comparison for this change:
+
+| Rows | Before mount (ms) | After mount (ms) | Less elapsed time |
+| ---: | ---: | ---: | ---: |
+| 100 | 10.20 | 9.50 | 6.9% |
+| 1,000 | 42.70 | 32.30 | 24.4% |
+| 10,000 | 275.80 | 220.10 | 20.2% |
+
+Repeat-update checks use five batches of **20 operations**, following **five warm-up operations** per scenario. The benchmark script now accepts `--iterations` and `--warmup`; its original defaults are unchanged. Times below are milliseconds per operation, excluding paint.
+
+| Rows | Operation | Before (ms/update) | After (ms/update) |
+| ---: | --- | ---: | ---: |
+| 100 | edit | 0.41 | 0.35 |
+| 100 | rotate | 0.42 | 0.36 |
+| 100 | reverse | 0.36 | 0.34 |
+| 100 | insert-delete | 0.47 | 0.42 |
+| 1,000 | edit | 3.00 | 2.74 |
+| 1,000 | rotate | 2.64 | 2.93 |
+| 1,000 | reverse | 2.60 | 4.25 |
+| 1,000 | insert-delete | 2.81 | 3.50 |
+| 10,000 | edit | 27.57 | 23.13 |
+| 10,000 | rotate | 27.79 | 30.72 |
+| 10,000 | reverse | 34.68 | 34.16 |
+| 10,000 | insert-delete | 33.66 | 34.26 |
+
+Single-row edits now skip whole-list reconciliation when row order is unchanged. Updates to multiple roots still use one bulk patch, avoiding quadratic repeated scans. Identity, focus, event scopes and cleanup retain the existing behavior.
+
+**Repeated-update timings did not improve uniformly.** In this run, several reorder workloads were slower, particularly 1,000-row reversal. This change improves startup and single-row edits in these samples; it is not a blanket steady-state speedup. Small batch timings, garbage collection and JIT warm-up can vary. Raw samples preserve the observed regressions rather than discarding them.
+
+Raw paired files: `startup-cache-before.json`, `startup-cache-after.json`, `updates-cache-before.json`, and `updates-cache-after.json`. Reproduce the repeat-update comparison with:
+
+```bash
+PYTHONPATH=src python benchmarks/large-lists/benchmark.py --iterations 20 --warmup 5 --output /tmp/cache-updates.json
+```

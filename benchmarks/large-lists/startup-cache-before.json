@@ -1,0 +1,50 @@
+{
+  "100": {
+    "mount_samples_ms": [
+      10.699999999254942,
+      10.200000000186265,
+      10.099999999627471,
+      10.200000000186265,
+      9.400000000372529
+    ],
+    "median_mount_ms": 10.200000000186265,
+    "requested_js_files": [
+      "static/App.809c4850.bundle-LJNHJSE5.js"
+    ],
+    "requested_js_bytes": 45311,
+    "requested_js_gzip_bytes": 15713,
+    "bundler": "minifyjs"
+  },
+  "1000": {
+    "mount_samples_ms": [
+      43.799999999813735,
+      44.60000000055879,
+      42.69999999925494,
+      37.40000000037253,
+      35.700000000186265
+    ],
+    "median_mount_ms": 42.69999999925494,
+    "requested_js_files": [
+      "static/App.ab8ebc72.bundle-24ASXOQT.js"
+    ],
+    "requested_js_bytes": 45311,
+    "requested_js_gzip_bytes": 15712,
+    "bundler": "minifyjs"
+  },
+  "10000": {
+    "mount_samples_ms": [
+      310.20000000018626,
+      240.79999999981374,
+      275.79999999981374,
+      275.29999999981374,
+      281.59999999962747
+    ],
+    "median_mount_ms": 275.79999999981374,
+    "requested_js_files": [
+      "static/App.ec6c9f5b.bundle-7RU5NMQR.js"
+    ],
+    "requested_js_bytes": 45311,
+    "requested_js_gzip_bytes": 15713,
+    "bundler": "minifyjs"
+  }
+}

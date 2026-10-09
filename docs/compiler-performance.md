@@ -80,7 +80,8 @@ Supported outer conditionals and regular loops receive comment anchors. Only
 an affected region renders and reconciles; unrelated text updates leave those
 regions alone. Nested structural changes reconcile within their outer region.
 Keyed list reconciliation minimizes DOM moves. Supported simple loops cache
-row dependency snapshots and render only dirty rows. This still scans the
+row dependency snapshots during the initial render and render only dirty rows.
+A single changed root in an otherwise unchanged list skips whole-list reconciliation. This still scans the
 collection; it is not an O(1) per-row signal subscription engine.
 
 Child components, projected slots, virtual lists, integrations, and unsupported

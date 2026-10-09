@@ -217,8 +217,12 @@ set of existing rows in place. Rotating a list by one position needs one DOM
 move. Reversing a list still needs almost every row to move.
 
 Simple keyed loops with one root element cache each row's rendered dependency
-paths. An edit checks dependency snapshots and renders only changed rows;
-unchanged rows keep their DOM and listeners. Shared values and displayed indexes
+paths. The first render captures these snapshots and event scopes; the existing
+DOM binding walk attaches row nodes, without a second collection/setup pass.
+Only the state roots used by a supported row are copied into its render scope. An edit checks dependency snapshots and renders only changed rows;
+unchanged rows keep their DOM and listeners. If row order is unchanged and only
+one root's markup changes, reconciliation patches that root alone; updates to
+multiple roots use one bulk patch to avoid repeated list scans. Shared values and displayed indexes
 are included in the snapshots. This still scans the collection on invalidation;
 it is not an O(1) per-row subscription system. Calls, computed dependencies,
 nested structures and integration-owned DOM retain general region reconciliation.
