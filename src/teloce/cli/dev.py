@@ -58,7 +58,7 @@ def dev_command(args: Any) -> int:
         'dev': True,
         'jobs': build_config.get('jobs', 1),
         'persistent_workers': build_config.get('persistent_workers', False),
-        'direct_dom_updates': build_config.get('direct_dom_updates', False),
+        'direct_dom_updates': build_config.get('direct_dom_updates', True),
         'source_maps': True,
         'clean': False,
         'incremental': True,

@@ -18,7 +18,7 @@ paths and optimisation settings.
     "minify": true,
     "shared_runtime": true,
     "tree_shake": true,
-    "bundler": "teloce",
+    "bundler": "minifyjs",
     "lazy_components": ["SettingsPage"]
   },
   "server": {

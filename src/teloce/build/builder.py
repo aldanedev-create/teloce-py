@@ -92,6 +92,7 @@ class Builder:
             "hash_assets": True,
             "extract_css": True,
             "tree_shake": True,
+            "bundle": True,
             "clean": True,
         } if production and mode == "production" and requested.get("dev") is not True else {}
         # A project build always emits one reusable browser runtime by default.
@@ -102,9 +103,8 @@ class Builder:
             "shared_runtime": True,
             "minifier": "minifyjs" if production else "teloce",
             "bundler": "minifyjs",
-            # Direct updates are opt-in while the structural/component paths
-            # complete their migration. The compiler option is documented and
-            # exercised by dedicated browser tests.
+            "direct_dom_updates": True,
+            # Unsupported templates retain automatic compatibility reconciliation.
             "mode": mode,
             # A pages directory is enough to opt a project into the file-based
             # SPA router. False remains available for libraries and
@@ -431,11 +431,16 @@ class Builder:
                 'limit': self.max_asset_size,
                 'message': f"Copied asset exceeds {self.max_asset_size} bytes",
             } for item in asset_files if int(item['size']) > self.max_asset_size)
-        if self.options.get('bundle', False) and not results['failed']:
+        has_bundle_input = bool(vel_files or ts_files or any(Path(path).suffix == '.js' for path in copied_asset_paths))
+        if self.options.get('bundle', False) and has_bundle_input and not results['failed']:
             try:
                 entry = self.options.get('bundle_entry')
                 if not entry:
-                    default_entry = self.out_dir / 'static' / 'js' / 'App.js'
+                    # Bundle the browser bootstrap when present, so its shared
+                    # helpers and component imports are optimized together.
+                    main_name = (Path(self.options.get('static_dir', 'static')) / 'js' / 'main.js').as_posix()
+                    main_entry = self.out_dir / self.assets.asset_map.get(main_name, main_name)
+                    default_entry = main_entry if main_entry.is_file() else self.out_dir / self.options.get('static_dir', 'static') / 'js' / 'App.js'
                     if default_entry.exists():
                         entry = default_entry
                     else:
@@ -500,7 +505,13 @@ class Builder:
                 if native_bundler is None:
                     bundle_path = self._finalize_bundle_path(bundle_path)
                 results['bundle'] = bundle_path.relative_to(self.out_dir).as_posix()
-                self._map_bundle_entry(results, entry, results['bundle'])
+                default_export = native_bundler is None or any(
+                    'default' in info.get('exports', [])
+                    and info.get('entryPoint')
+                    and (self.root_dir / info['entryPoint']).resolve() == Path(entry).resolve()
+                    for info in native_bundler.result.metafile.get('outputs', {}).values()
+                )
+                self._map_bundle_entry(results, entry, results['bundle'], default_export=default_export)
                 emitted = results.get('bundle_outputs') or [{
                     'output': results['bundle'], 'size': bundle_path.stat().st_size}]
                 for item in emitted:
@@ -915,7 +926,7 @@ class Builder:
         return hashed
 
     def _map_bundle_entry(self, results: Dict[str, Any], entry: str | Path,
-                          bundle_output: str) -> None:
+                          bundle_output: str, *, default_export: bool = True) -> None:
         """Point the public source entry at the final bundle when possible."""
         if not self.out_dir:
             return
@@ -945,10 +956,10 @@ class Builder:
             relative = Path(os.path.relpath(target, alias.parent)).as_posix()
             if not relative.startswith('.'):
                 relative = './' + relative
-            alias.write_text(
-                f'export * from "{relative}"; export {{ default }} from "{relative}";\n',
-                encoding='utf-8',
-            )
+            exports = f'export * from "{relative}";'
+            if default_export:
+                exports += f' export {{ default }} from "{relative}";'
+            alias.write_text(exports + '\n', encoding='utf-8')
 
     def _write_hashed_aliases(self, results: Dict[str, Any]) -> None:
         """Emit stable logical module shims for hashed production outputs."""
@@ -1243,6 +1254,10 @@ class Builder:
         output_path = self._output_path(vel_file)
         component_imports = self._resolve_component_imports(vel_file, source)
         compiler_options = dict(self.options)
+        # MinifyJS owns production optimization after resolving imports. Never
+        # pre-minify its inputs with the legacy whitespace compressor.
+        if self.options.get('minifier') == 'minifyjs' or (self.options.get('bundle') and self.options.get('bundler') == 'minifyjs'):
+            compiler_options['minify'] = False
         compiler_options["component_imports"] = component_imports
         compiler_options["inline_css"] = not self.extract_css
         if self.options.get('shared_runtime'):

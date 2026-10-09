@@ -56,7 +56,7 @@ export default {
 '''
         result = compile(source, filename="Whitespace.vel", source_maps=False)
         assert result['success'] is True
-        assert 'Clicked {{ count }} times' in result['code']
+        assert 'Clicked <!--teloce-text:t0-->{{ count }}<!--teloce-text-end:t0--> times' in result['code']
 
     def test_compile_with_event(self):
         """Test compilation with event binding."""

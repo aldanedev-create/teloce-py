@@ -79,11 +79,12 @@ conservatively because they may read other state.
 Supported outer conditionals and regular loops receive comment anchors. Only
 an affected region renders and reconciles; unrelated text updates leave those
 regions alone. Nested structural changes reconcile within their outer region.
-Keyed list reconciliation preserves row identity, but a changed list still
-renders its region: this is not a per-row signal subscription engine.
+Keyed list reconciliation minimizes DOM moves. Supported simple loops cache
+row dependency snapshots and render only dirty rows. This still scans the
+collection; it is not an O(1) per-row signal subscription engine.
 
 Child components, projected slots, virtual lists, integrations, and unsupported
-layouts retain compatibility rendering. The optimization stays opt-in. See
+layouts retain compatibility rendering. Direct DOM updates are enabled by default, with an explicit compatibility switch. See
 [Direct DOM updates](direct-dom.md) for configuration and coverage.
 
 ## Correctness before timing

@@ -228,7 +228,7 @@ deployment use identical paths and optimisation settings.
     "minify": true,
     "shared_runtime": true,
     "tree_shake": true,
-    "bundler": "teloce",
+    "bundler": "minifyjs",
     "lazy_components": ["SettingsPage"]
   },
   "server": { "host": "127.0.0.1", "port": 5173, "hmr": true }

@@ -10,11 +10,22 @@ pip install teloce-py
 teloce build --bundle --source-map
 ```
 
-`minifyjs` is the default production minifier and the default bundler when
-`--bundle` is enabled. Development builds and direct `Builder()` calls retain
-the conservative Teloce minifier unless `minifier="minifyjs"` is requested.
-Bundling remains opt-in. CSS compilation/extraction and template compilation
-continue to belong to Teloce.
+`teloce build` and `Builder({"mode": "production"})` bundle through MinifyJS
+by default, with compression, identifier mangling and tree shaking. Generated
+modules are passed to the bundler before JavaScript minification so esbuild can
+optimize the resolved graph once. Development builds remain separate modules.
+Bare `Builder()` calls retain their existing non-release defaults.
+CSS compilation/extraction and template compilation continue to belong to Teloce.
+
+Use `teloce build --no-bundle` or `"build": {"bundle": false}` for separate
+production modules. This is useful for independently mounted framework pages.
+Set `bundle_entry` to the browser bootstrap (for example `static/js/main.js`) to
+include application helpers as well as components. The builder prefers that
+conventional bootstrap when present, then App, then a generated entry. Projects
+with multiple independent bootstraps should configure their build entry explicitly.
+Keep every emitted chunk and stylesheet when deploying; hashed entry files alone
+are insufficient. Original modules remain available for compatibility, so the
+output directory size is larger than the JavaScript downloaded by a bundled page.
 
 ## Configure a build
 

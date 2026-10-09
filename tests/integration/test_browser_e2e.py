@@ -539,7 +539,7 @@ def test_production_hashed_shared_runtime_and_extracted_css_run_in_real_chrome(t
         '</script>',
         encoding="utf-8",
     )
-    result = build_project(tmp_path, options={"mode": "production", "source_maps": False})
+    result = build_project(tmp_path, options={"mode": "production", "bundle": False, "source_maps": False})
     assert result["failed"] == 0, result["errors"]
     app = next((tmp_path / "dist" / "static" / "js").glob("App.*.js"))
     runtime = next((tmp_path / "dist" / "static").glob("teloce-runtime.*.js"))

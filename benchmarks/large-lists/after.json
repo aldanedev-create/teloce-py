@@ -1,0 +1,432 @@
+{
+  "sizes": {
+    "100": {
+      "edit": {
+        "median_ms": 4.699999999720603,
+        "samples": [
+          {
+            "milliseconds": 7.900000000372529,
+            "moves": 0,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 5.099999999627471,
+            "moves": 0,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 4.400000000372529,
+            "moves": 0,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 4.699999999720603,
+            "moves": 0,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 3.7000000001862645,
+            "moves": 0,
+            "parses": 10,
+            "iterations": 10
+          }
+        ]
+      },
+      "rotate": {
+        "median_ms": 3.7000000001862645,
+        "samples": [
+          {
+            "milliseconds": 5,
+            "moves": 10,
+            "parses": 0,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 4.2999999998137355,
+            "moves": 10,
+            "parses": 0,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 3.3999999999068677,
+            "moves": 10,
+            "parses": 0,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 3.5,
+            "moves": 10,
+            "parses": 0,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 3.7000000001862645,
+            "moves": 10,
+            "parses": 0,
+            "iterations": 10
+          }
+        ]
+      },
+      "reverse": {
+        "median_ms": 3.6999999997206032,
+        "samples": [
+          {
+            "milliseconds": 4.5,
+            "moves": 990,
+            "parses": 0,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 3.6000000000931323,
+            "moves": 990,
+            "parses": 0,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 4,
+            "moves": 990,
+            "parses": 0,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 3.6999999997206032,
+            "moves": 990,
+            "parses": 0,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 3.5,
+            "moves": 990,
+            "parses": 0,
+            "iterations": 10
+          }
+        ]
+      },
+      "insert-delete": {
+        "median_ms": 7.300000000279397,
+        "samples": [
+          {
+            "milliseconds": 5.2999999998137355,
+            "moves": 10,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 7.300000000279397,
+            "moves": 10,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 4.7999999998137355,
+            "moves": 10,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 8.200000000186265,
+            "moves": 10,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 8.100000000093132,
+            "moves": 10,
+            "parses": 10,
+            "iterations": 10
+          }
+        ]
+      }
+    },
+    "1000": {
+      "edit": {
+        "median_ms": 29.100000000093132,
+        "samples": [
+          {
+            "milliseconds": 38.09999999962747,
+            "moves": 0,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 33.3000000002794,
+            "moves": 0,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 29.100000000093132,
+            "moves": 0,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 26,
+            "moves": 0,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 27.59999999962747,
+            "moves": 0,
+            "parses": 10,
+            "iterations": 10
+          }
+        ]
+      },
+      "rotate": {
+        "median_ms": 23.199999999720603,
+        "samples": [
+          {
+            "milliseconds": 31.100000000093132,
+            "moves": 10,
+            "parses": 0,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 26.399999999906868,
+            "moves": 10,
+            "parses": 0,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 22.600000000093132,
+            "moves": 10,
+            "parses": 0,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 21.800000000279397,
+            "moves": 10,
+            "parses": 0,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 23.199999999720603,
+            "moves": 10,
+            "parses": 0,
+            "iterations": 10
+          }
+        ]
+      },
+      "reverse": {
+        "median_ms": 31.600000000093132,
+        "samples": [
+          {
+            "milliseconds": 27.699999999720603,
+            "moves": 9990,
+            "parses": 0,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 26.5,
+            "moves": 9990,
+            "parses": 0,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 32.5,
+            "moves": 9990,
+            "parses": 0,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 31.600000000093132,
+            "moves": 9990,
+            "parses": 0,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 31.600000000093132,
+            "moves": 9990,
+            "parses": 0,
+            "iterations": 10
+          }
+        ]
+      },
+      "insert-delete": {
+        "median_ms": 28.100000000093132,
+        "samples": [
+          {
+            "milliseconds": 38.5,
+            "moves": 10,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 34,
+            "moves": 10,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 28.100000000093132,
+            "moves": 10,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 27.699999999720603,
+            "moves": 10,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 27.600000000093132,
+            "moves": 10,
+            "parses": 10,
+            "iterations": 10
+          }
+        ]
+      }
+    },
+    "10000": {
+      "edit": {
+        "median_ms": 53.200000000186265,
+        "samples": [
+          {
+            "milliseconds": 75,
+            "moves": 0,
+            "parses": 2,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 61.5,
+            "moves": 0,
+            "parses": 2,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 51.799999999813735,
+            "moves": 0,
+            "parses": 2,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 53.200000000186265,
+            "moves": 0,
+            "parses": 2,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 51.10000000009313,
+            "moves": 0,
+            "parses": 2,
+            "iterations": 2
+          }
+        ]
+      },
+      "rotate": {
+        "median_ms": 58.39999999990687,
+        "samples": [
+          {
+            "milliseconds": 56.09999999962747,
+            "moves": 2,
+            "parses": 0,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 65.20000000018626,
+            "moves": 2,
+            "parses": 0,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 57.59999999962747,
+            "moves": 2,
+            "parses": 0,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 61.10000000009313,
+            "moves": 2,
+            "parses": 0,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 58.39999999990687,
+            "moves": 2,
+            "parses": 0,
+            "iterations": 2
+          }
+        ]
+      },
+      "reverse": {
+        "median_ms": 70.39999999990687,
+        "samples": [
+          {
+            "milliseconds": 70.6999999997206,
+            "moves": 19998,
+            "parses": 0,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 68.8000000002794,
+            "moves": 19998,
+            "parses": 0,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 70.5,
+            "moves": 19998,
+            "parses": 0,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 70.39999999990687,
+            "moves": 19998,
+            "parses": 0,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 65.5,
+            "moves": 19998,
+            "parses": 0,
+            "iterations": 2
+          }
+        ]
+      },
+      "insert-delete": {
+        "median_ms": 79.60000000009313,
+        "samples": [
+          {
+            "milliseconds": 89,
+            "moves": 2,
+            "parses": 2,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 99.20000000018626,
+            "moves": 2,
+            "parses": 2,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 79.60000000009313,
+            "moves": 2,
+            "parses": 2,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 66.5,
+            "moves": 2,
+            "parses": 2,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 64,
+            "moves": 2,
+            "parses": 2,
+            "iterations": 2
+          }
+        ]
+      }
+    }
+  },
+  "measurement": "microtask completion; excludes paint",
+  "browser": "145.0.7632.6"
+}

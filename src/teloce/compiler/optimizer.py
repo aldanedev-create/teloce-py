@@ -23,7 +23,7 @@ class Optimizer:
         self.static_nodes: Set[int] = set()
         self.direct_plan = {
             "version": 1,
-            "enabled": bool(self.options.get("direct_dom_updates", False)),
+            "enabled": bool(self.options.get("direct_dom_updates", True)),
             "structural": False,
             "fallback": False,
             "refreshIntegrations": False,
@@ -159,7 +159,7 @@ class Optimizer:
                 return
             if isinstance(node, ElementNode):
                 if any(
-                    name.startswith("use:")
+                    name.startswith("use:") or name.startswith("v-")
                     or name in {"poll", "live", "v-scrolly", "v-chart-annotation", "v-data-table"}
                     for name in node.attributes
                 ):

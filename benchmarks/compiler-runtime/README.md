@@ -41,7 +41,7 @@ Both revisions enable `direct_dom_updates`. Medians of five batches after a warm
 
 The major list-text improvement comes from avoiding any list rendering/patching. Sub-millisecond batches approach timer resolution; use patch counts in the raw data as the stronger explanation, rather than extrapolating a huge speedup multiplier.
 
-Typing was effectively unchanged. Large-list reversal remains costly and was slower in this run. A changed list still renders and reconciles its region; this implementation does not provide per-row signal subscriptions or an optimized minimum-move list algorithm. Direct mode remains opt-in, with compatibility rendering for unsupported layouts, components, and slots.
+Typing was effectively unchanged. Large-list reversal remains costly and was slower in this run. A changed list still renders and reconciles its region; this implementation does not provide per-row signal subscriptions or an optimized minimum-move list algorithm. Direct mode was opt-in at the time of this measurement. The follow-up [large-list report](../large-lists/README.md) covers minimum-move reconciliation, row caching and the new defaults.
 
 ## Reproduce
 

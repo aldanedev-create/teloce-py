@@ -128,7 +128,7 @@ Teams should usually commit this configuration and invoke the CLI:
     "minify": true,
     "shared_runtime": true,
     "tree_shake": true,
-    "bundler": "teloce"
+    "bundler": "minifyjs"
   }
 }
 ```
