@@ -2,6 +2,8 @@ import { queueJob, batch as schedulerBatch } from './scheduler.js';
 
 let activeEffect = null;
 const targetDependencies = new WeakMap();
+const iterateKey = Symbol('teloce.iterate');
+const arrayIndex = key => typeof key === 'string' && /^(0|[1-9]\d*)$/.test(key) && Number(key) < 4294967295;
 
 export function track(target, key) {
   if (!activeEffect || activeEffect.stopped) return;
@@ -22,6 +24,9 @@ const reactiveCache = new WeakMap();
 const reactiveProxies = new WeakSet();
 export function reactive(value) {
   if (!value || typeof value !== 'object') return value;
+  if (reactiveProxies.has(value)) return value;
+  const prototype = Object.getPrototypeOf(value);
+  if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) return value;
   if (reactiveCache.has(value)) return reactiveCache.get(value);
   const proxy = new Proxy(value, {
     get(target, key, receiver) {
@@ -30,18 +35,34 @@ export function reactive(value) {
       return result && typeof result === 'object' ? reactive(result) : result;
     },
     set(target, key, next, receiver) {
+      const oldLength = Array.isArray(target) ? target.length : 0;
+      const existed = Object.prototype.hasOwnProperty.call(target, key);
       const previous = Reflect.get(target, key, receiver);
       const changed = !Object.is(previous, next);
       const result = Reflect.set(target, key, next, receiver);
-      if (changed) trigger(target, key);
+      if (result && changed) {
+        trigger(target, key);
+        if (!existed) trigger(target, iterateKey);
+        if (Array.isArray(target)) {
+          if (arrayIndex(key) && target.length !== oldLength) trigger(target, 'length');
+          if (key === 'length' && target.length < oldLength) {
+            trigger(target, iterateKey);
+            for (const dependency of targetDependencies.get(target)?.keys() || []) {
+              if (arrayIndex(dependency) && Number(dependency) >= target.length) trigger(target, dependency);
+            }
+          }
+        }
+      }
       return result;
     },
     deleteProperty(target, key) {
       const existed = Object.prototype.hasOwnProperty.call(target, key);
       const result = Reflect.deleteProperty(target, key);
-      if (existed) trigger(target, key);
+      if (result && existed) { trigger(target, key); trigger(target, iterateKey); }
       return result;
     },
+    ownKeys(target) { track(target, iterateKey); return Reflect.ownKeys(target); },
+    has(target, key) { track(target, key); return Reflect.has(target, key); },
   });
   reactiveCache.set(value, proxy);
   reactiveProxies.add(proxy);
@@ -79,9 +100,12 @@ export function createSignal(initial) {
     yield signal.set;
   };
   signal.subscribe = listener => {
-    const subscriber = listener && listener.run ? listener : { run: listener };
+    const callback = typeof listener === 'function' ? listener : listener?.run?.bind(listener);
+    if (typeof callback !== 'function') throw new TypeError('Signal subscriber must be a function or effect');
+    let active = true;
+    const subscriber = { run() { if (active) callback(value); } };
     subscribers.add(subscriber);
-    return () => subscribers.delete(subscriber);
+    return () => { active = false; subscribers.delete(subscriber); };
   };
   signal.__teloce_signal = true;
   return signal;

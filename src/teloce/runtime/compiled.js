@@ -209,6 +209,18 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
   // cleanup behavior and are selected from one generated plan.
   const directEnabled = Boolean(options.direct && directPlan.enabled && !directPlan.fallback);
   const directBindings = Array.isArray(directPlan.bindings) ? directPlan.bindings : [];
+  const directRegions = Array.isArray(directPlan.regions) ? directPlan.regions : [];
+  const bindingIndex = new Map();
+  const alwaysBindings = new Set();
+  for (const record of directBindings) {
+    const dependencies = record.dependencies || [];
+    if (!dependencies.length || dependencies.includes('*')) alwaysBindings.add(record);
+    for (const dependency of dependencies) {
+      const root = String(dependency).split('.')[0];
+      if (!bindingIndex.has(root)) bindingIndex.set(root, new Set());
+      bindingIndex.get(root).add(record);
+    }
+  }
   const nativeEvents = new Set([
     "click", "input", "submit", "change", "keyup", "keydown", "focus", "blur",
     "mouseenter", "mouseleave", "mousedown", "mouseup", "pointerdown", "pointerup",
@@ -308,6 +320,9 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       element.innerHTML = sanitizeHtml(value);
     } else if (name === "text") {
       element.textContent = value == null ? "" : String(value);
+    } else if (name === "value" && "value" in element) {
+      if (element.value !== String(value ?? "")) element.value = String(value ?? "");
+      if (element.getAttribute("value") !== String(value ?? "")) element.setAttribute("value", String(value ?? ""));
     } else if (["disabled", "checked", "selected", "readonly", "required", "multiple"].includes(name)) {
       element.toggleAttribute(name, Boolean(value));
     } else if (["href", "src", "action", "formaction"].includes(name) && isDangerousUrl(value)) {
@@ -406,9 +421,12 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       const rawValues = evaluate(collection, scope);
       const values = Array.isArray(rawValues) ? rawValues : rawValues && typeof rawValues === "object" ? Object.values(rawValues) : [];
       const rendered = values.map((value, index) => {
-        const loopScope = { ...scope, [item]: value, index };
-        const scopeId = String(loopScopes.size);
-        loopScopes.set(scopeId, loopScope);
+        const locals = { ...(scope[loopLocals] || {}), [item]: value, index };
+        const loopScope = { ...scope, ...locals, [loopLocals]: locals };
+        const scopeId = String(loopScopeSequence++);
+        // Retain only row locals. Global state must be read at event time,
+        // even when an unrelated state change skips this region's renderer.
+        loopScopes.set(scopeId, locals);
         let content = renderTemplate(body, loopScope, loopScopes);
         content = content.replace(/<([A-Za-z][\w:-]*)(?=[\s>])/, match => match.includes("data-teloce-loop-scope")
           ? match
@@ -586,6 +604,8 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
   let suppressUpdates = false;
   let queued = false;
   let loopScopes = new Map();
+  const loopLocals = Symbol('teloce.loopLocals');
+  let loopScopeSequence = 0;
   let state;
   let previousWatchValues = {};
   let pendingDependencies = new Set();
@@ -752,7 +772,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       for (let index = first; index < last; index += 1) {
         const value = values[index];
         const loopScope = { ...state, [itemName]: value, index };
-        const scopeId = String(loopScopes.size);
+        const scopeId = String(loopScopeSequence++);
         loopScopes.set(scopeId, loopScope);
         virtualScopeIds.add(scopeId);
         let markup = renderTemplate(body, loopScope, loopScopes);
@@ -1217,24 +1237,54 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
   let directTextNodes = new Map();
   let directBindingNodes = new Map();
   let directBound = false;
+  const regionNodes = new Map();
 
   const directNeedsUpdate = (record, changed) => {
     if (!changed || !changed.size || changed.has("*")) return true;
     const dependencies = Array.isArray(record.dependencies) ? record.dependencies : [];
-    return !dependencies.length || dependencies.some(dependency => changed.has(String(dependency).split(".")[0]));
+    return !dependencies.length || dependencies.includes("*") || dependencies.some(dependency => changed.has(String(dependency).split(".")[0]));
   };
 
   const bindDirectNodes = () => {
     if (!directEnabled || !target) return;
     directTextNodes = new Map();
     directBindingNodes = new Map();
-    const walker = document.createTreeWalker(target, 128);
+    const walker = document.createTreeWalker(target, 0xFFFFFFFF, {
+      acceptNode(node) {
+        if (node.nodeType === 1 && node.__teloceInstance) return 2;
+        return node.nodeType === 8 ? 1 : 3;
+      },
+    });
     let current = walker.nextNode();
     while (current) {
       const match = String(current.nodeValue || "").match(/^teloce-text:([\w$-]+)$/);
       // The marker is a stable comment; the following text node carries the
       // rendered value and is the node that direct updates must mutate.
-      if (match) directTextNodes.set(match[1], current.nextSibling || current);
+      if (match) {
+        let text = current.nextSibling;
+        // HTML parsing omits empty text nodes. Never bind the closing
+        // comment as the value node: that would keep later text invisible.
+        if (text?.nodeType !== 3) {
+          text = document.createTextNode('');
+          current.parentNode.insertBefore(text, current.nextSibling);
+        }
+        directTextNodes.set(match[1], text);
+      }
+      const regionStart = String(current.nodeValue || '').match(/^teloce-region:([\w$-]+)$/);
+      const regionEnd = String(current.nodeValue || '').match(/^teloce-region-end:([\w$-]+)$/);
+      if (regionStart) regionNodes.set(regionStart[1], { start: current, scopes: new Set() });
+      if (regionEnd && regionNodes.has(regionEnd[1])) {
+        const region = regionNodes.get(regionEnd[1]);
+        region.end = current;
+        for (let node = region.start.nextSibling; node && node !== current; node = node.nextSibling) {
+          if (node.nodeType !== 1) continue;
+          const rows = [node, ...node.querySelectorAll('[data-teloce-loop-scope]')];
+          for (const row of rows) {
+            const id = row.getAttribute('data-teloce-loop-scope');
+            if (id != null) region.scopes.add(id);
+          }
+        }
+      }
       current = walker.nextNode();
     }
     target.querySelectorAll("[data-teloce-direct-bindings]").forEach(element => {
@@ -1247,10 +1297,15 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
 
   const updateDirectNodes = changed => {
     if (!directEnabled || !directBound) return;
-    for (const record of directBindings) {
+    let records = directBindings;
+    if (changed?.size && !changed.has('*')) {
+      records = new Set(alwaysBindings);
+      for (const dependency of changed) for (const record of bindingIndex.get(dependency) || []) records.add(record);
+    }
+    for (const record of records) {
       if (!directNeedsUpdate(record, changed)) continue;
       try {
-        const value = evaluate(record.expression, state);
+        const value = record.read ? record.read(state) : evaluate(record.expression, state);
         if (record.kind === "text") {
           const node = directTextNodes.get(record.id);
           if (node && node.nodeValue !== String(value ?? "")) node.nodeValue = String(value ?? "");
@@ -1258,7 +1313,9 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
           const element = directBindingNodes.get(record.id);
           if (!element) continue;
           if (record.name === "model") {
-            if (element.type === "checkbox") element.checked = Boolean(value);
+            if (element.type === "checkbox") element.checked = Array.isArray(value)
+              ? value.map(String).includes(String(element.value)) : Boolean(value);
+            else if (element.type === "radio") element.checked = String(value ?? '') === String(element.value);
             else if (element.value !== String(value ?? "")) element.value = value ?? "";
           } else {
             applyBinding(element, record.name, value);
@@ -1276,8 +1333,27 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     rendering = true;
     if (wasMounted) callHook("beforeUpdate");
     try {
-      if (wasMounted && directEnabled && !directPlan.structural) {
+      if (wasMounted && directEnabled && (!directPlan.structural || directPlan.targetedStructural)) {
         updateDirectNodes(changed);
+        for (const record of directRegions) {
+          if (!directNeedsUpdate(record, changed)) continue;
+          const region = regionNodes.get(record.id);
+          if (!region?.start?.parentNode || region.start.parentNode !== region.end?.parentNode) continue;
+          const freshScopes = new Map();
+          const html = renderTemplate(record.template, state, freshScopes);
+          __patch(region.start.parentNode, html, {
+            ...__teloceTransitionHooks(definition), onDispose: cleanupElement,
+            start: region.start, end: region.end,
+          });
+          for (const id of region.scopes) loopScopes.delete(id);
+          region.scopes = new Set(freshScopes.keys());
+          for (const [id, scope] of freshScopes) loopScopes.set(id, scope);
+          for (let node = region.start.nextSibling; node && node !== region.end; node = node.nextSibling) {
+            if (node.nodeType !== 1) continue;
+            bindEventsAndDirectives(node);
+            node.querySelectorAll('*').forEach(bindEventsAndDirectives);
+          }
+        }
         // A component with no child registrations has no reason to walk its
         // static subtree on every state change. This is the key difference
         // between the targeted path and the compatibility renderer.
@@ -1285,6 +1361,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
         if (directPlan.refreshIntegrations) target.querySelectorAll("*").forEach(bindEventsAndDirectives);
       } else {
         loopScopes = new Map();
+        loopScopeSequence = 0;
         const transitions = __teloceTransitionHooks(definition);
         __patch(target, renderTemplate(template, state, loopScopes), {
           ...transitions,
@@ -1394,6 +1471,8 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       target.replaceChildren();
       directTextNodes.clear();
       directBindingNodes.clear();
+      regionNodes.clear();
+      loopScopes.clear();
       directBound = false;
       pendingDependencies.clear();
       queued = false;

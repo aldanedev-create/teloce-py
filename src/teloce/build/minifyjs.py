@@ -69,10 +69,9 @@ class MinifyJSBundler:
 
 def rewrite_module_paths(source: str, replacements: dict[str, str]) -> str:
     """Rewrite literal module specifiers, leaving ordinary string values intact."""
-    from tree_sitter import Language, Parser
-    import tree_sitter_javascript
+    from teloce.javascript.tree_sitter_backend import parse_tree
     data = source.encode('utf-8')
-    root = Parser(Language(tree_sitter_javascript.language())).parse(data).root_node
+    root = parse_tree(source).root_node
     changes = []
     stack = [root]
     while stack:

@@ -61,7 +61,9 @@ class FileWriter:
     def _write_file(self, filepath: Path, content: str) -> None:
         """Write a file to disk."""
         filepath.parent.mkdir(parents=True, exist_ok=True)
-        filepath.write_text(content, encoding='utf-8')
+        encoded = content.encode('utf-8')
+        if not filepath.is_file() or filepath.read_bytes() != encoded:
+            filepath.write_bytes(encoded)
         self.written_files[str(filepath)] = len(content)
     
     def copy_file(self, source: Path, dest: Path) -> None:

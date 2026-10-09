@@ -114,7 +114,7 @@ Teloce strips common TypeScript syntax but does not type-check.
 
 - [Documentation](https://github.com/aldanedev-create/teloce-py/blob/main/docs/README.md)
 - [Project structure](https://github.com/aldanedev-create/teloce-py/blob/main/docs/lessons/file-structure.md)
-- [Examples](https://github.com/aldanedev-create/teloce-py/blob/main/examples/README.md): [Flask chat](examples/flask-chat), [FastAPI CMS](https://github.com/aldanedev-create/teloce-py/tree/main/examples/fastapi-cms), [Django scanner](https://github.com/aldanedev-create/teloce-py/tree/main/examples/django-scanner), [Flaxon network](https://github.com/aldanedev-create/teloce-py/tree/main/examples/flaxon-network), [Gallery](https://github.com/aldanedev-create/teloce-py/tree/main/examples/teloce-gallery)
+- [Examples](https://github.com/aldanedev-create/teloce-py/blob/main/examples/README.md): [Flask chat](examples/flask-chat), [FastAPI CMS](https://github.com/aldanedev-create/teloce-py/tree/main/examples/fastapi-cms), [Django Admin](examples/django-admin-vel), [Django scanner](https://github.com/aldanedev-create/teloce-py/tree/main/examples/django-scanner), [Flaxon network](https://github.com/aldanedev-create/teloce-py/tree/main/examples/flaxon-network), [Gallery](https://github.com/aldanedev-create/teloce-py/tree/main/examples/teloce-gallery)
 
 ## Status
 

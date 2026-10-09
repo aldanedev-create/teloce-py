@@ -38,6 +38,8 @@ class ProjectConfiguration:
                 # being rolled out. Structural templates retain the keyed
                 # compatibility reconciler.
                 'direct_dom_updates': False,
+                'jobs': 1,
+                'persistent_workers': False,
                 'strict_dependency_analysis': False,
                 # Discover static/js/pages automatically. Set false for a
                 # deliberately multi-page build or true to require a router.

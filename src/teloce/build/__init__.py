@@ -19,7 +19,8 @@ def build_project(root_dir, out_dir=None, options=None):
     Raises ``RuntimeError`` when any component fails, preventing a server
     from starting with stale or incomplete frontend assets.
     """
-    result = Builder(options or {}).build(root_dir, out_dir)
+    with Builder(options or {}) as builder:
+        result = builder.build(root_dir, out_dir)
     if result.get("failed"):
         details = "\n".join(
             f"{item.get('file')}: {item.get('error')}"

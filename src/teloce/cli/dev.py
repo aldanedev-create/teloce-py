@@ -56,8 +56,12 @@ def dev_command(args: Any) -> int:
     print("📦 Building project...")
     builder = Builder({
         'dev': True,
+        'jobs': build_config.get('jobs', 1),
+        'persistent_workers': build_config.get('persistent_workers', False),
+        'direct_dom_updates': build_config.get('direct_dom_updates', False),
         'source_maps': True,
-        'clean': True,
+        'clean': False,
+        'incremental': True,
         'static_dir': build_config.get('static_dir', 'static'),
         'html_mode': build_config.get('html_mode', False),
         'source_extensions': build_config.get('source_extensions'),
@@ -72,6 +76,7 @@ def dev_command(args: Any) -> int:
     result = builder.build(discovery.root_dir, output_dir)
     if result['errors']:
         print(f"❌ Initial build failed: {len(result['errors'])} errors")
+        builder.close()
         return 1
     server = start_dev_server(host, port, output_dir, proxy_target=getattr(args, 'proxy', None), hmr=hmr)
     
@@ -120,5 +125,7 @@ def dev_command(args: Any) -> int:
         server.shutdown()
         server.server_close()
         print("\n🛑 Server stopped")
+    finally:
+        builder.close()
     
     return 0

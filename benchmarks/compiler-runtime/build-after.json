@@ -1,0 +1,454 @@
+{
+  "python": "3.12.14",
+  "platform": "Linux-6.18.44-x86_64-with-glibc2.39",
+  "minifyjs": "0.1.3",
+  "tree_sitter": "0.26.0",
+  "runs": {
+    "10": {
+      "raw": [
+        {
+          "cold": {
+            "seconds": 0.019392166999978144,
+            "compiled": 11,
+            "cache_hits": 0,
+            "output_bytes": 123886
+          },
+          "unchanged": {
+            "seconds": 0.004239582999957747,
+            "compiled": 0,
+            "cache_hits": 11,
+            "output_bytes": 123886
+          },
+          "component_edit": {
+            "seconds": 0.005222437000043101,
+            "compiled": 1,
+            "cache_hits": 10,
+            "output_bytes": 123887
+          },
+          "shared_ts_edit": {
+            "seconds": 0.011866187000009631,
+            "compiled": 11,
+            "cache_hits": 0,
+            "output_bytes": 123889
+          }
+        },
+        {
+          "cold": {
+            "seconds": 0.013482228000043506,
+            "compiled": 11,
+            "cache_hits": 0,
+            "output_bytes": 123886
+          },
+          "unchanged": {
+            "seconds": 0.004019726999899831,
+            "compiled": 0,
+            "cache_hits": 11,
+            "output_bytes": 123886
+          },
+          "component_edit": {
+            "seconds": 0.005613214000049993,
+            "compiled": 1,
+            "cache_hits": 10,
+            "output_bytes": 123887
+          },
+          "shared_ts_edit": {
+            "seconds": 0.01162591800004975,
+            "compiled": 11,
+            "cache_hits": 0,
+            "output_bytes": 123889
+          }
+        },
+        {
+          "cold": {
+            "seconds": 0.013325412000085635,
+            "compiled": 11,
+            "cache_hits": 0,
+            "output_bytes": 123886
+          },
+          "unchanged": {
+            "seconds": 0.004644780999910836,
+            "compiled": 0,
+            "cache_hits": 11,
+            "output_bytes": 123886
+          },
+          "component_edit": {
+            "seconds": 0.004985996000073101,
+            "compiled": 1,
+            "cache_hits": 10,
+            "output_bytes": 123887
+          },
+          "shared_ts_edit": {
+            "seconds": 0.012136563000012757,
+            "compiled": 11,
+            "cache_hits": 0,
+            "output_bytes": 123889
+          }
+        },
+        {
+          "cold": {
+            "seconds": 0.01313965700001063,
+            "compiled": 11,
+            "cache_hits": 0,
+            "output_bytes": 123886
+          },
+          "unchanged": {
+            "seconds": 0.004064631999995072,
+            "compiled": 0,
+            "cache_hits": 11,
+            "output_bytes": 123886
+          },
+          "component_edit": {
+            "seconds": 0.005847419000019727,
+            "compiled": 1,
+            "cache_hits": 10,
+            "output_bytes": 123887
+          },
+          "shared_ts_edit": {
+            "seconds": 0.012749229000064588,
+            "compiled": 11,
+            "cache_hits": 0,
+            "output_bytes": 123889
+          }
+        },
+        {
+          "cold": {
+            "seconds": 0.01931393500001377,
+            "compiled": 11,
+            "cache_hits": 0,
+            "output_bytes": 123886
+          },
+          "unchanged": {
+            "seconds": 0.006017170999939481,
+            "compiled": 0,
+            "cache_hits": 11,
+            "output_bytes": 123886
+          },
+          "component_edit": {
+            "seconds": 0.0072020929999325745,
+            "compiled": 1,
+            "cache_hits": 10,
+            "output_bytes": 123887
+          },
+          "shared_ts_edit": {
+            "seconds": 0.016223267999976088,
+            "compiled": 11,
+            "cache_hits": 0,
+            "output_bytes": 123889
+          }
+        }
+      ],
+      "median": {
+        "cold": 0.013482228000043506,
+        "unchanged": 0.004239582999957747,
+        "component_edit": 0.005613214000049993,
+        "shared_ts_edit": 0.012136563000012757
+      }
+    },
+    "100": {
+      "raw": [
+        {
+          "cold": {
+            "seconds": 0.1321849389998988,
+            "compiled": 101,
+            "cache_hits": 0,
+            "output_bytes": 267796
+          },
+          "unchanged": {
+            "seconds": 0.027244220000056885,
+            "compiled": 0,
+            "cache_hits": 101,
+            "output_bytes": 267796
+          },
+          "component_edit": {
+            "seconds": 0.030520215999899847,
+            "compiled": 1,
+            "cache_hits": 100,
+            "output_bytes": 267797
+          },
+          "shared_ts_edit": {
+            "seconds": 0.10728755399998136,
+            "compiled": 101,
+            "cache_hits": 0,
+            "output_bytes": 267799
+          }
+        },
+        {
+          "cold": {
+            "seconds": 0.11625199100001282,
+            "compiled": 101,
+            "cache_hits": 0,
+            "output_bytes": 267796
+          },
+          "unchanged": {
+            "seconds": 0.026796407000006184,
+            "compiled": 0,
+            "cache_hits": 101,
+            "output_bytes": 267796
+          },
+          "component_edit": {
+            "seconds": 0.027917376999994303,
+            "compiled": 1,
+            "cache_hits": 100,
+            "output_bytes": 267797
+          },
+          "shared_ts_edit": {
+            "seconds": 0.10259283000004871,
+            "compiled": 101,
+            "cache_hits": 0,
+            "output_bytes": 267799
+          }
+        },
+        {
+          "cold": {
+            "seconds": 0.13635909499998888,
+            "compiled": 101,
+            "cache_hits": 0,
+            "output_bytes": 267796
+          },
+          "unchanged": {
+            "seconds": 0.029926141000032658,
+            "compiled": 0,
+            "cache_hits": 101,
+            "output_bytes": 267796
+          },
+          "component_edit": {
+            "seconds": 0.027916394999920158,
+            "compiled": 1,
+            "cache_hits": 100,
+            "output_bytes": 267797
+          },
+          "shared_ts_edit": {
+            "seconds": 0.11555131299996901,
+            "compiled": 101,
+            "cache_hits": 0,
+            "output_bytes": 267799
+          }
+        },
+        {
+          "cold": {
+            "seconds": 0.12392254500002764,
+            "compiled": 101,
+            "cache_hits": 0,
+            "output_bytes": 267796
+          },
+          "unchanged": {
+            "seconds": 0.026682397999934437,
+            "compiled": 0,
+            "cache_hits": 101,
+            "output_bytes": 267796
+          },
+          "component_edit": {
+            "seconds": 0.027641928999969423,
+            "compiled": 1,
+            "cache_hits": 100,
+            "output_bytes": 267797
+          },
+          "shared_ts_edit": {
+            "seconds": 0.10260127200001534,
+            "compiled": 101,
+            "cache_hits": 0,
+            "output_bytes": 267799
+          }
+        },
+        {
+          "cold": {
+            "seconds": 0.13483151399998405,
+            "compiled": 101,
+            "cache_hits": 0,
+            "output_bytes": 267796
+          },
+          "unchanged": {
+            "seconds": 0.02766507299998011,
+            "compiled": 0,
+            "cache_hits": 101,
+            "output_bytes": 267796
+          },
+          "component_edit": {
+            "seconds": 0.029770690000077593,
+            "compiled": 1,
+            "cache_hits": 100,
+            "output_bytes": 267797
+          },
+          "shared_ts_edit": {
+            "seconds": 0.10181278599998222,
+            "compiled": 101,
+            "cache_hits": 0,
+            "output_bytes": 267799
+          }
+        }
+      ],
+      "median": {
+        "cold": 0.1321849389998988,
+        "unchanged": 0.027244220000056885,
+        "component_edit": 0.027917376999994303,
+        "shared_ts_edit": 0.10260127200001534
+      }
+    },
+    "1000": {
+      "raw": [
+        {
+          "cold": {
+            "seconds": 1.15556960899994,
+            "compiled": 1001,
+            "cache_hits": 0,
+            "output_bytes": 1707796
+          },
+          "unchanged": {
+            "seconds": 0.26720073600006344,
+            "compiled": 0,
+            "cache_hits": 1001,
+            "output_bytes": 1707796
+          },
+          "component_edit": {
+            "seconds": 0.2730581030000394,
+            "compiled": 1,
+            "cache_hits": 1000,
+            "output_bytes": 1707797
+          },
+          "shared_ts_edit": {
+            "seconds": 1.0738818450000736,
+            "compiled": 1001,
+            "cache_hits": 0,
+            "output_bytes": 1707799
+          }
+        },
+        {
+          "cold": {
+            "seconds": 1.1559008620000668,
+            "compiled": 1001,
+            "cache_hits": 0,
+            "output_bytes": 1707796
+          },
+          "unchanged": {
+            "seconds": 0.2576964180000232,
+            "compiled": 0,
+            "cache_hits": 1001,
+            "output_bytes": 1707796
+          },
+          "component_edit": {
+            "seconds": 0.26502069200000733,
+            "compiled": 1,
+            "cache_hits": 1000,
+            "output_bytes": 1707797
+          },
+          "shared_ts_edit": {
+            "seconds": 1.0497098659999438,
+            "compiled": 1001,
+            "cache_hits": 0,
+            "output_bytes": 1707799
+          }
+        },
+        {
+          "cold": {
+            "seconds": 1.1836688250000407,
+            "compiled": 1001,
+            "cache_hits": 0,
+            "output_bytes": 1707796
+          },
+          "unchanged": {
+            "seconds": 0.2734834839999394,
+            "compiled": 0,
+            "cache_hits": 1001,
+            "output_bytes": 1707796
+          },
+          "component_edit": {
+            "seconds": 0.28247043699991536,
+            "compiled": 1,
+            "cache_hits": 1000,
+            "output_bytes": 1707797
+          },
+          "shared_ts_edit": {
+            "seconds": 1.0627174650001052,
+            "compiled": 1001,
+            "cache_hits": 0,
+            "output_bytes": 1707799
+          }
+        },
+        {
+          "cold": {
+            "seconds": 1.35943179100002,
+            "compiled": 1001,
+            "cache_hits": 0,
+            "output_bytes": 1707796
+          },
+          "unchanged": {
+            "seconds": 0.2593448210000133,
+            "compiled": 0,
+            "cache_hits": 1001,
+            "output_bytes": 1707796
+          },
+          "component_edit": {
+            "seconds": 0.2611030529999425,
+            "compiled": 1,
+            "cache_hits": 1000,
+            "output_bytes": 1707797
+          },
+          "shared_ts_edit": {
+            "seconds": 1.0197111039999527,
+            "compiled": 1001,
+            "cache_hits": 0,
+            "output_bytes": 1707799
+          }
+        },
+        {
+          "cold": {
+            "seconds": 1.2388146700000107,
+            "compiled": 1001,
+            "cache_hits": 0,
+            "output_bytes": 1707796
+          },
+          "unchanged": {
+            "seconds": 0.2965677490000189,
+            "compiled": 0,
+            "cache_hits": 1001,
+            "output_bytes": 1707796
+          },
+          "component_edit": {
+            "seconds": 0.28961023800002295,
+            "compiled": 1,
+            "cache_hits": 1000,
+            "output_bytes": 1707797
+          },
+          "shared_ts_edit": {
+            "seconds": 1.0842842260000225,
+            "compiled": 1001,
+            "cache_hits": 0,
+            "output_bytes": 1707799
+          }
+        }
+      ],
+      "median": {
+        "cold": 1.1836688250000407,
+        "unchanged": 0.26720073600006344,
+        "component_edit": 0.2730581030000394,
+        "shared_ts_edit": 1.0627174650001052
+      }
+    }
+  },
+  "production_100": {
+    "cold": {
+      "seconds": 1.8108112849999998,
+      "compiled": 101,
+      "cache_hits": 0,
+      "output_bytes": 214231
+    },
+    "unchanged": {
+      "seconds": 1.647458361999952,
+      "compiled": 101,
+      "cache_hits": 0,
+      "output_bytes": 214231
+    },
+    "component_edit": {
+      "seconds": 1.6444836169999917,
+      "compiled": 101,
+      "cache_hits": 0,
+      "output_bytes": 214231
+    },
+    "shared_ts_edit": {
+      "seconds": 1.6421733050000284,
+      "compiled": 101,
+      "cache_hits": 0,
+      "output_bytes": 214233
+    }
+  }
+}

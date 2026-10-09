@@ -161,7 +161,9 @@ def test_cli_build_honors_direct_dom_config(tmp_path: Path):
     app = next((tmp_path / "release-assets" / "client" / "js").glob("App.*.js"))
     generated = app.read_text(encoding="utf-8")
     assert "direct: __directPlan.enabled" in generated
-    assert "teloce-text:t0" in generated
+    assert '"fallback": true' in generated
+    card = next((app.parent).glob("Card.*.js"))
+    assert "teloce-text:t0" in card.read_text(encoding="utf-8")
     _node_check(app)
 
 

@@ -49,3 +49,35 @@ nodes after router navigation.
 Do not import a Python module into browser code. Browser runtime code calls a
 Python endpoint with `fetch()` or a WebSocket; Python performs validation,
 authorization, persistence, and secrets management.
+
+## Queued updates and cleanup
+
+Signals use callable reads and explicit setters:
+
+```js
+const count = signal(0);
+count();                  // read and track
+count.set(1);             // write
+count.update(value => value + 1);
+const unsubscribe = count.subscribe(value => console.log(value));
+unsubscribe();
+```
+
+The compiler supplies the runtime helpers for supported component scripts;
+manual imports are unnecessary in that workflow. `signal(...).value` is not
+this runtime's API.
+
+Synchronous writes coalesce into one microtask. Subscription callbacks receive
+the latest value, and unsubscribing also cancels a callback already queued.
+`createEffect(...).stop()` removes dependencies and prevents pending execution.
+A failing scheduled job does not discard unrelated jobs: errors are reported
+after the rest of that queue snapshot runs.
+
+`reactive()` observes plain objects and arrays, including array growth,
+truncation, property existence, and key iteration. Browser objects and class
+instances retain their original receiver; wrap their exposed state separately.
+
+`createFor()` reuses keyed rows, moves only rows whose order changed, and calls
+row cleanup when rows are removed or the helper unmounts. `createIf()` preserves
+its existing branch when the condition's truth value has not changed. Both
+helpers cancel queued subscription callbacks on unmount.

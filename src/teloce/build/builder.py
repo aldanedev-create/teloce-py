@@ -26,6 +26,8 @@ from teloce.build.esbuild import EsbuildBundler
 from teloce.build.manifest import ManifestGenerator
 from teloce.build.writer import FileWriter
 from teloce.compiler.compiler import Compiler
+from teloce.compiler.optimizer import Optimizer
+from teloce.javascript.tree_sitter_backend import parse_tree
 from teloce.compiler.generator import Generator, SAFE_EXPRESSION_RUNTIME, SHARED_DOM_RUNTIME
 from teloce.compiler.minifier import minify_css, minify_js
 from teloce.components.dependency_graph import DependencyGraph
@@ -36,7 +38,7 @@ from teloce.ssr import to_jinax_template
 
 
 # Options that only affect how a build is scheduled, not what it produces.
-_OUTPUT_NEUTRAL_OPTIONS = frozenset({"jobs", "parallel_min_files"})
+_OUTPUT_NEUTRAL_OPTIONS = frozenset({"jobs", "parallel_min_files", "persistent_workers"})
 
 
 # --- parallel compilation workers -------------------------------------------------
@@ -50,8 +52,10 @@ def _init_compile_worker(builder: "Builder") -> None:
     _WORKER_BUILDER = builder
 
 
-def _compile_one(path: str):
-    """Compile one component in a worker; never raises (errors travel as text)."""
+def _compile_one(task):
+    """Compile one component in a worker; errors travel as text."""
+    path, source = task
+    _WORKER_BUILDER._source_texts = {Path(path): source}
     try:
         if path.lower().endswith('.ts'):
             result = _WORKER_BUILDER._compile_ts_file(Path(path))
@@ -142,6 +146,14 @@ class Builder:
         self.root_dir: Optional[Path] = None
         self.out_dir: Optional[Path] = None
         self.stats: Dict[str, Any] = {}
+        self._source_texts: Dict[Path, str] = {}
+        self._dependency_imports: Dict[str, Dict[str, Any]] = {}
+        self._runtime_source: Optional[str] = None
+        self._pool = None
+        self._pool_key = None
+        self._previous_inputs = set()
+        self._dependency_resolution_signature = None
+        self._invalidated_inputs = set()
     
     def build(self, root_dir: str | Path, out_dir: str | Path = None) -> Dict[str, Any]:
         """
@@ -155,6 +167,9 @@ class Builder:
             Build statistics and results.
         """
         start_time = time.time()
+        self._source_texts = {}
+        self._runtime_source = None
+        self.writer.clear()
         
         self.root_dir = Path(root_dir).resolve()
         self.out_dir = Path(out_dir).resolve() if out_dir else self.root_dir / 'dist'
@@ -202,18 +217,23 @@ class Builder:
                 if configured_source.is_dir():
                     source_root = configured_source
             vel_files = self.scanner.scan(source_root, exclude_paths=[self.out_dir])
-        self._build_dependency_graph(vel_files)
         cache = self._load_build_cache()
+        ts_files = self._ts_source_files(source_root) if self.options.get('typescript', True) else []
         source_hashes = {
             # Hash the decoded source exactly as the compiler reads it. This
             # avoids false cache misses from Windows CRLF normalization.
-            path.relative_to(self.root_dir).as_posix(): hashlib.sha256(path.read_text(encoding='utf-8').encode('utf-8')).hexdigest()
-            for path in vel_files
+            path.relative_to(self.root_dir).as_posix(): hashlib.sha256(self._read_source(path).encode('utf-8')).hexdigest()
+            for path in [*vel_files, *ts_files]
         }
+        self._previous_inputs = {self.root_dir / name for name in cache}
+        self._build_dependency_graph(vel_files, ts_files)
         changed_inputs = {
             name for name, digest in source_hashes.items()
             if cache.get(name, {}).get('source_hash') != digest
-        }
+        } | (set(cache) - set(source_hashes))
+        self._invalidated_inputs = set(changed_inputs)
+        for name in changed_inputs:
+            self._invalidated_inputs.update(self.dependency_graph.get_all_dependents(name))
         
         results = {
             'minifier': self.options.get('minifier'),
@@ -234,6 +254,8 @@ class Builder:
             'cache_hits': 0,
             'cache_misses': 0,
             'build_signature': self.compiler_signature,
+            'dependency_imports': self._dependency_imports,
+            'dependency_resolution_signature': self._dependency_resolution_signature,
         }
         if self.options.get('shared_runtime'):
             # Generated browser modules live below dist/static. Keep the
@@ -243,7 +265,7 @@ class Builder:
             runtime_source = self._shared_runtime_source()
             runtime_path = self._shared_runtime_path()
             runtime_path.parent.mkdir(parents=True, exist_ok=True)
-            runtime_path.write_text(runtime_source, encoding='utf-8')
+            self.writer.write_js(runtime_path, runtime_source)
             results['runtime'] = runtime_path.relative_to(self.out_dir).as_posix()
             results['runtime_size'] = runtime_path.stat().st_size
             results['files'].append({
@@ -260,7 +282,7 @@ class Builder:
                 runtime_module_source = runtime_package.joinpath(runtime_name).read_text(encoding="utf-8")
                 if self.options.get('minify', False):
                     runtime_module_source = self._minify_generated_js(runtime_module_source)
-                runtime_module_path.write_text(runtime_module_source, encoding="utf-8")
+                self.writer.write_js(runtime_module_path, runtime_module_source)
                 results['files'].append({
                     'input': f'<shared-runtime>/{runtime_name}',
                     'output': runtime_module_path.relative_to(self.out_dir).as_posix(),
@@ -271,7 +293,6 @@ class Builder:
         # incremental cache are compiled up front, optionally in parallel
         # (``jobs`` option); the loop below then assembles results in the
         # original order so output is identical to a sequential build.
-        ts_files = self._ts_source_files(source_root) if self.options.get('typescript', True) else []
         ts_reusable = {f: self._reusable_ts_output(f, cache) for f in ts_files}
         precompiled = self._compile_parallel(
             [f for f in vel_files
@@ -311,7 +332,7 @@ class Builder:
                 if self.options.get('ssr'):
                     ssr_output = cached.get('ssr_output') if can_reuse else None
                     if not ssr_output or not (self.out_dir / ssr_output).is_file():
-                        ssr_output = self._write_ssr_file(vel_file, vel_file.read_text(encoding='utf-8'))
+                        ssr_output = self._write_ssr_file(vel_file, self._read_source(vel_file))
                     results['files'].append({
                         'input': input_name,
                         'output': ssr_output,
@@ -655,6 +676,8 @@ class Builder:
             return {}
         if manifest.get('build_signature') != self.compiler_signature:
             return {}
+        self._dependency_imports = manifest.get('dependency_imports', {})
+        self._dependency_resolution_signature = manifest.get('dependency_resolution_signature')
         cache: Dict[str, Dict[str, Any]] = {}
         for item in manifest.get('files', []):
             input_name = item.get('input')
@@ -680,6 +703,9 @@ class Builder:
         sources = [
             Path(inspect.getfile(Compiler)),
             Path(inspect.getfile(Generator)),
+            Path(inspect.getfile(Optimizer)),
+            Path(inspect.getfile(parse_tree)),
+            Path(inspect.getfile(FileWriter)),
             Path(inspect.getfile(Builder)),
             Path(inspect.getfile(TeloceMinifyJSAdapter)),
             Path(inspect.getfile(AssetManager)),
@@ -747,6 +773,8 @@ class Builder:
 
     def _shared_runtime_source(self) -> str:
         """Build the single runtime barrel emitted for generated modules."""
+        if self._runtime_source is not None:
+            return self._runtime_source
         runtime_package = package_files("teloce.runtime")
         compiled_runtime = runtime_package.joinpath("compiled.js").read_text(encoding="utf-8")
         runtime_source = (
@@ -762,7 +790,8 @@ class Builder:
             + 'export * from "./data.js";\n'
             + 'export * from "./table.js";\n'
         )
-        return self._minify_generated_js(runtime_source) if self.options.get("minify", False) else runtime_source
+        self._runtime_source = self._minify_generated_js(runtime_source) if self.options.get("minify", False) else runtime_source
+        return self._runtime_source
 
     def _minify_generated_js(self, source: str) -> str:
         """Optimize compiler-owned JS using the selected production backend."""
@@ -1047,8 +1076,7 @@ class Builder:
         """True when the previous build output for this file is still valid."""
         input_name = vel_file.relative_to(self.root_dir).as_posix()
         cached = cache.get(input_name)
-        dependencies = self.dependency_graph.get_dependencies(input_name)
-        dependency_changed = any(dep in changed_inputs for dep in dependencies)
+        dependency_changed = input_name in self._invalidated_inputs
         return bool(
             self.options.get('incremental', self.options.get('dev', False))
             and not self.clean_output
@@ -1093,19 +1121,33 @@ class Builder:
         # with very large projects.
         worker.dependency_graph = DependencyGraph()
         worker.stats = {}
-        paths = [str(f) for f in files]
+        worker._source_texts = {}
+        worker._pool = None
+        worker._pool_key = None
+        worker._dependency_imports = {}
+        paths = [(str(f), self._read_source(f)) for f in files]
         chunk = max(1, min(64, len(paths) // (jobs * 4) or 1))
         done: Dict[Path, Any] = {}
+        persistent = bool(self.options.get('persistent_workers') and self.options.get('dev'))
+        key = (jobs, str(self.root_dir), str(self.out_dir), self.compiler_signature)
+        pool = None
         try:
-            with ProcessPoolExecutor(
-                max_workers=jobs,
-                initializer=_init_compile_worker,
-                initargs=(worker,),
-            ) as pool:
-                for path, info, error in pool.map(_compile_one, paths, chunksize=chunk):
-                    done[Path(path)] = (info, error)
-        except Exception:  # BrokenProcessPool, pickling errors, resource limits
-            pass
+            if persistent:
+                if self._pool_key != key:
+                    self.close()
+                    self._pool = ProcessPoolExecutor(max_workers=jobs, initializer=_init_compile_worker, initargs=(worker,))
+                    self._pool_key = key
+                pool = self._pool
+            else:
+                pool = ProcessPoolExecutor(max_workers=jobs, initializer=_init_compile_worker, initargs=(worker,))
+            for path, info, error in pool.map(_compile_one, paths, chunksize=chunk):
+                done[Path(path)] = (info, error)
+        except Exception:  # Broken pool/pickling/resource limits: retry missing files sequentially.
+            if persistent:
+                self.close()
+        finally:
+            if pool is not None and not persistent:
+                pool.shutdown(wait=True, cancel_futures=True)
         return done
 
     def _ts_source_files(self, source_root: Path) -> List[Path]:
@@ -1129,7 +1171,7 @@ class Builder:
 
     def _compile_ts_file(self, ts_file: Path) -> Dict[str, Any]:
         """Compile one .ts module to a browser-ready .js file (pure Python, no Node)."""
-        source = ts_file.read_text(encoding='utf-8')
+        source = self._read_source(ts_file)
         code = transpile_ts(source, str(ts_file))
         if self.options.get('minify', False):
             code = self._minify_generated_js(code)
@@ -1155,7 +1197,7 @@ class Builder:
             cached = cache.get(ts_file.relative_to(self.root_dir).as_posix())
             if not cached or not cached.get('output') or not (self.out_dir / cached['output']).is_file():
                 return None
-            digest = hashlib.sha256(ts_file.read_text(encoding='utf-8').encode('utf-8')).hexdigest()
+            digest = hashlib.sha256(self._read_source(ts_file).encode('utf-8')).hexdigest()
             if cached.get('source_hash') != digest:
                 return None
             return {
@@ -1197,7 +1239,7 @@ class Builder:
 
     def _compile_file(self, vel_file: Path) -> Dict[str, Any]:
         """Compile a single Teloce component source file."""
-        source = vel_file.read_text(encoding='utf-8')
+        source = self._read_source(vel_file)
         output_path = self._output_path(vel_file)
         component_imports = self._resolve_component_imports(vel_file, source)
         compiler_options = dict(self.options)
@@ -1310,25 +1352,78 @@ class Builder:
                     resolved[name] = specifier
         return resolved
 
-    def _build_dependency_graph(self, vel_files: List[Path]) -> None:
-        """Build a stable graph of relative component imports."""
+    def _read_source(self, path: Path) -> str:
+        """Read authored source once per build, including hashing and SSR."""
+        path = Path(path)
+        if path not in self._source_texts:
+            self._source_texts[path] = path.read_text(encoding='utf-8')
+        return self._source_texts[path]
+
+    def _build_dependency_graph(self, vel_files: List[Path], ts_files: List[Path] = ()) -> None:
+        """Reuse unchanged import analysis, resolving against the current file set."""
         self.dependency_graph.clear()
-        known = {path.resolve(): path.relative_to(self.root_dir).as_posix() for path in vel_files}
-        pattern = re.compile(r'(?m)^\s*import\s+(?:[A-Za-z_$][\w$]*(?:\s*,\s*\{[^}]+\})?|\{[^}]+\}|\*\s+as\s+[A-Za-z_$][\w$]*)\s+from\s+[\'\"]([^\'\"]+)[\'\"]\s*;?')
-        for vel_file in vel_files:
-            component = vel_file.relative_to(self.root_dir).as_posix()
-            self.dependency_graph.add_component(component)
-            source = vel_file.read_text(encoding='utf-8')
-            script_match = re.search(r'<script(?:\s[^>]*)?>([\s\S]*?)</script\s*>', source, re.I)
-            source = script_match.group(1) if script_match else source
-            for import_path in pattern.findall(source):
-                if not import_path.startswith('.'):
+        known = {path.resolve(): path.relative_to(self.root_dir).as_posix()
+                 for path in [*vel_files, *ts_files]}
+        resolution_signature = hashlib.sha256("\0".join(sorted(known.values())).encode()).hexdigest()
+        resolution_unchanged = resolution_signature == self._dependency_resolution_signature
+        records = {}
+        for path, name in known.items():
+            self.dependency_graph.add_component(name)
+            source = self._read_source(path)
+            digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
+            cached = self._dependency_imports.get(name, {})
+            if resolution_unchanged and cached.get('source_hash') == digest and 'resolved' in cached:
+                records[name] = cached
+                for dependency in cached['resolved']:
+                    self.dependency_graph.add_dependency(name, dependency)
+                continue
+            if cached.get('source_hash') == digest:
+                imports = cached['imports']
+            else:
+                script = re.search(r'<script(?:\s[^>]*)?>([\s\S]*?)</script\s*>', source, re.I)
+                script_source = script.group(1) if script else (source if path.suffix == '.ts' else '')
+                program = parse_tree(script_source, 'ts' if path.suffix == '.ts' or re.search(r'<script[^>]*lang=[\"\']ts', source) else 'js')
+                imports = []
+                nodes = [program.root_node]
+                while nodes:
+                    node = nodes.pop()
+                    literal = None
+                    if node.type in {'import_statement', 'export_statement'}:
+                        literal = node.child_by_field_name('source')
+                    elif node.type == 'call_expression':
+                        function = node.child_by_field_name('function')
+                        arguments = node.child_by_field_name('arguments')
+                        if function and function.text == b'import' and arguments and len(arguments.named_children) == 1:
+                            candidate = arguments.named_children[0]
+                            if candidate.type == 'string':
+                                literal = candidate
+                    if literal:
+                        specifier = literal.text[1:-1].decode('utf-8')
+                        if specifier not in imports:
+                            imports.append(specifier)
+                    nodes.extend(reversed(node.named_children))
+            records[name] = {'source_hash': digest, 'imports': imports, 'resolved': []}
+            for specifier in imports:
+                if not specifier.startswith('.'):
                     continue
-                requested = (vel_file.parent / import_path).resolve()
-                candidates = self._source_candidates(requested)
-                child = next((candidate for candidate in candidates if candidate in known), None)
-                if child is not None:
-                    self.dependency_graph.add_dependency(component, known[child])
+                requested = (path.parent / specifier).resolve()
+                candidates = [requested]
+                if requested.suffix == '.js':
+                    candidates.append(requested.with_suffix('.ts'))
+                if requested.suffix == '':
+                    candidates.extend([requested.with_suffix('.ts'), requested / 'index.ts'])
+                candidates.extend(self._source_candidates(requested))
+                child = next((candidate for candidate in candidates if candidate in known or candidate in self._previous_inputs), None)
+                # Keep missing imports as dependencies so deleting an input
+                # invalidates its unchanged parents rather than serving stale JS.
+                if child is None and requested.suffix.lower() in {*self.source_extensions, '.ts'}:
+                    child = requested
+                if child is not None and child.is_relative_to(self.root_dir):
+                    dependency = child.relative_to(self.root_dir).as_posix()
+                    self.dependency_graph.add_dependency(name, dependency)
+                    records[name]["resolved"].append(dependency)
+        self._dependency_imports = records
+        self._dependency_resolution_signature = resolution_signature
 
     def _output_path(self, vel_file: Path) -> Path:
         """Return a stable or content-hashed output path for a component."""
@@ -1354,6 +1449,19 @@ class Builder:
             )
         return candidates
     
+    def close(self) -> None:
+        """Release an optional development worker pool deterministically."""
+        pool, self._pool = self._pool, None
+        self._pool_key = None
+        if pool is not None:
+            pool.shutdown(wait=True, cancel_futures=True)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+
     def get_stats(self) -> Dict[str, Any]:
         """Get build statistics."""
         return self.stats

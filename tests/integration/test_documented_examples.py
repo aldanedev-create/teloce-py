@@ -40,7 +40,7 @@ def test_readme_links_to_all_real_world_examples():
         assert f"examples/{name}" in readme
 
 
-def test_readme_chat_component_compiles_to_valid_javascript(tmp_path):
+def test_readme_counter_component_compiles_to_valid_javascript(tmp_path):
     """Keep the flagship copy-paste component executable as documented."""
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     match = re.search(
@@ -52,7 +52,8 @@ def test_readme_chat_component_compiles_to_valid_javascript(tmp_path):
 
     result = compile_source(match.group(1), filename="README-App.vel")
     assert result["success"], result["diagnostics"]
-    assert "async mounted(" in result["code"]
+    assert "count" in result["code"]
+    assert "increment" in result["code"]
 
     node = shutil.which("node")
     if node:

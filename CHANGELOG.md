@@ -25,7 +25,17 @@ Release dates below are the first upload dates on [PyPI](https://pypi.org/projec
 - Expanded production configuration, JavaScript/TypeScript tooling guidance, and troubleshooting documentation.
 - Extended compiler optimization, source mapping, scoped CSS handling, and SSR support.
 
+### Changed
+- Build stages share one source snapshot; Tree-sitter parsers and bounded source/tree analysis are reused per thread.
+- Development builds reuse import analysis, invalidate transitive component/TypeScript dependencies, and avoid rewriting unchanged generated files.
+- Optional persistent development workers receive fresh source text and close through the Builder context manager.
+- Direct updates index bindings by dependency, generate simple reader functions, and reconcile supported conditional/list regions independently.
+
 ### Fixed
+- Reactive arrays notify length, truncated-index, and iteration dependencies correctly.
+- Scheduler failures no longer discard unrelated queued jobs; unsubscribing cancels pending callbacks and subscriptions receive current values.
+- Empty direct text bindings create real text nodes; keyed updates preserve focus/selection and read current global state in row events.
+- Modular keyed-list helpers clean up removed/unmounted rows and avoid detaching unchanged rows.
 - Authored import/export and lazy-import paths now resolve hashed copied assets.
 - `jobs=0` correctly selects the automatic worker count instead of matching `False`.
 - Builder CSS manifest syntax and optional Flaxon SSR tests are compatible with Python 3.10.
