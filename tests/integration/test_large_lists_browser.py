@@ -99,6 +99,8 @@ def test_cached_rows_refresh_shared_values_indexes_and_source_type(tmp_path):
         with sync_playwright() as pw:
             browser=pw.chromium.launch(args=['--no-sandbox']);page=browser.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
             page.goto(f'http://127.0.0.1:{server.server_port}/?no_hmr=1');page.wait_for_function('window.app')
+            page.evaluate("window.app.state.prefix='Stage'")
+            page.wait_for_function('document.querySelectorAll("li span")[1].textContent === "Stage:1:B"')
             writes=page.evaluate("""async () => {
               const records=[];const observer=new MutationObserver(items=>records.push(...items));
               observer.observe(document.querySelector('main'),{attributes:true});
@@ -137,6 +139,28 @@ def test_default_production_bundles_bootstrap_and_preserves_alias(tmp_path):
             browser=pw.chromium.launch(args=['--no-sandbox']);page=browser.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
             page.goto(f'http://127.0.0.1:{server.server_port}/?no_hmr=1');page.get_by_role('heading',name='Bundled bootstrap').wait_for()
             assert page.evaluate('window.loadChunk().then(module=>module.value)')==42
+            assert not errors,errors
+            browser.close()
+    finally:server.shutdown();server.server_close()
+
+
+def test_initial_row_cache_uses_render_pass_and_keeps_regions_separate(tmp_path):
+    from playwright.sync_api import sync_playwright
+    js=tmp_path/'static';js.mkdir()
+    (js/'App.html').write_text('''<template><main><ul><li v-for="item in rows" :key="item.id">{{ item.name }}</li></ul><ol><li v-for="item in rows" :key="item.id">{{ prefix }}:{{ item.name }}</li></ol></main></template><script>export default {data(){return {items:[{id:'a',name:'A'},{id:'b',name:'B'}],prefix:'Shared'}},computed:{rows(){globalThis.collectionReads=(globalThis.collectionReads||0)+1;return this.items},unused(){globalThis.unusedReads=(globalThis.unusedReads||0)+1;return 1}}};</script>''')
+    result=build_project(tmp_path,options={'dev':True,'html_mode':True,'source_maps':False});assert not result['failed'],result['errors']
+    (tmp_path/'dist/index.html').write_text('<div id="app"></div><script type="module">import {mount} from "/static/App.js";window.app=mount("#app");</script>')
+    server=start_dev_server('127.0.0.1',0,tmp_path/'dist',hmr=False)
+    try:
+        with sync_playwright() as pw:
+            browser=pw.chromium.launch(args=['--no-sandbox']);page=browser.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+            page.goto(f'http://127.0.0.1:{server.server_port}/?no_hmr=1');page.wait_for_function('window.app')
+            assert page.evaluate('globalThis.collectionReads')==2
+            assert page.evaluate('globalThis.unusedReads||0')==0
+            page.evaluate('window.first=document.querySelector("ul li");window.second=document.querySelector("ol li");window.app.state.items[0].name="Edited"')
+            page.wait_for_function('document.querySelector("ol li").textContent === "Shared:Edited"')
+            assert page.locator('ul li').first.inner_text()=='Edited'
+            assert page.evaluate('window.first === document.querySelector("ul li") && window.second === document.querySelector("ol li")')
             assert not errors,errors
             browser.close()
     finally:server.shutdown();server.server_close()

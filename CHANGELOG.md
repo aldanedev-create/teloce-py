@@ -9,6 +9,7 @@ Release dates below are the first upload dates on [PyPI](https://pypi.org/projec
 ## [Unreleased]
 
 ### Changed
+- Initialize keyed-row dependency caches during the first render and attach their DOM references during the existing binding walk, avoiding a second collection/setup pass. Single-root edits in unchanged row order skip whole-list reconciliation.
 - Direct DOM updates now default to enabled, with automatic compatibility fallbacks and an explicit disable switch.
 - Production builds default to native MinifyJS bundling, optimizing the resolved module graph once; `--no-bundle` preserves separate modules.
 - Keyed reconciliation minimizes moves using a longest increasing subsequence; simple keyed rows cache dependency snapshots and skip unchanged rendering.

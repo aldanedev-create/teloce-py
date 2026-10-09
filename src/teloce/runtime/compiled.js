@@ -210,6 +210,8 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
   const directEnabled = Boolean(options.direct && directPlan.enabled && !directPlan.fallback);
   const directBindings = Array.isArray(directPlan.bindings) ? directPlan.bindings : [];
   const directRegions = Array.isArray(directPlan.regions) ? directPlan.regions : [];
+  const directRegionIndex = new Map(directRegions.map(record => [record.id, record]));
+  const initialRowCaches = new Map();
   const bindingIndex = new Map();
   const alwaysBindings = new Set();
   for (const record of directBindings) {
@@ -399,6 +401,22 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     return result;
   };
 
+  const prepareRowCache = plan => ({
+    rows: new Map(), order: [],
+    rowRoots: new Set(plan.paths.map(path => path.split('.')[0])),
+    rowReaders: plan.paths.map(path => {
+      const parts = path.split('.');
+      return scope => {
+        let value = scope;
+        for (const part of parts) {
+          if (part === '__proto__' || part === 'prototype' || part === 'constructor') return undefined;
+          value = value?.[part];
+        }
+        return value;
+      };
+    }),
+  });
+
   const renderForBlocks = (source, scope, loopScopes) => {
     let result = source;
     let start = result.indexOf("<for ");
@@ -429,13 +447,29 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       const body = result.slice(openingEnd + 1, closeStart);
       const rawValues = evaluate(collection, scope);
       const values = Array.isArray(rawValues) ? rawValues : rawValues && typeof rawValues === "object" ? Object.values(rawValues) : [];
+      // Capture dependencies while this loop is already being rendered.
+      // The DOM binding walk attaches nodes to these records after patching;
+      // no second collection evaluation or row-scope setup is needed.
+      const regionId = result.slice(0, start).match(/<!--teloce-region:([\w$-]+)-->$/)?.[1];
+      const rowPlan = directEnabled && directRegionIndex.get(regionId)?.rows;
+      const cache = rowPlan && Array.isArray(rawValues) ? prepareRowCache(rowPlan) : null;
+      if (cache) { cache.byScope = new Map(); initialRowCaches.set(regionId, cache); }
       const rendered = values.map((value, index) => {
         const locals = { ...(scope[loopLocals] || {}), [item]: value, index };
-        const loopScope = { ...scope, ...locals, [loopLocals]: locals };
+        const loopScope = cache ? { ...locals, [loopLocals]: locals } : { ...scope, ...locals, [loopLocals]: locals };
+        if (cache) for (const root of cache.rowRoots) {
+          if (!(root in locals) && Object.prototype.hasOwnProperty.call(scope, root)) loopScope[root] = scope[root];
+        }
         const scopeId = String(loopScopeSequence++);
         // Retain only row locals. Global state must be read at event time,
         // even when an unrelated state change skips this region's renderer.
         loopScopes.set(scopeId, locals);
+        if (cache) {
+          const key = String(evaluate(rowPlan.key, loopScope));
+          if (cache.rows.has(key)) throw new Error(`Duplicate keyed loop value: ${key}`);
+          const row = { scopeId, snapshot: cache.rowReaders.map(read => read(loopScope)), node: null, needsBind: false };
+          cache.rows.set(key, row); cache.byScope.set(scopeId, row); cache.order.push(row);
+        }
         let content = renderTemplate(body, loopScope, loopScopes);
         content = content.replace(/<([A-Za-z][\w:-]*)(?=[\s>])/, match => match.includes("data-teloce-loop-scope")
           ? match
@@ -1286,7 +1320,9 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       }
       const regionStart = String(current.nodeValue || '').match(/^teloce-region:([\w$-]+)$/);
       const regionEnd = String(current.nodeValue || '').match(/^teloce-region-end:([\w$-]+)$/);
-      if (regionStart) regionNodes.set(regionStart[1], { start: current, scopes: new Set() });
+      if (regionStart) regionNodes.set(regionStart[1], {
+        start: current, scopes: new Set(), ...(initialRowCaches.get(regionStart[1]) || {}),
+      });
       if (regionEnd && regionNodes.has(regionEnd[1])) {
         const region = regionNodes.get(regionEnd[1]);
         region.end = current;
@@ -1295,9 +1331,14 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
           const rows = [node, ...node.querySelectorAll('[data-teloce-loop-scope]')];
           for (const row of rows) {
             const id = row.getAttribute('data-teloce-loop-scope');
-            if (id != null) region.scopes.add(id);
+            if (id != null) {
+              region.scopes.add(id);
+              const cached = region.byScope?.get(id);
+              if (cached) cached.node = row;
+            }
           }
         }
+        delete region.byScope;
       }
       current = walker.nextNode();
     }
@@ -1306,6 +1347,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
         directBindingNodes.set(id, element);
       }
     });
+    initialRowCaches.clear();
     directBound = true;
   };
 
@@ -1341,7 +1383,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     }
   };
 
-  const updateKeyedRows = (record, region, hydrate = false) => {
+  const updateKeyedRows = (record, region) => {
     const plan = record.rows;
     const values = evaluate(plan.collection, state);
     if (!Array.isArray(values)) return false;
@@ -1353,22 +1395,9 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       for (const id of region.scopes) loopScopes.delete(id);
     }
     if (!region.rowReaders) {
-      region.rowRoots = new Set(plan.paths.map(path => path.split('.')[0]));
-      region.rowReaders = plan.paths.map(path => {
-        const parts = path.split('.');
-        return scope => {
-          let value = scope;
-          for (const part of parts) {
-            if (part === '__proto__' || part === 'prototype' || part === 'constructor') return undefined;
-            value = value?.[part];
-          }
-          return value;
-        };
-      });
-    }
-    const existing = new Map();
-    if (hydrate) for (let node = region.start.nextSibling; node && node !== region.end; node = node.nextSibling) {
-      if (node.nodeType === 1) existing.set(node.getAttribute('data-teloce-key'), node);
+      const prepared = prepareRowCache(plan);
+      region.rowRoots = prepared.rowRoots;
+      region.rowReaders = prepared.rowReaders;
     }
     const rows = region.rows, active = new Set(), next = [], ordered = [];
     for (let index = 0; index < values.length; index++) {
@@ -1381,14 +1410,10 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       active.add(key);
       const snapshot = region.rowReaders.map(read => read(scope));
       let row = rows.get(key);
-      if (!row) {
-        const node = hydrate ? existing.get(key) : null;
-        row = { scopeId: node?.getAttribute('data-teloce-loop-scope') ?? String(loopScopeSequence++),
-          snapshot: node ? snapshot : null, node };
-      }
+      if (!row) row = { scopeId: String(loopScopeSequence++), snapshot: null, node: null };
       loopScopes.set(row.scopeId, locals);
-      const dirty = !hydrate && (!row.snapshot || snapshot.some((value, i) =>
-        (value !== null && typeof value === 'object') || !Object.is(value, row.snapshot[i])));
+      const dirty = !row.snapshot || snapshot.some((value, i) =>
+        (value !== null && typeof value === 'object') || !Object.is(value, row.snapshot[i]));
       row.needsBind = dirty;
       if (dirty) {
         const scopes = new Map();
@@ -1408,11 +1433,28 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       } else next.push(row.node);
       rows.set(key, row); ordered.push(row);
     }
-    if (!hydrate) __patch(region.start.parentNode, null, {
-      ...__teloceTransitionHooks(definition), onDispose: cleanupElement,
-      start: region.start, end: region.end, nodes: next,
-      onNodes(nodes) { nodes.forEach((node, index) => { ordered[index].node = node; }); },
-    });
+    const sameOrder = region.order?.length === ordered.length && ordered.every((row, index) => row === region.order[index]);
+    const changedRoots = sameOrder ? next.reduce((count, node, index) => count + (node !== ordered[index].node ? 1 : 0), 0) : 0;
+    if (sameOrder && changedRoots <= 1) {
+      // A data edit does not need whole-list reconciliation. Patch only roots
+      // whose rendered markup changed, retaining the normal disposal/focus hooks.
+      for (let index = 0; index < ordered.length; index++) {
+        const row = ordered[index];
+        if (next[index] === row.node) continue;
+        __patch(region.start.parentNode, null, {
+          ...__teloceTransitionHooks(definition), onDispose: cleanupElement,
+          start: row.node.previousSibling, end: row.node.nextSibling, nodes: [next[index]],
+          onNodes(nodes) { row.node = nodes[0]; },
+        });
+      }
+    } else {
+      __patch(region.start.parentNode, null, {
+        ...__teloceTransitionHooks(definition), onDispose: cleanupElement,
+        start: region.start, end: region.end, nodes: next,
+        onNodes(nodes) { nodes.forEach((node, index) => { ordered[index].node = node; }); },
+      });
+    }
+    region.order = ordered;
     for (const [key, row] of rows) if (!active.has(key)) { loopScopes.delete(row.scopeId); rows.delete(key); }
     region.scopes = new Set(ordered.map(row => row.scopeId));
     for (const row of ordered) {
@@ -1472,10 +1514,6 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
         mountChildren();
         if (directEnabled && !directBound) {
           bindDirectNodes();
-          for (const record of directRegions) {
-            const region = regionNodes.get(record.id);
-            if (record.rows && region?.end) updateKeyedRows(record, region, true);
-          }
         }
       }
     } finally {
@@ -1579,6 +1617,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       directTextNodes.clear();
       directBindingNodes.clear();
       regionNodes.clear();
+      initialRowCaches.clear();
       loopScopes.clear();
       directBound = false;
       pendingDependencies.clear();

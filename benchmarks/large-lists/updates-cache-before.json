@@ -1,0 +1,433 @@
+{
+  "sizes": {
+    "100": {
+      "edit": {
+        "median_ms": 8.100000000558794,
+        "samples": [
+          {
+            "milliseconds": 9.799999999813735,
+            "moves": 0,
+            "parses": 20,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 7.6000000005587935,
+            "moves": 0,
+            "parses": 20,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 7.8999999994412065,
+            "moves": 0,
+            "parses": 20,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 8.100000000558794,
+            "moves": 0,
+            "parses": 20,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 8.5,
+            "moves": 0,
+            "parses": 20,
+            "iterations": 20
+          }
+        ]
+      },
+      "rotate": {
+        "median_ms": 8.400000000372529,
+        "samples": [
+          {
+            "milliseconds": 8.299999999813735,
+            "moves": 20,
+            "parses": 0,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 7,
+            "moves": 20,
+            "parses": 0,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 9.899999999441206,
+            "moves": 20,
+            "parses": 0,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 11.5,
+            "moves": 20,
+            "parses": 0,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 8.400000000372529,
+            "moves": 20,
+            "parses": 0,
+            "iterations": 20
+          }
+        ]
+      },
+      "reverse": {
+        "median_ms": 7.2000000001862645,
+        "samples": [
+          {
+            "milliseconds": 6.7999999998137355,
+            "moves": 1980,
+            "parses": 0,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 10.099999999627471,
+            "moves": 1980,
+            "parses": 0,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 9.400000000372529,
+            "moves": 1980,
+            "parses": 0,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 7,
+            "moves": 1980,
+            "parses": 0,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 7.2000000001862645,
+            "moves": 1980,
+            "parses": 0,
+            "iterations": 20
+          }
+        ]
+      },
+      "insert-delete": {
+        "median_ms": 9.5,
+        "samples": [
+          {
+            "milliseconds": 11,
+            "moves": 20,
+            "parses": 20,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 9.5,
+            "moves": 20,
+            "parses": 20,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 9.699999999254942,
+            "moves": 20,
+            "parses": 20,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 8.900000000372529,
+            "moves": 20,
+            "parses": 20,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 9.200000000186265,
+            "moves": 20,
+            "parses": 20,
+            "iterations": 20
+          }
+        ]
+      }
+    },
+    "1000": {
+      "edit": {
+        "median_ms": 60,
+        "samples": [
+          {
+            "milliseconds": 65.70000000018626,
+            "moves": 0,
+            "parses": 20,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 61.90000000037253,
+            "moves": 0,
+            "parses": 20,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 60,
+            "moves": 0,
+            "parses": 20,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 57,
+            "moves": 0,
+            "parses": 20,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 48.5,
+            "moves": 0,
+            "parses": 20,
+            "iterations": 20
+          }
+        ]
+      },
+      "rotate": {
+        "median_ms": 52.700000000186265,
+        "samples": [
+          {
+            "milliseconds": 52.700000000186265,
+            "moves": 20,
+            "parses": 0,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 69.8999999994412,
+            "moves": 20,
+            "parses": 0,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 61.10000000055879,
+            "moves": 20,
+            "parses": 0,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 44.799999999813735,
+            "moves": 20,
+            "parses": 0,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 43.89999999944121,
+            "moves": 20,
+            "parses": 0,
+            "iterations": 20
+          }
+        ]
+      },
+      "reverse": {
+        "median_ms": 51.90000000037253,
+        "samples": [
+          {
+            "milliseconds": 51.799999999813735,
+            "moves": 19980,
+            "parses": 0,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 51.700000000186265,
+            "moves": 19980,
+            "parses": 0,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 51.90000000037253,
+            "moves": 19980,
+            "parses": 0,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 52,
+            "moves": 19980,
+            "parses": 0,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 52.09999999962747,
+            "moves": 19980,
+            "parses": 0,
+            "iterations": 20
+          }
+        ]
+      },
+      "insert-delete": {
+        "median_ms": 56.200000000186265,
+        "samples": [
+          {
+            "milliseconds": 65.09999999962747,
+            "moves": 20,
+            "parses": 20,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 59.60000000055879,
+            "moves": 20,
+            "parses": 20,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 56.200000000186265,
+            "moves": 20,
+            "parses": 20,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 53.59999999962747,
+            "moves": 20,
+            "parses": 20,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 53.299999999813735,
+            "moves": 20,
+            "parses": 20,
+            "iterations": 20
+          }
+        ]
+      }
+    },
+    "10000": {
+      "edit": {
+        "median_ms": 551.4000000003725,
+        "samples": [
+          {
+            "milliseconds": 607,
+            "moves": 0,
+            "parses": 20,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 540.7999999998137,
+            "moves": 0,
+            "parses": 20,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 567.8000000007451,
+            "moves": 0,
+            "parses": 20,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 546.3999999994412,
+            "moves": 0,
+            "parses": 20,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 551.4000000003725,
+            "moves": 0,
+            "parses": 20,
+            "iterations": 20
+          }
+        ]
+      },
+      "rotate": {
+        "median_ms": 555.7999999998137,
+        "samples": [
+          {
+            "milliseconds": 553.8999999994412,
+            "moves": 20,
+            "parses": 0,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 555.7999999998137,
+            "moves": 20,
+            "parses": 0,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 555.2000000001863,
+            "moves": 20,
+            "parses": 0,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 566.9000000003725,
+            "moves": 20,
+            "parses": 0,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 620.0999999996275,
+            "moves": 20,
+            "parses": 0,
+            "iterations": 20
+          }
+        ]
+      },
+      "reverse": {
+        "median_ms": 693.6000000005588,
+        "samples": [
+          {
+            "milliseconds": 674.5999999996275,
+            "moves": 199980,
+            "parses": 0,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 693.6000000005588,
+            "moves": 199980,
+            "parses": 0,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 671.2000000001863,
+            "moves": 199980,
+            "parses": 0,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 713.7999999998137,
+            "moves": 199980,
+            "parses": 0,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 697.7999999998137,
+            "moves": 199980,
+            "parses": 0,
+            "iterations": 20
+          }
+        ]
+      },
+      "insert-delete": {
+        "median_ms": 673.2000000001863,
+        "samples": [
+          {
+            "milliseconds": 657.5999999996275,
+            "moves": 20,
+            "parses": 20,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 654,
+            "moves": 20,
+            "parses": 20,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 673.2000000001863,
+            "moves": 20,
+            "parses": 20,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 688.0999999996275,
+            "moves": 20,
+            "parses": 20,
+            "iterations": 20
+          },
+          {
+            "milliseconds": 689.2000000001863,
+            "moves": 20,
+            "parses": 20,
+            "iterations": 20
+          }
+        ]
+      }
+    }
+  },
+  "measurement": "microtask completion; excludes paint",
+  "warmup_updates": 5,
+  "browser": "145.0.7632.6"
+}

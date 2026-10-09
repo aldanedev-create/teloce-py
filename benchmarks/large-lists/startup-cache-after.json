@@ -1,0 +1,50 @@
+{
+  "100": {
+    "mount_samples_ms": [
+      9.5,
+      9.199999999254942,
+      10,
+      9.100000000558794,
+      10
+    ],
+    "median_mount_ms": 9.5,
+    "requested_js_files": [
+      "static/App.809c4850.bundle-FJUHBD7F.js"
+    ],
+    "requested_js_bytes": 46120,
+    "requested_js_gzip_bytes": 16036,
+    "bundler": "minifyjs"
+  },
+  "1000": {
+    "mount_samples_ms": [
+      30.799999999813735,
+      30.90000000037253,
+      33.89999999944121,
+      32.299999999813735,
+      32.5
+    ],
+    "median_mount_ms": 32.299999999813735,
+    "requested_js_files": [
+      "static/App.ab8ebc72.bundle-3H6Z5T6B.js"
+    ],
+    "requested_js_bytes": 46120,
+    "requested_js_gzip_bytes": 16035,
+    "bundler": "minifyjs"
+  },
+  "10000": {
+    "mount_samples_ms": [
+      223.40000000037253,
+      220.1000000005588,
+      237.90000000037253,
+      208.29999999981374,
+      219.69999999925494
+    ],
+    "median_mount_ms": 220.1000000005588,
+    "requested_js_files": [
+      "static/App.ec6c9f5b.bundle-GY7WUKLZ.js"
+    ],
+    "requested_js_bytes": 46120,
+    "requested_js_gzip_bytes": 16037,
+    "bundler": "minifyjs"
+  }
+}
