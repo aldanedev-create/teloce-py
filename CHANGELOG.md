@@ -8,6 +8,13 @@ Release dates below are the first upload dates on [PyPI](https://pypi.org/projec
 
 ## [Unreleased]
 
+### Changed
+- Direct DOM updates now default to enabled, with automatic compatibility fallbacks and an explicit disable switch.
+- Production builds default to native MinifyJS bundling, optimizing the resolved module graph once; `--no-bundle` preserves separate modules.
+- Keyed reconciliation minimizes moves using a longest increasing subsequence; simple keyed rows cache dependency snapshots and skip unchanged rendering.
+- Virtual lists preserve overlapping rows and cancel queued scroll work on cleanup.
+
+
 ### Added
 - First-class MinifyJS production minifier and bundler, installed as a Python dependency.
 - Native split bundles, hashed outputs, original `.vel` source map composition, metadata, and build reporting.

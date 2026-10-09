@@ -34,10 +34,9 @@ class ProjectConfiguration:
                 'extract_css': True,
                 'css_bundle': True,
                 'shared_runtime': True,
-                # Opt into targeted DOM updates while the structural plan is
-                # being rolled out. Structural templates retain the keyed
-                # compatibility reconciler.
-                'direct_dom_updates': False,
+                # Target safe bindings/regions by default; unsupported layouts
+                # automatically retain compatibility reconciliation.
+                'direct_dom_updates': True,
                 'jobs': 1,
                 'persistent_workers': False,
                 'strict_dependency_analysis': False,
@@ -51,6 +50,7 @@ class ProjectConfiguration:
                 'spa_routes': {},
                 'lazy_components': [],
                 'tree_shake': True,
+                'bundle': True,
                 'bundler': 'minifyjs',
                 'minifier': 'minifyjs',
                 'code_splitting': True,

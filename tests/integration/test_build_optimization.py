@@ -98,6 +98,7 @@ def test_cli_build_honors_teloce_config_json(tmp_path: Path):
                 "compiler": {"source_maps": False},
                 "build": {
                     "out_dir": "release-assets",
+                "bundle": False,
                     "static_dir": "client",
                     "clean": True,
                     "minify": True,
@@ -139,6 +140,7 @@ def test_cli_build_honors_direct_dom_config(tmp_path: Path):
             "compiler": {"source_maps": False},
             "build": {
                 "out_dir": "release-assets",
+                "bundle": False,
                 "static_dir": "client",
                 "clean": True,
                 "minify": False,

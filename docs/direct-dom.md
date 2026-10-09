@@ -5,10 +5,12 @@ update plan. Instead of rebuilding the component's HTML when one state field
 changes, the shared runtime keeps the existing nodes and updates only the text
 node or DOM property that depends on that field.
 
-This feature is opt-in while the compatibility renderer remains the safety
-net for unsupported components and layouts.
+Direct DOM updates are enabled by default. The compatibility renderer remains
+the automatic safety net for unsupported components and layouts. Existing
+projects can explicitly set `direct_dom_updates: false` or pass
+`--no-direct-dom-updates` to retain compatibility rendering.
 
-## Enable it
+## Configure it
 
 In `teloce.config.json`:
 
@@ -21,7 +23,7 @@ In `teloce.config.json`:
 }
 ```
 
-Or enable it for one production build:
+The default can also be selected explicitly for one production build:
 
 ```bash
 teloce build --direct-dom-updates
@@ -206,3 +208,44 @@ python -m pytest -q tests/compiler/test_compiler.py tests/integration/test_direc
 
 The direct path is an optimization, not a new template language. Existing
 `.vel` syntax and the original runtime API remain compatible.
+
+## Large keyed lists
+
+Use a stable unique key such as `:key="task.id"`, not the array index.
+Reconciliation uses a longest increasing subsequence to keep the largest ordered
+set of existing rows in place. Rotating a list by one position needs one DOM
+move. Reversing a list still needs almost every row to move.
+
+Simple keyed loops with one root element cache each row's rendered dependency
+paths. An edit checks dependency snapshots and renders only changed rows;
+unchanged rows keep their DOM and listeners. Shared values and displayed indexes
+are included in the snapshots. This still scans the collection on invalidation;
+it is not an O(1) per-row subscription system. Calls, computed dependencies,
+nested structures and integration-owned DOM retain general region reconciliation.
+Object-valued dependencies are conservatively refreshed to avoid stale values.
+Duplicate keys raise a useful error instead of silently reusing the wrong row.
+
+For thousands of rows, use optional fixed-height virtualization:
+
+```html
+<template>
+  <main>
+    <div v-virtual-for="task in tasks" :key="task.id"
+         item-height="40" overscan="3" min-height="240">
+      <span>{{ task.title }}</span>
+    </div>
+  </main>
+</template>
+
+<style scoped>
+.teloce-virtual-list { height: 240px; overflow-y: auto; }
+.teloce-virtual-content > div { height: 40px; }
+</style>
+```
+
+Keep actual row height equal to `item-height`. Overscan renders extra rows around
+the visible window. Overlapping rows retain identity during scrolling; removed
+rows are cleaned up, and queued scroll work is canceled on unmount. Off-screen
+rows are absent from the DOM, so browser find, screen-reader access and keyboard
+focus cannot reach them. Use ordinary lists or pagination when these are needed.
+Variable-height virtualization is not supported.

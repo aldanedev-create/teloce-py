@@ -161,7 +161,7 @@ def test_release_build_extracts_shared_component_glue_and_styles(tmp_path: Path)
         encoding="utf-8",
     )
 
-    result = Builder({"mode": "production", "source_maps": False}).build(tmp_path)
+    result = Builder({"mode": "production", "source_maps": False, "bundle": False}).build(tmp_path)
 
     assert result["failed"] == 0, result["errors"]
     runtime = next((tmp_path / "dist" / "static").glob("teloce-runtime.*.js"))

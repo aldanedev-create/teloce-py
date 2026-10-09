@@ -1,0 +1,432 @@
+{
+  "sizes": {
+    "100": {
+      "edit": {
+        "median_ms": 33.299999999813735,
+        "samples": [
+          {
+            "milliseconds": 33.60000000009313,
+            "moves": 0,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 55.60000000009313,
+            "moves": 0,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 33.299999999813735,
+            "moves": 0,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 28.200000000186265,
+            "moves": 0,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 28.700000000186265,
+            "moves": 0,
+            "parses": 10,
+            "iterations": 10
+          }
+        ]
+      },
+      "rotate": {
+        "median_ms": 74.09999999962747,
+        "samples": [
+          {
+            "milliseconds": 35.09999999962747,
+            "moves": 10,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 44.40000000037253,
+            "moves": 10,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 74.09999999962747,
+            "moves": 10,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 119.10000000009313,
+            "moves": 10,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 112.8000000002794,
+            "moves": 10,
+            "parses": 10,
+            "iterations": 10
+          }
+        ]
+      },
+      "reverse": {
+        "median_ms": 259,
+        "samples": [
+          {
+            "milliseconds": 162.20000000018626,
+            "moves": 990,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 212.89999999990687,
+            "moves": 990,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 259,
+            "moves": 990,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 329.3000000002794,
+            "moves": 990,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 421.89999999990687,
+            "moves": 990,
+            "parses": 10,
+            "iterations": 10
+          }
+        ]
+      },
+      "insert-delete": {
+        "median_ms": 488.60000000009313,
+        "samples": [
+          {
+            "milliseconds": 488.60000000009313,
+            "moves": 1000,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 487.89999999990687,
+            "moves": 1000,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 475.89999999990687,
+            "moves": 1000,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 509.89999999990687,
+            "moves": 1000,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 593.8000000002794,
+            "moves": 1000,
+            "parses": 10,
+            "iterations": 10
+          }
+        ]
+      }
+    },
+    "1000": {
+      "edit": {
+        "median_ms": 271.29999999981374,
+        "samples": [
+          {
+            "milliseconds": 271.29999999981374,
+            "moves": 0,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 291.70000000018626,
+            "moves": 0,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 271.5,
+            "moves": 0,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 260.6999999997206,
+            "moves": 0,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 251.89999999990687,
+            "moves": 0,
+            "parses": 10,
+            "iterations": 10
+          }
+        ]
+      },
+      "rotate": {
+        "median_ms": 723.8999999999069,
+        "samples": [
+          {
+            "milliseconds": 299.1999999997206,
+            "moves": 10,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 445.5,
+            "moves": 10,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 723.8999999999069,
+            "moves": 10,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 932.6000000000931,
+            "moves": 10,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 1265.3000000002794,
+            "moves": 10,
+            "parses": 10,
+            "iterations": 10
+          }
+        ]
+      },
+      "reverse": {
+        "median_ms": 2969.600000000093,
+        "samples": [
+          {
+            "milliseconds": 1754.6999999997206,
+            "moves": 9990,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 2291.899999999907,
+            "moves": 9990,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 2969.600000000093,
+            "moves": 9990,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 3586.2000000001863,
+            "moves": 9990,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 4373.799999999814,
+            "moves": 9990,
+            "parses": 10,
+            "iterations": 10
+          }
+        ]
+      },
+      "insert-delete": {
+        "median_ms": 7033.200000000186,
+        "samples": [
+          {
+            "milliseconds": 5347.199999999721,
+            "moves": 10000,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 6079.399999999907,
+            "moves": 10000,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 7033.200000000186,
+            "moves": 10000,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 8206.799999999814,
+            "moves": 10000,
+            "parses": 10,
+            "iterations": 10
+          },
+          {
+            "milliseconds": 9173.400000000373,
+            "moves": 10000,
+            "parses": 10,
+            "iterations": 10
+          }
+        ]
+      }
+    },
+    "10000": {
+      "edit": {
+        "median_ms": 547,
+        "samples": [
+          {
+            "milliseconds": 566.3000000002794,
+            "moves": 0,
+            "parses": 2,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 537.5999999996275,
+            "moves": 0,
+            "parses": 2,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 547,
+            "moves": 0,
+            "parses": 2,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 526.1000000000931,
+            "moves": 0,
+            "parses": 2,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 594.5,
+            "moves": 0,
+            "parses": 2,
+            "iterations": 2
+          }
+        ]
+      },
+      "rotate": {
+        "median_ms": 607.9000000003725,
+        "samples": [
+          {
+            "milliseconds": 556.8000000002794,
+            "moves": 2,
+            "parses": 2,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 571.1999999997206,
+            "moves": 2,
+            "parses": 2,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 607.9000000003725,
+            "moves": 2,
+            "parses": 2,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 644.1999999997206,
+            "moves": 2,
+            "parses": 2,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 662.3000000002794,
+            "moves": 2,
+            "parses": 2,
+            "iterations": 2
+          }
+        ]
+      },
+      "reverse": {
+        "median_ms": 933.7000000001863,
+        "samples": [
+          {
+            "milliseconds": 829.7999999998137,
+            "moves": 19998,
+            "parses": 2,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 891,
+            "moves": 19998,
+            "parses": 2,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 933.7000000001863,
+            "moves": 19998,
+            "parses": 2,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 951.5,
+            "moves": 19998,
+            "parses": 2,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 1093.7000000001863,
+            "moves": 19998,
+            "parses": 2,
+            "iterations": 2
+          }
+        ]
+      },
+      "insert-delete": {
+        "median_ms": 1404,
+        "samples": [
+          {
+            "milliseconds": 1373.1000000000931,
+            "moves": 20000,
+            "parses": 2,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 1329.2000000001863,
+            "moves": 20000,
+            "parses": 2,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 1404,
+            "moves": 20000,
+            "parses": 2,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 1476,
+            "moves": 20000,
+            "parses": 2,
+            "iterations": 2
+          },
+          {
+            "milliseconds": 1530.2999999998137,
+            "moves": 20000,
+            "parses": 2,
+            "iterations": 2
+          }
+        ]
+      }
+    }
+  },
+  "measurement": "microtask completion; excludes paint",
+  "browser": "145.0.7632.6"
+}

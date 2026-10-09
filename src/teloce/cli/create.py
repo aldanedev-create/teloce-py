@@ -356,7 +356,7 @@ def create_teloce_config(project_path: Path) -> None:
             'shared_runtime': True,
             # Safe direct updates are explicit until a project has verified
             # its structural and third-party integration paths.
-            'direct_dom_updates': False,
+            'direct_dom_updates': True,
             'strict_dependency_analysis': False,
             'spa': 'auto',
             'tree_shake': True,

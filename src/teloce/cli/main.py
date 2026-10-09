@@ -175,6 +175,7 @@ def main(args: Optional[list] = None) -> int:
         action='store_true',
         help='Create a dependency-aware production ES module bundle'
     )
+    build_parser.add_argument('--no-bundle', action='store_true', help='Emit separate modules without production bundling')
     build_parser.add_argument(
         '--bundler', choices=('minifyjs', 'teloce', 'esbuild'), default=None,
         help='Bundler backend: native MinifyJS (default), Teloce or Node esbuild',

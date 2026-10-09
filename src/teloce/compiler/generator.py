@@ -120,17 +120,31 @@ export const __createReactive = (initial, notify) => {
       },
     });
     cache.set(value, proxy);
+    cache.set(proxy, proxy); // Reordered arrays already contain observable rows.
     return proxy;
   };
   return wrap(initial);
 };
 
+const __lis = values => {
+  const tails = [], previous = new Int32Array(values.length).fill(-1);
+  for (let i = 0; i < values.length; i++) {
+    if (values[i] < 0) continue;
+    let low = 0, high = tails.length;
+    while (low < high) { const middle = (low + high) >>> 1; if (values[tails[middle]] < values[i]) low = middle + 1; else high = middle; }
+    if (low) previous[i] = tails[low - 1];
+    tails[low] = i;
+  }
+  const stable = new Set();
+  for (let i = tails.length ? tails[tails.length - 1] : -1; i >= 0; i = previous[i]) stable.add(i);
+  return stable;
+};
 export const __patch = (target, html, options = {}) => {
   const focused = target.contains?.(document.activeElement) ? document.activeElement : null;
   const selection = focused && typeof focused.selectionStart === "number"
     ? [focused.selectionStart, focused.selectionEnd, focused.selectionDirection] : null;
-  const template = document.createElement("template");
-  template.innerHTML = html;
+  const template = options.nodes ? { content: { childNodes: options.nodes } } : document.createElement("template");
+  if (!options.nodes) template.innerHTML = html;
   const playEnter = typeof options.playEnter === "function" ? options.playEnter : () => {};
   const playExit = typeof options.playExit === "function" ? options.playExit : () => {};
   const onDispose = typeof options.onDispose === "function" ? options.onDispose : () => {};
@@ -158,6 +172,7 @@ export const __patch = (target, html, options = {}) => {
     for (const child of Array.from(node.childNodes || [])) disposeNode(child);
   };
   const patchNode = (oldNode, newNode) => {
+    if (oldNode === newNode) return oldNode;
     if (!oldNode || oldNode.nodeType !== newNode.nodeType || (oldNode.nodeType === 1 && oldNode.tagName !== newNode.tagName)) return cloneManaged(newNode);
     if (oldNode.nodeType === 3 || oldNode.nodeType === 8) {
       if (oldNode.nodeValue !== newNode.nodeValue) oldNode.nodeValue = newNode.nodeValue;
@@ -200,23 +215,37 @@ export const __patch = (target, html, options = {}) => {
     for (const node of old) if (!node.__teloceManaged) markManaged(node);
     const next = Array.from(templateParent.childNodes);
     const managed = old.filter(node => node.__teloceManaged);
-    const keyed = new Map(managed.filter(node => node.nodeType === 1 && node.dataset.teloceKey).map(node => [node.dataset.teloceKey, node]));
-    const used = new Set();
+    const keyed = new Map();
+    const unkeyed = [];
+    const positions = new Map(managed.map((node, index) => [node, index]));
+    for (const node of managed) {
+      const key = node.nodeType === 1 ? node.getAttribute('data-teloce-key') : null;
+      if (key != null) {
+        if (keyed.has(key)) throw new Error(`Duplicate keyed loop value: ${key}`);
+        keyed.set(key, node);
+      } else unkeyed.push(node);
+    }
+    const used = new Set(), nextKeys = new Set(), nodes = [], indices = [];
     let cursor = 0;
-    let anchor = old[0] || (region ? options.end : null);
-    next.forEach(newNode => {
-      const key = newNode.nodeType === 1 ? newNode.dataset.teloceKey : null;
-      let oldNode = key && keyed.has(key) ? keyed.get(key) : (key ? null : managed[cursor++]);
-      if (oldNode && used.has(oldNode)) oldNode = null;
+    for (const newNode of next) {
+      const key = newNode.nodeType === 1 ? newNode.getAttribute('data-teloce-key') : null;
+      if (key != null && nextKeys.has(key)) throw new Error(`Duplicate keyed loop value: ${key}`);
+      if (key != null) nextKeys.add(key);
+      const oldNode = key != null ? keyed.get(key) : unkeyed[cursor++];
       if (oldNode) used.add(oldNode);
       const result = oldNode ? patchNode(oldNode, newNode) : cloneManaged(newNode);
-      if (result !== oldNode) {
-        if (oldNode && oldNode.parentNode === parent) { disposeNode(oldNode); parent.replaceChild(result, oldNode); }
-        else parent.insertBefore(result, anchor || (region ? options.end : null));
-      } else if (result !== anchor) parent.insertBefore(result, anchor || (region ? options.end : null));
-      anchor = result.nextSibling;
-    });
-    for (const oldNode of managed) if (!used.has(oldNode) && oldNode.parentNode === parent) { disposeNode(oldNode); parent.removeChild(oldNode); }
+      if (oldNode && result !== oldNode) { disposeNode(oldNode); oldNode.remove(); }
+      nodes.push(result);
+      indices.push(result === oldNode ? positions.get(oldNode) : -1);
+    }
+    for (const oldNode of managed) if (!used.has(oldNode) && oldNode.parentNode === parent) { disposeNode(oldNode); oldNode.remove(); }
+    const stable = __lis(indices);
+    let anchor = region ? options.end : null;
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      if (indices[i] < 0 || !stable.has(i)) parent.insertBefore(nodes[i], anchor);
+      anchor = nodes[i];
+    }
+    if (region && options.onNodes) options.onNodes(nodes);
   };
   patchChildren(target, template.content, Boolean(options.start && options.end));
   if (focused?.isConnected && document.activeElement !== focused) {
@@ -1239,7 +1268,54 @@ class Generator:
         finally:
             self._direct_region_depth -= 1
         record['template'] = markup
+        row_plan = self._keyed_row_plan(node, markup)
+        if row_plan:
+            record['rows'] = row_plan
         return f'<!--teloce-region:{record["id"]}-->{markup}<!--teloce-region-end:{record["id"]}-->'
+
+    def _keyed_row_plan(self, node: ASTNode, markup: str) -> Optional[dict]:
+        """Cache rows only when every rendered dependency is a simple path.
+
+        Calls, nested structures, computed values and integrations retain the
+        general region renderer rather than risking an incomplete dependency set.
+        """
+        if not isinstance(node, ForNode) or not node.key or node.key == 'index':
+            return None
+        if len(node.children) != 1 or not isinstance(node.children[0], ElementNode):
+            return None
+        paths = set()
+        def visit(current):
+            if isinstance(current, (ForNode, IfNode, ComponentNode, SlotNode)):
+                return False
+            expressions = [getattr(current, 'expression', '')]
+            expressions.extend(binding.value for binding in getattr(current, 'bindings', []) or [])
+            for expression in expressions:
+                expression = str(expression or '').strip()
+                if not expression:
+                    continue
+                if not re.fullmatch(r'[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*', expression):
+                    return False
+                if expression.split('.')[0] in self._computed_bodies:
+                    return False
+                paths.add(expression)
+            return all(visit(child) for child in getattr(current, 'children', []) or [])
+        if not visit(node.children[0]):
+            return None
+        match = re.fullmatch(r'<for key="([^"<>]*)" item="([^"<>]*)" in="([^"<>]*)">(.*)</for>', markup, re.S)
+        if not match:
+            return None
+        key, item, collection, body = match.groups()
+        if not re.fullmatch(r'[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*', key):
+            return None
+        # Authored interpolations in ordinary attributes must also be tracked.
+        for expression in re.findall(r'{{\s*(.*?)\s*}}', body):
+            if not re.fullmatch(r'[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*', expression):
+                return None
+            if expression.split('.')[0] in self._computed_bodies:
+                return None
+            paths.add(expression)
+        return {'item': item, 'collection': html.unescape(collection), 'key': html.unescape(key),
+                'body': body, 'paths': sorted(paths)}
 
     @staticmethod
     def _binding_reader(expression: str) -> Optional[str]:

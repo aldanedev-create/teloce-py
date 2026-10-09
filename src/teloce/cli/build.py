@@ -46,7 +46,7 @@ def build_command(args: Any) -> int:
     elif getattr(args, 'no_direct_dom_updates', False):
         direct_dom_updates = False
     else:
-        direct_dom_updates = build_config.get('direct_dom_updates', False)
+        direct_dom_updates = build_config.get('direct_dom_updates', True)
     strict_dependency_analysis = (
         getattr(args, 'strict_dependency_analysis', False)
         or build_config.get('strict_dependency_analysis', False)
@@ -85,7 +85,7 @@ def build_command(args: Any) -> int:
         'extract_css': not getattr(args, 'no_extract_css', False) and build_config.get('extract_css', True),
         'css_bundle': build_config.get('css_bundle', True),
         'embed': build_config.get('embed', {'enabled': False}),
-        'bundle': getattr(args, 'bundle', False) or build_config.get('bundle', False),
+        'bundle': not getattr(args, 'no_bundle', False) and (getattr(args, 'bundle', False) or build_config.get('bundle', True)),
         'bundler': getattr(args, 'bundler', None) or build_config.get('bundler', 'minifyjs'),
         'minifier': getattr(args, 'minifier', None) or build_config.get('minifier', 'minifyjs'),
         'code_splitting': not getattr(args, 'no_splitting', False) and build_config.get('code_splitting', True),

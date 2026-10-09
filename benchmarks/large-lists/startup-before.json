@@ -1,0 +1,68 @@
+{
+  "100": {
+    "mount_samples_ms": [
+      9,
+      10.700000000186265,
+      10.100000000093132,
+      14.700000000186265,
+      8.699999999720603
+    ],
+    "median_mount_ms": 10.100000000093132,
+    "requested_js_files": [
+      "static/App.809c4850.js",
+      "static/App.js",
+      "static/data.js",
+      "static/scheduler.js",
+      "static/signals.js",
+      "static/table.js",
+      "static/teloce-runtime.94fc59ac.js"
+    ],
+    "requested_js_bytes": 80647,
+    "requested_js_gzip_bytes": 22692,
+    "bundler": null
+  },
+  "1000": {
+    "mount_samples_ms": [
+      32.59999999962747,
+      28.899999999906868,
+      35.5,
+      35.799999999813735,
+      32.1999999997206
+    ],
+    "median_mount_ms": 32.59999999962747,
+    "requested_js_files": [
+      "static/App.ab8ebc72.js",
+      "static/App.js",
+      "static/data.js",
+      "static/scheduler.js",
+      "static/signals.js",
+      "static/table.js",
+      "static/teloce-runtime.94fc59ac.js"
+    ],
+    "requested_js_bytes": 80647,
+    "requested_js_gzip_bytes": 22692,
+    "bundler": null
+  },
+  "10000": {
+    "mount_samples_ms": [
+      223.79999999981374,
+      211.60000000009313,
+      232.5,
+      215,
+      228.8000000002794
+    ],
+    "median_mount_ms": 223.79999999981374,
+    "requested_js_files": [
+      "static/App.ec6c9f5b.js",
+      "static/App.js",
+      "static/data.js",
+      "static/scheduler.js",
+      "static/signals.js",
+      "static/table.js",
+      "static/teloce-runtime.94fc59ac.js"
+    ],
+    "requested_js_bytes": 80647,
+    "requested_js_gzip_bytes": 22692,
+    "bundler": null
+  }
+}

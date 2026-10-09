@@ -308,29 +308,38 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     } else if (name === "class") {
       const staticClass = element.getAttribute("data-teloce-static-class") ?? element.__teloceStaticClass ?? element.className ?? "";
       element.__teloceStaticClass = staticClass;
-      element.className = [staticClass, String(mapClass(value) ?? "").trim()].filter(Boolean).join(" ");
+      const nextClass = [staticClass, String(mapClass(value) ?? "").trim()].filter(Boolean).join(" ");
+      if (element.getAttribute('class') !== nextClass) element.setAttribute('class', nextClass);
     } else if (name === "style" && value && typeof value === "object") {
       const previous = element.__teloceDynamicStyles || new Set();
-      for (const key of previous) if (!(key in value)) element.style[key] = "";
-      for (const [key, item] of Object.entries(value)) element.style[key] = item ?? "";
+      for (const key of previous) if (!(key in value) && element.style[key]) element.style[key] = "";
+      for (const [key, item] of Object.entries(value)) if (element.style[key] !== String(item ?? "")) element.style[key] = item ?? "";
       element.__teloceDynamicStyles = new Set(Object.keys(value));
     } else if (name === "show" || name === "hide") {
-      element.hidden = name === "show" ? !Boolean(value) : Boolean(value);
+      const hidden = name === "show" ? !Boolean(value) : Boolean(value);
+      if (element.hidden !== hidden) element.hidden = hidden;
     } else if (name === "html") {
-      element.innerHTML = sanitizeHtml(value);
+      const html = sanitizeHtml(value);
+      if (element.innerHTML !== html) element.innerHTML = html;
     } else if (name === "text") {
-      element.textContent = value == null ? "" : String(value);
+      const text = value == null ? "" : String(value);
+      if (element.textContent !== text) element.textContent = text;
     } else if (name === "value" && "value" in element) {
-      if (element.value !== String(value ?? "")) element.value = String(value ?? "");
+      if (element.value !== String(value ?? "")) {
+        const selection = document.activeElement === element && typeof element.selectionStart === 'number'
+          ? [element.selectionStart, element.selectionEnd, element.selectionDirection] : null;
+        element.value = String(value ?? "");
+        if (selection) element.setSelectionRange(...selection);
+      }
       if (element.getAttribute("value") !== String(value ?? "")) element.setAttribute("value", String(value ?? ""));
     } else if (["disabled", "checked", "selected", "readonly", "required", "multiple"].includes(name)) {
-      element.toggleAttribute(name, Boolean(value));
+      if (element.hasAttribute(name) !== Boolean(value)) element.toggleAttribute(name, Boolean(value));
     } else if (["href", "src", "action", "formaction"].includes(name) && isDangerousUrl(value)) {
-      element.removeAttribute(name);
+      if (element.hasAttribute(name)) element.removeAttribute(name);
     } else if (value === false || value == null) {
-      element.removeAttribute(name);
+      if (element.hasAttribute(name)) element.removeAttribute(name);
     } else {
-      element.setAttribute(name, String(value));
+      if (element.getAttribute(name) !== String(value)) element.setAttribute(name, String(value));
     }
   };
 
@@ -460,7 +469,9 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       const overscan = attr("overscan") || "5";
       const minHeight = attr("min-height") || "";
       const bodySource = encodeURIComponent(body);
-      const wrapper = `<div class="teloce-virtual-list" data-teloce-virtual-for="true" data-teloce-virtual-item="${__teloceEscapeAttribute(item)}" data-teloce-virtual-collection="${__teloceEscapeAttribute(collection)}" data-teloce-virtual-key="${__teloceEscapeAttribute(key)}" data-teloce-virtual-item-height="${__teloceEscapeAttribute(itemHeight)}" data-teloce-virtual-overscan="${__teloceEscapeAttribute(overscan)}" data-teloce-virtual-min-height="${__teloceEscapeAttribute(minHeight)}" data-teloce-virtual-body="${__teloceEscapeAttribute(bodySource)}"><div class="teloce-virtual-spacer"></div><div class="teloce-virtual-content"></div></div>`;
+      const rootTag = body.match(/<[^>]+>/)?.[0] || '';
+      const scopeAttributes = (rootTag.match(/\bdata-v-[\w-]+(?:="[^"]*")?/g) || []).join(' ');
+      const wrapper = `<div ${scopeAttributes} class="teloce-virtual-list" style="position:relative;overflow:auto" data-teloce-virtual-for="true" data-teloce-virtual-item="${__teloceEscapeAttribute(item)}" data-teloce-virtual-collection="${__teloceEscapeAttribute(collection)}" data-teloce-virtual-key="${__teloceEscapeAttribute(key)}" data-teloce-virtual-item-height="${__teloceEscapeAttribute(itemHeight)}" data-teloce-virtual-overscan="${__teloceEscapeAttribute(overscan)}" data-teloce-virtual-min-height="${__teloceEscapeAttribute(minHeight)}" data-teloce-virtual-body="${__teloceEscapeAttribute(bodySource)}"><div ${scopeAttributes} class="teloce-virtual-spacer"></div><div ${scopeAttributes} class="teloce-virtual-content" style="position:absolute;top:0;left:0;width:100%"></div></div>`;
       result = result.slice(0, start) + wrapper + result.slice(closeStart + 14);
       start = result.indexOf("<virtual-for ", start + wrapper.length);
     }
@@ -747,55 +758,58 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     const overscanExpression = element.getAttribute("data-teloce-virtual-overscan") || "5";
     const minHeightExpression = element.getAttribute("data-teloce-virtual-min-height") || "";
     let scheduled = false;
+    let disposed = false;
+    let frame = null;
     let virtualScopeIds = new Set();
     const renderVisible = () => {
       scheduled = false;
-      // Virtual rows are replaced as the viewport moves. Clean their
-      // framework listeners/actions before detaching them so document-level
-      // integrations do not survive a scroll or reactive refresh.
-      for (const scopeId of virtualScopeIds) loopScopes.delete(scopeId);
+      if (disposed || destroyed) return;
+      const previousScopes = virtualScopeIds;
       virtualScopeIds = new Set();
-      content.querySelectorAll("*").forEach(cleanupElement);
       const raw = evaluate(collectionExpression, state);
       const values = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? Object.values(raw) : [];
       const rowHeight = Math.max(1, Number(evaluate(rowHeightExpression, state) || rowHeightExpression) || 40);
       const overscan = Math.max(0, Number(evaluate(overscanExpression, state) || overscanExpression) || 5);
       const minHeight = Number(evaluate(minHeightExpression, state) || minHeightExpression);
+      // With no authored viewport height, a full-height spacer would expand
+      // the container and defeat virtualization on the next update.
+      if (!element.clientHeight) element.style.height = `${Number.isFinite(minHeight) && minHeight > 0 ? minHeight : 320}px`;
       if (Number.isFinite(minHeight) && minHeight >= 0) element.style.minHeight = `${minHeight}px`;
       const viewportHeight = element.clientHeight || 320;
+      const maxScroll = Math.max(0, values.length * rowHeight - viewportHeight);
+      if (element.scrollTop > maxScroll) element.scrollTop = maxScroll;
       const first = Math.max(0, Math.floor(element.scrollTop / rowHeight) - overscan);
       const last = Math.min(values.length, Math.ceil((element.scrollTop + viewportHeight) / rowHeight) + overscan);
       spacer.style.height = `${values.length * rowHeight}px`;
       content.style.transform = `translateY(${first * rowHeight}px)`;
-      const focusedKey = document.activeElement?.getAttribute?.("data-teloce-key");
-      const fragment = document.createDocumentFragment();
+      const markupRows = [];
       for (let index = first; index < last; index += 1) {
         const value = values[index];
         const loopScope = { ...state, [itemName]: value, index };
         const scopeId = String(loopScopeSequence++);
-        loopScopes.set(scopeId, loopScope);
+        loopScopes.set(scopeId, { [itemName]: value, index });
         virtualScopeIds.add(scopeId);
         let markup = renderTemplate(body, loopScope, loopScopes);
         const key = evaluate(keyExpression, loopScope);
         markup = markup.replace(/^(\s*<[A-Za-z][\w:-]*)(?=[\s>])/, `$1 data-teloce-key="${__teloceEscapeAttribute(String(key ?? index))}" data-teloce-loop-scope="${scopeId}"`);
-        const rowTemplate = document.createElement("template");
-        rowTemplate.innerHTML = markup;
-        fragment.append(...Array.from(rowTemplate.content.childNodes));
+        markupRows.push(markup);
       }
-      content.replaceChildren(fragment);
+      __patch(content, markupRows.join(''), { onDispose: cleanupElement });
+      for (const scopeId of previousScopes) loopScopes.delete(scopeId);
       content.querySelectorAll("*").forEach(bindEventsAndDirectives);
-      if (focusedKey) Array.from(content.querySelectorAll("[data-teloce-key]")).find(node => node.getAttribute("data-teloce-key") === focusedKey)?.focus?.();
     };
     const onScroll = () => {
-      if (scheduled) return;
+      if (scheduled || disposed) return;
       scheduled = true;
-      if (typeof globalThis.requestAnimationFrame === "function") globalThis.requestAnimationFrame(renderVisible);
+      if (typeof globalThis.requestAnimationFrame === "function") frame = globalThis.requestAnimationFrame(renderVisible);
       else queueMicrotask(renderVisible);
     };
     element.addEventListener("scroll", onScroll, { passive: true });
     element.__teloceVirtualRender = renderVisible;
     element.__teloceVirtualSignature = signature;
     element.__teloceVirtualCleanup = () => {
+      disposed = true;
+      if (frame != null) globalThis.cancelAnimationFrame?.(frame);
       element.removeEventListener("scroll", onScroll);
       for (const scopeId of virtualScopeIds) loopScopes.delete(scopeId);
       virtualScopeIds.clear();
@@ -1327,6 +1341,88 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     }
   };
 
+  const updateKeyedRows = (record, region, hydrate = false) => {
+    const plan = record.rows;
+    const values = evaluate(plan.collection, state);
+    if (!Array.isArray(values)) return false;
+    // Each row retains its own dependency snapshot and live event scope.
+    // Collection notifications can scan snapshots without parsing or patching
+    // unchanged rows. Complex expressions use the general region path.
+    if (!region.rows) {
+      region.rows = new Map();
+      for (const id of region.scopes) loopScopes.delete(id);
+    }
+    if (!region.rowReaders) {
+      region.rowRoots = new Set(plan.paths.map(path => path.split('.')[0]));
+      region.rowReaders = plan.paths.map(path => {
+        const parts = path.split('.');
+        return scope => {
+          let value = scope;
+          for (const part of parts) {
+            if (part === '__proto__' || part === 'prototype' || part === 'constructor') return undefined;
+            value = value?.[part];
+          }
+          return value;
+        };
+      });
+    }
+    const existing = new Map();
+    if (hydrate) for (let node = region.start.nextSibling; node && node !== region.end; node = node.nextSibling) {
+      if (node.nodeType === 1) existing.set(node.getAttribute('data-teloce-key'), node);
+    }
+    const rows = region.rows, active = new Set(), next = [], ordered = [];
+    for (let index = 0; index < values.length; index++) {
+      const item = values[index];
+      const locals = { [plan.item]: item, index };
+      const scope = { ...locals, [loopLocals]: locals };
+      for (const root of region.rowRoots) if (!(root in locals) && Object.prototype.hasOwnProperty.call(state, root)) scope[root] = state[root];
+      const key = String(evaluate(plan.key, scope));
+      if (active.has(key)) throw new Error(`Duplicate keyed loop value: ${key}`);
+      active.add(key);
+      const snapshot = region.rowReaders.map(read => read(scope));
+      let row = rows.get(key);
+      if (!row) {
+        const node = hydrate ? existing.get(key) : null;
+        row = { scopeId: node?.getAttribute('data-teloce-loop-scope') ?? String(loopScopeSequence++),
+          snapshot: node ? snapshot : null, node };
+      }
+      loopScopes.set(row.scopeId, locals);
+      const dirty = !hydrate && (!row.snapshot || snapshot.some((value, i) =>
+        (value !== null && typeof value === 'object') || !Object.is(value, row.snapshot[i])));
+      row.needsBind = dirty;
+      if (dirty) {
+        const scopes = new Map();
+        let markup = renderTemplate(plan.body, scope, scopes);
+        markup = markup.replace(/<([A-Za-z][\w:-]*)(?=[\s>])/, `$& data-teloce-loop-scope="${row.scopeId}"`);
+        if (!row.node || markup !== row.markup) {
+          const template = document.createElement('template'); template.innerHTML = markup;
+          const nodes = Array.from(template.content.childNodes);
+          // Compiler restricts this path to one root element. Whitespace is
+          // discarded here; multi-root or nested structural loops fall back.
+          const element = nodes.find(node => node.nodeType === 1);
+          if (!element) return false;
+          next.push(element);
+        } else next.push(row.node);
+        row.markup = markup;
+        row.snapshot = snapshot;
+      } else next.push(row.node);
+      rows.set(key, row); ordered.push(row);
+    }
+    if (!hydrate) __patch(region.start.parentNode, null, {
+      ...__teloceTransitionHooks(definition), onDispose: cleanupElement,
+      start: region.start, end: region.end, nodes: next,
+      onNodes(nodes) { nodes.forEach((node, index) => { ordered[index].node = node; }); },
+    });
+    for (const [key, row] of rows) if (!active.has(key)) { loopScopes.delete(row.scopeId); rows.delete(key); }
+    region.scopes = new Set(ordered.map(row => row.scopeId));
+    for (const row of ordered) {
+      if (row.needsBind) {
+        bindEventsAndDirectives(row.node); row.node.querySelectorAll('*').forEach(bindEventsAndDirectives);
+      }
+    }
+    return true;
+  };
+
   const update = (changed = null) => {
     if (destroyed || !target || rendering) return;
     const wasMounted = mounted;
@@ -1339,6 +1435,11 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
           if (!directNeedsUpdate(record, changed)) continue;
           const region = regionNodes.get(record.id);
           if (!region?.start?.parentNode || region.start.parentNode !== region.end?.parentNode) continue;
+          if (record.rows && updateKeyedRows(record, region)) continue;
+          if (region.rows) {
+            for (const row of region.rows.values()) loopScopes.delete(row.scopeId);
+            region.rows = null;
+          }
           const freshScopes = new Map();
           const html = renderTemplate(record.template, state, freshScopes);
           __patch(region.start.parentNode, html, {
@@ -1369,7 +1470,13 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
         });
         target.querySelectorAll("*").forEach(bindEventsAndDirectives);
         mountChildren();
-        if (directEnabled && !directBound) bindDirectNodes();
+        if (directEnabled && !directBound) {
+          bindDirectNodes();
+          for (const record of directRegions) {
+            const region = regionNodes.get(record.id);
+            if (record.rows && region?.end) updateKeyedRows(record, region, true);
+          }
+        }
       }
     } finally {
       rendering = false;

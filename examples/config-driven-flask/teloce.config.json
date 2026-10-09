@@ -10,7 +10,8 @@
     "minify": true,
     "shared_runtime": true,
     "tree_shake": true,
-    "bundler": "teloce"
+    "bundler": "minifyjs",
+    "bundle": false
   },
   "server": {
     "host": "127.0.0.1",

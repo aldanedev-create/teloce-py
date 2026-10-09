@@ -1,3 +1,16 @@
+export const __lis = values => {
+  const tails = [], previous = new Int32Array(values.length).fill(-1);
+  for (let i = 0; i < values.length; i++) {
+    if (values[i] < 0) continue;
+    let low = 0, high = tails.length;
+    while (low < high) { const middle = (low + high) >>> 1; if (values[tails[middle]] < values[i]) low = middle + 1; else high = middle; }
+    if (low) previous[i] = tails[low - 1];
+    tails[low] = i;
+  }
+  const stable = new Set();
+  for (let i = tails.length ? tails[tails.length - 1] : -1; i >= 0; i = previous[i]) stable.add(i);
+  return stable;
+};
 export function createElement(tag, props = {}, children = []) {
   const element = document.createElement(tag);
   for (const [name, value] of Object.entries(props)) setAttribute(element, name, value);
@@ -55,6 +68,7 @@ export function createEventHandlerWithModifiers(element, name, handler) {
 
 export function createFor(container, source, renderItem, key = (_, index) => index) {
   const records = new Map();
+  let order = [];
   const read = value => typeof value === 'function' && value.__teloce_signal ? value() : value;
   const update = value => {
     const focused = container.contains?.(document.activeElement) ? document.activeElement : null;
@@ -62,14 +76,15 @@ export function createFor(container, source, renderItem, key = (_, index) => ind
       ? [focused.selectionStart, focused.selectionEnd, focused.selectionDirection] : null;
     const next = Array.from(read(value) || []);
     const active = new Set();
+    const positions = new Map(order.map((node, index) => [node, index]));
     const nodes = next.map((item, index) => {
       const id = key(item, index);
       if (active.has(id)) throw new Error(`Duplicate keyed loop value: ${String(id)}`);
       const old = records.get(id);
       if (old) {
+        if ((item !== null && typeof item === 'object') || !Object.is(old.item, item) || old.index !== index) old.update?.(item, index);
         old.item = item;
         old.index = index;
-        old.update?.(item, index);
         active.add(id);
         return old.node;
       }
@@ -92,15 +107,16 @@ export function createFor(container, source, renderItem, key = (_, index) => ind
         records.delete(id);
       }
     }
-    // Move only out-of-order rows. Detaching every row with replaceChildren
-    // can drop focus even when the user's input row did not change.
-    let anchor = container.firstChild;
-    for (const node of nodes) {
-      if (node !== anchor) container.insertBefore(node, anchor);
-      anchor = node.nextSibling;
-    }
     const retained = new Set(nodes);
     for (const node of Array.from(container.childNodes)) if (!retained.has(node)) node.remove();
+    const stable = __lis(nodes.map(node => positions.get(node) ?? -1));
+    let anchor = null;
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      const node = nodes[i];
+      if (!positions.has(node) || !stable.has(i)) container.insertBefore(node, anchor);
+      anchor = node;
+    }
+    order = nodes;
     if (focused?.isConnected && document.activeElement !== focused) {
       focused.focus({ preventScroll: true });
       if (selection) focused.setSelectionRange(...selection);
