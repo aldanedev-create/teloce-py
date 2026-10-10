@@ -227,6 +227,17 @@ class Builder:
         }
         self._previous_inputs = {self.root_dir / name for name in cache}
         self._build_dependency_graph(vel_files, ts_files)
+        ssr_names = None
+        if self.options.get('ssr_entries') is not None:
+            ssr_names = set()
+            for entry in self.options['ssr_entries']:
+                name = Path(entry).as_posix()
+                if name not in source_hashes:
+                    raise ValueError(f'SSR entry was not found: {name}')
+                ssr_names.add(name)
+                ssr_names.update(self.dependency_graph.get_all_dependencies(name))
+        if self.options.get('ssr') not in (False, None, 'legacy') and not self.options.get('shared_runtime', True):
+            raise ValueError('AST SSR requires shared_runtime for the explicit hydration contract')
         changed_inputs = {
             name for name, digest in source_hashes.items()
             if cache.get(name, {}).get('source_hash') != digest
@@ -329,7 +340,7 @@ class Builder:
                     results['compiled'] += 1
                     results['cache_misses'] += 1
                 results['files'].append(result_info)
-                if self.options.get('ssr'):
+                if self.options.get('ssr') and (ssr_names is None or input_name in ssr_names):
                     ssr_output = cached.get('ssr_output') if can_reuse else None
                     if not ssr_output or not (self.out_dir / ssr_output).is_file():
                         ssr_output = self._write_ssr_file(vel_file, self._read_source(vel_file))
@@ -344,6 +355,7 @@ class Builder:
                 results['errors'].append({
                     'file': str(vel_file),
                     'error': str(e),
+                    'diagnostic': getattr(e, 'diagnostic', None),
                 })
 
         if ts_files:
@@ -531,6 +543,19 @@ class Builder:
             self._write_dev_entrypoint()
 
         # Generate the manifest after assets and optional bundling are complete.
+        ssr_entries = {}
+        for item in results['files']:
+            if str(item.get('output', '')).endswith('.ssr.json'):
+                source = item['input']
+                compiled_client = str(Path(item['output']).with_suffix('').with_suffix('.js'))
+                stable_client = str(Path(source).with_suffix('.js'))
+                client = self.assets.asset_map.get(stable_client, compiled_client)
+                ssr_entries[source] = {'artifact': item['output'], 'client': client, 'assets': [client]}
+                ssr_entries[client] = ssr_entries[source]
+                ssr_entries[compiled_client] = ssr_entries[source]
+                ssr_entries[stable_client] = ssr_entries[source]
+        if ssr_entries:
+            results['ssr'] = {'version': 1, 'entries': ssr_entries}
         manifest = self.manifest.generate(results, self.out_dir)
         self.writer.write_json(self.out_dir / 'manifest.json', manifest)
         report_path = self.options.get('report')
@@ -570,7 +595,7 @@ class Builder:
         browser runtime discover files dynamically. This is useful to editors,
         diagnostics, asset audits, and future bundlers.
         """
-        by_input = {str(item.get('input')): item for item in results.get('files', []) if item.get('input')}
+        by_input = {str(item.get('input')): item for item in results.get('files', []) if item.get('input') and str(item.get('output', '')).endswith('.js')}
         components: Dict[str, Any] = {}
         lazy = {str(item) for item in self.options.get('lazy_components', []) or []}
         for path in vel_files:
@@ -723,6 +748,10 @@ class Builder:
             Path(inspect.getfile(ManifestGenerator)),
             Path(inspect.getfile(transpile_ts)),
         ]
+        package_root = Path(__file__).resolve().parents[1]
+        sources.extend(package_root / name for name in ("compiler/parser.py", "expressions/parser.py", "expressions/lexer.py", "expressions/generator.py", "sfc/parser.py"))
+        server_root = package_root / "server"
+        sources.extend(server_root / name for name in ("compiler.py", "expressions.py", "renderer.py"))
         digest = hashlib.sha256()
         digest.update(minifyjs_version.encode())
         for source in sources:
@@ -823,7 +852,7 @@ class Builder:
         for file_info in results.get('files', []):
             input_name = str(file_info.get('input', ''))
             output_name = str(file_info.get('output', ''))
-            if self._is_source_input(input_name) and output_name:
+            if self._is_source_input(input_name) and output_name.endswith('.js'):
                 self.assets.asset_map[str(Path(input_name).with_suffix('.js')).replace('\\', '/')] = output_name
                 css_output = output_name[:-3] + '.css'
                 if (self.out_dir / css_output).exists():
@@ -1253,7 +1282,7 @@ class Builder:
         source = self._read_source(vel_file)
         output_path = self._output_path(vel_file)
         component_imports = self._resolve_component_imports(vel_file, source)
-        compiler_options = dict(self.options)
+        compiler_options = {**self.options, "source_filename": vel_file.relative_to(self.root_dir).as_posix()}
         # MinifyJS owns production optimization after resolving imports. Never
         # pre-minify its inputs with the legacy whitespace compressor.
         if self.options.get('minifier') == 'minifyjs' or (self.options.get('bundle') and self.options.get('bundler') == 'minifyjs'):
@@ -1318,12 +1347,22 @@ class Builder:
         }
 
     def _write_ssr_file(self, vel_file: Path, source: str) -> str:
-        """Emit a Jinax template artifact for a component template."""
-        match = re.search(r'<template(?:\s[^>]*)?>([\s\S]*?)</template\s*>', source, re.I)
-        if not match:
-            raise ValueError(f"Cannot generate SSR output without a template: {vel_file}")
-        output_path = self._output_path(vel_file).with_suffix('.html')
-        self.writer.write_html(output_path, to_jinax_template(match.group(1).strip()))
+        """Emit validated AST render instructions, or explicitly requested legacy output."""
+        if self.options.get('ssr') == 'legacy':
+            match = re.search(r'<template(?:\s[^>]*)?>([\s\S]*?)</template\s*>', source, re.I)
+            if not match:
+                raise ValueError(f"Missing SSR template: {vel_file}")
+            output_path = self._output_path(vel_file).with_suffix('.html')
+            self.writer.write_html(output_path, to_jinax_template(match.group(1).strip()))
+        else:
+            from teloce.server import compile_program
+            output_path = self._output_path(vel_file).with_suffix('.ssr.json')
+            imports = {
+                name: (self._output_path(vel_file).parent / path).resolve().relative_to(self.out_dir.resolve()).as_posix()
+                for name, path in self._resolve_component_imports(vel_file, source).items()
+            }
+            program = compile_program(source, vel_file.relative_to(self.root_dir).as_posix(), components=imports)
+            self.writer.write_json(output_path, program)
         return output_path.relative_to(self.out_dir).as_posix()
 
     def _resolve_component_imports(self, vel_file: Path, source: str) -> Dict[str, str]:

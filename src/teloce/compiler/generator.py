@@ -179,13 +179,15 @@ export const __patch = (target, html, options = {}) => {
       return oldNode;
     }
             if (oldNode.hasAttribute("data-teloce-memo") && newNode.hasAttribute("data-teloce-memo") && oldNode.getAttribute("data-teloce-memo") === newNode.getAttribute("data-teloce-memo")) return oldNode;
+    const ssrBoundary = oldNode.hasAttribute("data-teloce-ssr-boundary");
     const managedAttributes = oldNode.__teloceManagedAttributes || new Set();
     for (const attr of Array.from(oldNode.attributes)) if (managedAttributes.has(attr.name) && !newNode.hasAttribute(attr.name) && !newNode.hasAttribute("data-teloce-resolved-" + attr.name)) oldNode.removeAttribute(attr.name);
     for (const attr of Array.from(newNode.attributes)) if (oldNode.getAttribute(attr.name) !== attr.value) oldNode.setAttribute(attr.name, attr.value);
     oldNode.__teloceManagedAttributes = new Set(Array.from(newNode.attributes).map(attribute => attribute.name));
-    if (oldNode.__teloceInstance) {
+    if (oldNode.__teloceInstance || ssrBoundary) {
       // A mounted component owns its rendered subtree. Preserve that subtree
       // and retain the new declarative host as the next props/slots source.
+      if (ssrBoundary) oldNode.setAttribute("data-teloce-ssr-boundary", "1");
       oldNode.__telocePendingPropsSource = newNode.cloneNode(true);
       return oldNode;
     }
@@ -717,6 +719,23 @@ class Generator:
             return []
         return [f'import {{ {", ".join(needed)} }} from {json.dumps(runtime_import)};']
 
+    def _source_locations(self, component):
+        locations = {}
+        source = component.raw_source
+        def visit(node):
+            expressions = [getattr(node, 'expression', ''), getattr(node, 'condition', '')]
+            expressions += [binding.value for binding in getattr(node, 'bindings', [])]
+            expressions += [event.handler for event in getattr(node, 'events', [])]
+            for expression in expressions:
+                if not expression or expression in locations: continue
+                offset = source.find(expression)
+                if offset >= 0:
+                    locations[expression] = {'line': source[:offset].count('\n') + 1,
+                        'column': offset - source.rfind('\n', 0, offset)}
+            for child in [*getattr(node, 'children', []), *getattr(node, 'else_children', [])]: visit(child)
+        for node in component.template: visit(node)
+        return locations
+
     def _generate_runtime(
         self,
         component: Component,
@@ -764,7 +783,11 @@ class Generator:
                 f'const __actions = {self._generate_actions(self._collect_actions_from_template(template_code))};',
                 f'const __directPlan = {self._direct_plan_literal()};',
                 f'const __runtimeOptions = {{ components: __components, template: __template, style: __style, styleId: "teloce-style-{style_id}", styleClasses: __styleClasses, filters: __filters, actions: __actions, table: typeof createDataTable === "function" ? createDataTable : undefined, direct: __directPlan.enabled, directPlan: __directPlan, dev: {str(bool(self.dev)).lower()}, moduleUrl: import.meta.url }};',
-                'export const mount = (target, props = {}) => __teloceCreateCompiledComponent(__component, { ...__runtimeOptions, props }).mount(target, props);',
+                f'__runtimeOptions.component = {json.dumps(self.options.get("source_filename", component.filename))};',
+                f'__runtimeOptions.sourceLocations = {json.dumps(self._source_locations(component))};',
+                'export const mount = (target, props = {}, options = {}) => __teloceCreateCompiledComponent(__component, { ...__runtimeOptions, ...options, props }).mount(target, props);',
+                'export const hydrate = (target, props = {}) => mount(target, props, { hydrate: true });',
+                '__component.hydrate = hydrate',
                 'export const createApp = mount;',
                 '__component.mount = mount;',
             ]
@@ -835,7 +858,7 @@ class Generator:
             '    const managedAttributes = oldNode.__teloceManagedAttributes || new Set(); for (const attr of Array.from(oldNode.attributes)) if (managedAttributes.has(attr.name) && !newNode.hasAttribute(attr.name) && !newNode.hasAttribute("data-teloce-resolved-" + attr.name)) oldNode.removeAttribute(attr.name);',
             '    for (const attr of Array.from(newNode.attributes)) if (oldNode.getAttribute(attr.name) !== attr.value) oldNode.setAttribute(attr.name, attr.value);',
             '    oldNode.__teloceManagedAttributes = new Set(Array.from(newNode.attributes).map(attribute => attribute.name));',
-            '    if (oldNode.__teloceInstance) { oldNode.__telocePendingPropsSource = newNode.cloneNode(true); return oldNode; }',
+            '    if (oldNode.__teloceInstance || oldNode.hasAttribute?.("data-teloce-ssr-boundary")) { oldNode.__telocePendingPropsSource = newNode.cloneNode(true); return oldNode; }',
             '    if (oldNode.hasAttribute("data-teloce-preserve")) { return oldNode; }',
             '    patchChildren(oldNode, newNode); return oldNode;',
             '  };',
@@ -1279,7 +1302,7 @@ class Generator:
         Calls, nested structures, computed values and integrations retain the
         general region renderer rather than risking an incomplete dependency set.
         """
-        if not isinstance(node, ForNode) or not node.key or node.key == 'index':
+        if not isinstance(node, ForNode) or not node.key or node.key == 'index' or getattr(node, 'index', 'index') != 'index':
             return None
         if len(node.children) != 1 or not isinstance(node.children[0], ElementNode):
             return None
@@ -1498,7 +1521,7 @@ class Generator:
         key_expression = "index"
         if node.key and node.key != "index":
             # Give the DOM reconciler a stable identity for each repeated row.
-            key_expression = node.key if "." in node.key or node.key == item else f"{item}.{node.key}"
+            key_expression = node.key if not node.key.isidentifier() or node.key in {item, getattr(node, "index", "index")} else f"{item}.{node.key}"
             children = re.sub(
                 r"<([A-Za-z][\w:-]*)",
                 rf'<\1 data-teloce-key="{{{{ {key_expression} }}}}"',
@@ -1506,7 +1529,8 @@ class Generator:
                 count=1,
             )
         tag = "virtual-for" if getattr(node, "virtual", False) else "for"
-        options = ""
+        index_name = getattr(node, "index", "index")
+        options = f' index="{html.escape(index_name, quote=True)}"' if index_name != "index" else ""
         for option, value in getattr(node, "virtual_options", {}).items():
             options += f' {option}="{html.escape(str(value), quote=True)}"'
         return f'<{tag} key="{html.escape(key_expression, quote=True)}" item="{item}" in="{collection}"{options}>{children}</{tag}>'

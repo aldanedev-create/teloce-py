@@ -19,6 +19,7 @@ Then open the URL printed by the server. You do not need to manually run a separ
 - [Plugins and filters](plugins.md)
 - [Scoped CSS and CSS modules](scoped-css.md)
 - [Router](router.md)
+- [SSR and hydration](ssr-and-hydration.md)
 - [Standalone runtime](standalone-runtime.md)
 - [Production](production.md)
 - [npm migration](npm-migration.md)

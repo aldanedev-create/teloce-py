@@ -75,9 +75,8 @@ class ExpressionGenerator:
         """Generate code for a unary expression."""
         operand = self.generate(node.operand)
         
-        if self.minify:
-            return f"{node.operator}{operand}"
-        return f"{node.operator}{operand}"
+        separator = " " if node.operator == "typeof" else ""
+        return f"{node.operator}{separator}{operand}"
     
     def _generate_call(self, node: CallNode) -> str:
         """Generate code for a function call."""
@@ -90,7 +89,8 @@ class ExpressionGenerator:
         obj = self.generate(node.object)
         
         if node.computed:
-            return f"{obj}[{node.property}]"
+            property_code = self.generate(node.property) if isinstance(node.property, ExpressionNode) else node.property
+            return f"{obj}[{property_code}]"
         return f"{obj}{'?.' if node.optional else '.'}{node.property}"
     
     def _generate_array(self, node: ArrayNode) -> str:

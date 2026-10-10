@@ -68,7 +68,7 @@ class CallNode(ExpressionNode):
 class MemberNode(ExpressionNode):
     """Member access expression."""
     object: ExpressionNode
-    property: str
+    property: Union[str, ExpressionNode]
     computed: bool = False
     optional: bool = False
     

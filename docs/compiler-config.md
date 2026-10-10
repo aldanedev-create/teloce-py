@@ -106,8 +106,10 @@ Production switches:
 - `embed.enabled` removes standard chrome tags and creates a constrained
   aspect-ratio entrypoint for iframe embeds. Only numeric ratios such as
   `16/9` are accepted.
-- `ssr` emits Jinax/Jinja-compatible `.html` component artifacts; it is a
-  static template artifact, not client hydration by itself.
+- `ssr: true` emits versioned AST `.ssr.json` programs and manifest links for
+  explicit hydration. `ssr_entries` optionally selects source entries and their
+  dependencies. `ssr: "legacy"` retains Jinax/Jinja `.html` artifacts. See
+  [SSR and hydration](ssr-and-hydration.md) for supported syntax and migration.
 
 `--no-hash-assets`, `--no-extract-css`, `--no-minify`, `--no-tree-shake`, and
 `--max-size N` are available for controlled debugging or compatibility builds.

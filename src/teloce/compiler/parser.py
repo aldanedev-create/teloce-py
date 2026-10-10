@@ -178,6 +178,7 @@ class Parser:
         else:
             self.errors.append(f"Missing closing tag </{tag_name}>")
         element = self._create_element(tag_name, attributes, events, bindings, children, transitions)
+        element.line, element.column = tag_token.line, tag_token.column
         return self._lower_long_form_directives(element)
 
     def _lower_long_form_directives(self, element: ElementNode) -> ASTNode:
@@ -230,7 +231,9 @@ class Parser:
                             if binding.name == option:
                                 virtual_options[option] = binding.value
                                 element.bindings.remove(binding)
-                return ForNode(item, collection, key, [child], element.line, element.column, virtual, virtual_options)
+                loop = ForNode(item, collection, key, [child], element.line, element.column, virtual, virtual_options)
+                loop.index = variables[1] if len(variables) > 1 else "index"
+                return loop
         if 'v-if' in element.attributes:
             condition = element.attributes.pop('v-if').strip()
             return IfNode(condition, [element], [], element.line, element.column)

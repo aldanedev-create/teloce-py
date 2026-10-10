@@ -31,6 +31,7 @@ class ManifestGenerator:
         """
         manifest = {
             'version': '1.0',
+            'ssr': build_result.get('ssr'),
             'timestamp': datetime.now(timezone.utc).isoformat(),
             'total_files': build_result.get('total', 0),
             'compiled': build_result.get('compiled', 0),

@@ -1,3 +1,23 @@
+// Framework-independent diagnostics. Hosts subscribe without owning Teloce.
+const __teloceErrorListeners = new Set();
+export function onTeloceError(listener) {
+  __teloceErrorListeners.add(listener);
+  return () => __teloceErrorListeners.delete(listener);
+}
+export function reportTeloceError(error, detail = {}) {
+  const report = { category: 'runtime', message: String(error?.message || error),
+    stack: String(error?.stack || ''), ...detail };
+  for (const listener of [...__teloceErrorListeners]) {
+    try { listener(report); } catch (_) { /* A reporter must not break application updates. */ }
+  }
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('teloce:error', { detail: report }));
+  return report;
+}
+const __hydrationShape = (root, componentTags = new Set()) => [...root.childNodes].filter(node => node.nodeType === 1).map(node => {
+  if (node.hasAttribute('data-teloce-ssr-boundary') || componentTags.has(node.tagName)) return node.tagName;
+  return node.tagName + '(' + __hydrationShape(node, componentTags) + ')';
+}).join(',');
+
 /* Shared renderer for compiler-generated Teloce components.
  *
  * Generated modules contain the component definition, template, imports and
@@ -244,7 +264,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       }
       return value;
     } catch (error) {
-      if (dev) console.error("Teloce expression error:", expression, error);
+      handleError(error, "expression", String(expression));
       return "";
     }
   };
@@ -455,7 +475,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       const cache = rowPlan && Array.isArray(rawValues) ? prepareRowCache(rowPlan) : null;
       if (cache) { cache.byScope = new Map(); initialRowCaches.set(regionId, cache); }
       const rendered = values.map((value, index) => {
-        const locals = { ...(scope[loopLocals] || {}), [item]: value, index };
+        const locals = { ...(scope[loopLocals] || {}), [item]: value, index, [opening.match(/index="([^"]+)"/)?.[1] || "index"]: index };
         const loopScope = cache ? { ...locals, [loopLocals]: locals } : { ...scope, ...locals, [loopLocals]: locals };
         if (cache) for (const root of cache.rowRoots) {
           if (!(root in locals) && Object.prototype.hasOwnProperty.call(scope, root)) loopScope[root] = scope[root];
@@ -656,8 +676,12 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
   let pendingDependencies = new Set();
   let schedulerVersion = 0;
 
-  const handleError = (error, phase) => {
+  const handleError = (error, phase, expression = null) => {
     if (dev) console.error(`Teloce ${phase} error:`, error);
+    const location = options.sourceLocations?.[expression] || {};
+    reportTeloceError(error, { category: phase === 'hydration' ? 'hydration' : 'runtime',
+      phase, expression, component: options.component || definition?.name,
+      filename: moduleUrl, ...location });
     try { options.onError?.(error, phase); } catch (_) {}
   };
   const requestUpdate = dependency => {
@@ -1133,8 +1157,8 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
               const result = typeof handler === "function"
                 ? handler(event?.detail ?? event)
                 : __runEventExpression(expression, eventScope);
-              if (result?.then) result.catch(error => handleError(error, `event:${eventName}`));
-            } catch (error) { handleError(error, `event:${eventName}`); }
+              if (result?.then) result.catch(error => handleError(error, `event:${eventName}`, attribute.value));
+            } catch (error) { handleError(error, `event:${eventName}`, attribute.value); }
           };
           const eventOptions = { once: modifiers.includes("once"), capture: modifiers.includes("capture"), passive: modifiers.includes("passive") };
           element.__teloceHandlers.set(attribute.name, { signature, actualEvent, listener, options: eventOptions });
@@ -1257,7 +1281,8 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
         const child = lookup.get(element.tagName.toLowerCase());
         if (!child || element.__teloceMounted || typeof child.mount !== "function") continue;
         element.__teloceMounted = true;
-        element.__teloceInstance = child.mount(element, readProps(element, state));
+        element.__teloceInstance = (element.hasAttribute("data-teloce-ssr-boundary") && child.hydrate ? child.hydrate : child.mount)(element, readProps(element.__telocePendingPropsSource || element, state));
+        element.__telocePendingPropsSource = undefined;
         newlyMounted.add(element);
         found = true;
         break;
@@ -1275,7 +1300,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       const child = lookup.get(String(name).toLowerCase());
       if (!element.__teloceMounted && child?.mount) {
         element.__teloceMounted = true;
-        element.__teloceInstance = child.mount(element, readProps(element, state));
+        element.__teloceInstance = (element.hasAttribute("data-teloce-ssr-boundary") && child.hydrate ? child.hydrate : child.mount)(element, readProps(element.__telocePendingPropsSource || element, state));
       } else if (element.__teloceInstance?.updateProps) {
         element.__teloceInstance.updateProps(readProps(element, state));
       }
@@ -1540,9 +1565,22 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     syncQueryState();
   };
 
+  const signalCleanups = [];
+  const seedProp = (name, value) => {
+    const current = state[name];
+    if (typeof current === 'function' && typeof current.subscribe === 'function' && value && typeof value === 'object' && Object.keys(value).length === 1 && 'value' in value) current.value = value.value;
+    else state[name] = value;
+  };
+  const subscribeSignals = () => {
+    if (signalCleanups.length) return;
+    for (const [name, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(state))) {
+      const value = descriptor.value;
+      if (typeof value === 'function' && typeof value.subscribe === 'function') signalCleanups.push(value.subscribe(() => requestUpdate(name)));
+    }
+  };
   const normalizedProps = normalizeProps(options.props || {});
   suppressUpdates = true;
-  for (const [name, value] of Object.entries(normalizedProps)) state[name] = value;
+  for (const [name, value] of Object.entries(normalizedProps)) seedProp(name, value);
   previousWatchValues = Object.fromEntries(Object.keys(definition?.watch || {}).map(name => [name, watchValue(name)]));
   callHook("beforeCreate");
   callHook("created");
@@ -1582,7 +1620,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
         const nextAttrs = nextProps?.$attrs || nextProps?.__attrs || {};
         const filteredAttrs = Object.fromEntries(Object.entries(nextAttrs).filter(([name]) => !declaredPropNames.has(camelizeProp(name)) && !name.startsWith("data-teloce-")));
         if (JSON.stringify(state.$attrs) !== JSON.stringify(filteredAttrs)) { state.$attrs = filteredAttrs; changed = true; changedKeys.add("$attrs"); }
-        for (const [key, value] of Object.entries(normalized)) if (!Object.is(state[key], value)) { state[key] = value; changed = true; changedKeys.add(key); }
+        for (const [key, value] of Object.entries(normalized)) if (!Object.is(state[key], value)) { seedProp(key, value); changed = true; changedKeys.add(key); }
         for (const key of Object.keys(propDefinitions)) if (!(key in normalized) && state[key] !== undefined) { state[key] = undefined; changed = true; changedKeys.add(key); }
       } finally { suppressUpdates = false; }
       if (changed) update(changedKeys);
@@ -1595,11 +1633,42 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       destroyed = false;
       schedulerVersion += 1;
       registerQueryListener();
+      subscribeSignals();
       hmrRecord.target = target;
       if (!hmrRegistry.has(hmrKey)) hmrRegistry.set(hmrKey, new Set());
       hmrRegistry.get(hmrKey).add(hmrRecord);
-      if (props && Object.keys(props).length) instance.updateProps(props);
+      if (props && props !== options.props && Object.keys(props).length) {
+        const mountingTarget = target; target = null;
+        try { instance.updateProps(props); } finally { target = mountingTarget; }
+      }
+      const hydrating = Boolean(options.hydrate || target.getAttribute('data-teloce-ssr') === '1');
+      const controls = hydrating ? [...target.querySelectorAll('input,textarea,select')].map(element => ({
+        element, value: element.value, checked: element.checked,
+        start: element.selectionStart, end: element.selectionEnd,
+        active: document.activeElement === element,
+      })) : [];
+      if (hydrating) {
+        const expected = document.createElement('template');
+        expected.innerHTML = renderTemplate(template, state, new Map());
+        const componentTags = new Set(Object.keys(components).map(name => name.toUpperCase()));
+        const marker = target.getAttribute('data-teloce-ssr');
+        if ((marker && marker !== '1') || __hydrationShape(target, componentTags) !== __hydrationShape(expected.content, componentTags)) {
+          const error = new Error('Server and client component structures differ; reconciling this component');
+          if (dev) handleError(error, 'hydration');
+          else reportTeloceError(error, { category: 'hydration', component: options.component });
+        }
+      }
       update();
+      for (const control of controls) {
+        if (!control.element.isConnected) continue;
+        control.element.value = control.value; control.element.checked = control.checked;
+        if (control.active) {
+          control.element.focus();
+          if (control.start != null) control.element.setSelectionRange?.(control.start, control.end);
+        }
+      }
+      target.removeAttribute('data-teloce-ssr');
+      target.removeAttribute('data-teloce-ssr-boundary');
       return instance;
     },
     unmount() {
@@ -1614,6 +1683,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
         element.__teloceInstance = undefined;
       }
       target.replaceChildren();
+      for (const cleanup of signalCleanups.splice(0)) cleanup();
       directTextNodes.clear();
       directBindingNodes.clear();
       regionNodes.clear();

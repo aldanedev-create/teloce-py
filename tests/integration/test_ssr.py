@@ -39,7 +39,7 @@ def test_static_build_emits_jinax_artifact_and_static_manifest(tmp_path):
     source_dir = tmp_path / 'static' / 'js'
     source_dir.mkdir(parents=True)
     (source_dir / 'App.vel').write_text('<template><h1>{{ title }}</h1></template>', encoding='utf-8')
-    result = Builder({'static': True, 'ssr': True, 'clean': True}).build(tmp_path)
+    result = Builder({'static': True, 'ssr': 'legacy', 'clean': True}).build(tmp_path)
     assert result['mode'] == 'static'
     assert (tmp_path / 'dist' / 'static' / 'js' / 'App.html').is_file()
     manifest = json.loads((tmp_path / 'dist' / 'manifest.json').read_text(encoding='utf-8'))

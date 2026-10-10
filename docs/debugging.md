@@ -188,3 +188,11 @@ Do not “fix” generated code directly. Reproduce the problem in the `.vel` so
 - [ ] IndexedDB and service-worker caches are checked.
 - [ ] Deployment logs and environment variables are checked.
 - [ ] The fix is retested in a fresh browser context.
+
+
+## Runtime diagnostics and host integration
+
+The shared runtime exposes an error hook and `teloce:error` browser events.
+Flaxon can combine these with compile/SSR errors in its development dashboard.
+See [SSR and hydration](ssr-and-hydration.md) for the diagnostic contract,
+source mapping limitations and production boundaries.
