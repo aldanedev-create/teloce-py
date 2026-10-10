@@ -89,6 +89,12 @@ export function createSignal(initial) {
     }
     return value;
   };
+  // Components may bind `signal.value`; keep it equivalent to the callable API
+  // so v-model writes notify subscribers instead of creating an inert property.
+  Object.defineProperty(signal, 'value', {
+    get: () => signal(),
+    set: next => { signal(next); },
+  });
   signal.get = () => signal();
   signal.set = next => signal(next);
   signal.update = updater => signal(updater(signal()));

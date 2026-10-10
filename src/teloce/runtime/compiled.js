@@ -637,8 +637,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       element.__teloceHandlers.clear();
     }
     if (element.__teloceModelListener) {
-      element.removeEventListener(element.__teloceModelListener.eventName, element.__teloceModelListener.listener);
-      element.__teloceModelListener = null;
+      removeModelListener(element);
     }
     for (const [name, record] of element.__teloceDirectives?.entries?.() || []) {
       destroyDirectiveRecord(element, name, record);
@@ -1112,7 +1111,59 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     }
   };
 
+  const modelScope = element => {
+    const scopeElement = element.closest?.("[data-teloce-loop-scope]");
+    const local = scopeElement ? loopScopes.get(scopeElement.getAttribute("data-teloce-loop-scope")) : null;
+    if (!local) return state;
+    return new Proxy({ ...state, ...(local || {}) }, {
+      get(object, key, receiver) { return Reflect.has(object, key) ? Reflect.get(object, key, receiver) : state[key]; },
+      set(object, key, value) { if (Reflect.has(state, key)) state[key] = value; else object[key] = value; return true; },
+    });
+  };
+
+  const modelModifiers = element => new Set(String(element.getAttribute("data-teloce-model-modifiers") || "").split(".").filter(Boolean));
+  const normalizeModelValue = (value, modifiers) => {
+    if (modifiers.has("trim") && typeof value === "string") value = value.trim();
+    if (modifiers.has("number") && typeof value === "string" && value.trim() !== "") {
+      const number = Number(value);
+      if (Number.isFinite(number)) value = number;
+    }
+    return value;
+  };
+
+  const syncModelValue = (element, value) => {
+    // Unknown expressions must not erase user input. Composition owns the DOM
+    // until it commits, and normalized equality preserves spaces/caret position.
+    if (value === undefined || element.__teloceModelListener?.composing) return;
+    const record = element.__teloceModelListener;
+    const modifiers = record?.modifiers || modelModifiers(element);
+    const textControl = element.tagName === "TEXTAREA" || (element.tagName === "INPUT" && !["checkbox", "radio"].includes(element.type));
+    if (textControl && modifiers.has("lazy") && document.activeElement === element && record && Object.is(record.lastValue, value)) return;
+    if (record) record.lastValue = value;
+    if (element.type === "checkbox") {
+      element.checked = Array.isArray(value)
+        ? value.map(String).includes(String(element.value)) : Boolean(value);
+    } else if (element.type === "radio") {
+      element.checked = String(value ?? "") === String(element.value);
+    } else if (element.tagName === "SELECT" && element.multiple) {
+      const selected = new Set((Array.isArray(value) ? value : []).map(String));
+      Array.from(element.options).forEach(option => { option.selected = selected.has(String(option.value)); });
+    } else if (String(normalizeModelValue(element.value, modifiers)) !== String(value ?? "")) {
+      element.value = String(value ?? "");
+    }
+  };
+
+  const removeModelListener = element => {
+    const record = element.__teloceModelListener;
+    if (!record) return;
+    element.removeEventListener(record.eventName, record.listener);
+    element.removeEventListener("compositionstart", record.compositionStart);
+    element.removeEventListener("compositionend", record.compositionEnd);
+    element.__teloceModelListener = null;
+  };
+
   const bindEventsAndDirectives = element => {
+    if (element.__teloceModelListener && !element.hasAttribute("data-teloce-model")) removeModelListener(element);
     const seenDirectives = new Set();
     for (const attribute of Array.from(element.attributes || [])) {
       if (attribute.name.startsWith("data-teloce-event-")) {
@@ -1166,50 +1217,40 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
         }
       }
 
-      if (attribute.name === "data-teloce-model" && !element.__teloceModelListener) {
+      if (attribute.name === "data-teloce-model") {
         const expression = attribute.value;
-        const modifiers = new Set(String(element.getAttribute("data-teloce-model-modifiers") || "").split(".").filter(Boolean));
+        const modifiers = modelModifiers(element);
         const eventName = modifiers.has("lazy") || element.type === "checkbox" || element.type === "radio" || element.tagName === "SELECT" ? "change" : "input";
-        const initialValue = __safeEvaluate(expression, state);
-        if (element.type === "checkbox") {
-          element.checked = Array.isArray(initialValue)
-            ? initialValue.map(String).includes(String(element.value))
-            : Boolean(initialValue);
-        } else if (element.type === "radio") {
-          element.checked = String(initialValue ?? "") === String(element.value);
-        } else if (element.tagName === "SELECT" && element.multiple && Array.isArray(initialValue)) {
-          const selected = new Set(initialValue.map(String));
-          Array.from(element.options).forEach(option => { option.selected = selected.has(String(option.value)); });
-        } else if (initialValue !== undefined && initialValue !== null && element.value !== String(initialValue)) {
-          element.value = String(initialValue);
+        const signature = `${expression}:${element.type}:${eventName}:${[...modifiers].join(".")}`;
+        if (element.__teloceModelListener?.signature !== signature) {
+          removeModelListener(element);
+          const listener = event => {
+            if (event?.isComposing || element.__teloceModelListener?.composing) return;
+            const values = modelScope(element);
+            const currentValue = __safeEvaluate(expression, values);
+            let next;
+            if (element.type === "checkbox" && Array.isArray(currentValue)) {
+              next = [...currentValue];
+              const index = next.map(String).indexOf(String(element.value));
+              if (element.checked && index < 0) next.push(element.value);
+              if (!element.checked && index >= 0) next.splice(index, 1);
+            } else if (element.type === "checkbox") next = element.checked;
+            else if (element.type === "radio") { if (!element.checked) return; next = element.value; }
+            else if (element.tagName === "SELECT" && element.multiple) next = Array.from(element.selectedOptions).map(option => option.value);
+            else next = element.value;
+            __setSafePath(expression, normalizeModelValue(next, modifiers), values);
+          };
+          const compositionStart = () => { element.__teloceModelListener.composing = true; };
+          const compositionEnd = () => {
+            element.__teloceModelListener.composing = false;
+            if (!modifiers.has("lazy")) listener();
+          };
+          element.__teloceModelListener = { eventName, listener, signature, modifiers, composing: false, compositionStart, compositionEnd };
+          element.addEventListener(eventName, listener);
+          element.addEventListener("compositionstart", compositionStart);
+          element.addEventListener("compositionend", compositionEnd);
         }
-        const listener = () => {
-          const scopeElement = element.closest?.("[data-teloce-loop-scope]");
-          const loopScope = scopeElement ? loopScopes.get(scopeElement.getAttribute("data-teloce-loop-scope")) : null;
-          const values = new Proxy({ ...state, ...(loopScope || {}) }, {
-            get(object, key, receiver) { return Reflect.has(object, key) ? Reflect.get(object, key, receiver) : state[key]; },
-            set(object, key, value) { if (Reflect.has(state, key)) state[key] = value; else object[key] = value; return true; },
-          });
-          let next;
-          if (element.type === "checkbox" && Array.isArray(__safeEvaluate(expression, values))) {
-            const current = [...__safeEvaluate(expression, values)];
-            const index = current.map(String).indexOf(String(element.value));
-            if (element.checked && index < 0) current.push(element.value);
-            if (!element.checked && index >= 0) current.splice(index, 1);
-            next = current;
-          } else if (element.type === "checkbox") next = element.checked;
-          else if (element.type === "radio") { if (!element.checked) return; next = element.value; }
-          else if (element.tagName === "SELECT" && element.multiple) next = Array.from(element.selectedOptions).map(option => option.value);
-          else next = element.value;
-          if (modifiers.has("trim") && typeof next === "string") next = next.trim();
-          if (modifiers.has("number") && typeof next === "string" && next.trim() !== "") {
-            const number = Number(next);
-            if (Number.isFinite(number)) next = number;
-          }
-          __setSafePath(expression, next, values);
-        };
-        element.__teloceModelListener = { eventName, listener };
-        element.addEventListener(eventName, listener);
+        syncModelValue(element, __safeEvaluate(expression, modelScope(element)));
       }
 
       if (attribute.name.startsWith("data-teloce-resolved-")) {
@@ -1393,11 +1434,8 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
         } else {
           const element = directBindingNodes.get(record.id);
           if (!element) continue;
-          if (record.name === "model") {
-            if (element.type === "checkbox") element.checked = Array.isArray(value)
-              ? value.map(String).includes(String(element.value)) : Boolean(value);
-            else if (element.type === "radio") element.checked = String(value ?? '') === String(element.value);
-            else if (element.value !== String(value ?? "")) element.value = value ?? "";
+          if (record.name === "model" || record.name.startsWith("model.")) {
+            syncModelValue(element, value);
           } else {
             applyBinding(element, record.name, value);
           }
