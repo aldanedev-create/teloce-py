@@ -114,7 +114,9 @@ class SFCParser:
             self.errors.append(f"Only one <template> section is allowed in {filename}")
         template_match = template_matches[0]
         sections.template = template_match["body"].strip()
-        sections.template_line = source[:template_match["start"]].count('\n') + 1
+        template_start = source.find(sections.template, template_match["start"]) if sections.template else template_match["start"]
+        sections.template_line = source[:template_start].count('\n') + 1
+        sections.template_column = template_start - source.rfind('\n', 0, template_start)
         sections.template_attrs = self._parse_attrs(template_match["attrs"])
 
         script_matches = self._find_sections(source, "script")

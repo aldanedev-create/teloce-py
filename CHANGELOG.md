@@ -8,6 +8,16 @@ Release dates below are the first upload dates on [PyPI](https://pypi.org/projec
 
 ## [Unreleased]
 
+### Added
+- Independent AST-based SSR programs, safe public snapshots, named slots, explicit hydration and runtime diagnostics.
+- Manifest-selected SSR entries, bounded render caching and the `teloce prerender` command.
+- Node expression parity and Chromium hydration regression coverage.
+
+### Changed
+- `ssr: true` now produces `.ssr.json` programs; use `ssr: "legacy"` for Jinax artifacts.
+- Preserve computed member expressions, `undefined`, numeric exponents, loop index aliases and original template locations in the canonical AST.
+
+
 ### Changed
 - Initialize keyed-row dependency caches during the first render and attach their DOM references during the existing binding walk, avoiding a second collection/setup pass. Single-root edits in unchanged row order skip whole-list reconciliation.
 - Direct DOM updates now default to enabled, with automatic compatibility fallbacks and an explicit disable switch.

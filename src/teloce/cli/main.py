@@ -10,6 +10,7 @@ from typing import Optional
 
 from teloce.cli.dev import dev_command
 from teloce.cli.build import build_command
+from teloce.cli.prerender import prerender_command
 from teloce.cli.watch import watch_command
 from teloce.cli.debug import debug_command
 from teloce.cli.doctor import doctor_command
@@ -60,6 +61,12 @@ def main(args: Optional[list] = None) -> int:
         required=True
     )
     
+    prerender_parser = subparsers.add_parser("prerender", help="Export an SSR build entry to hydrated HTML")
+    prerender_parser.add_argument("entry", help="Manifest entry, such as ui/App.html")
+    prerender_parser.add_argument("--build-dir", default="dist")
+    prerender_parser.add_argument("--data", help="JSON file containing public props")
+    prerender_parser.add_argument("--output", default="index.html", help="Path within the build directory")
+
     # Dev command
     dev_parser = subparsers.add_parser('dev', help='Start development server')
     dev_parser.add_argument(
@@ -323,6 +330,7 @@ def main(args: Optional[list] = None) -> int:
     command_map = {
         'dev': dev_command,
         'build': build_command,
+        'prerender': prerender_command,
         'watch': watch_command,
         'debug': debug_command,
         'doctor': doctor_command,

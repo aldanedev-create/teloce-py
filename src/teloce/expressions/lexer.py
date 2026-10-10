@@ -39,6 +39,7 @@ class TokenType(Enum):
     OR = auto()
     NULLISH = auto()
     NOT = auto()
+    TYPEOF = auto()
     BITWISE_AND = auto()
     BITWISE_OR = auto()
     BITWISE_XOR = auto()
@@ -98,6 +99,7 @@ class ExpressionLexer:
         'false': TokenType.BOOLEAN,
         'null': TokenType.NULL,
         'undefined': TokenType.UNDEFINED,
+        'typeof': TokenType.TYPEOF,
     }
     
     def __init__(self, source: str):

@@ -259,6 +259,11 @@ class ExpressionParser:
     
     def _parse_unary(self) -> Optional[ExpressionNode]:
         """Parse a unary expression."""
+        if self._match(TokenType.TYPEOF):
+            operand = self._parse_unary()
+            if operand:
+                return UnaryNode("typeof", operand)
+
         if self._match(TokenType.NOT):
             operand = self._parse_unary()
             if operand:
@@ -305,12 +310,12 @@ class ExpressionParser:
         
         if token.type == TokenType.UNDEFINED:
             self._advance()
-            return LiteralNode(None)
+            return IdentifierNode("undefined")
         
         if token.type == TokenType.NUMBER:
             self._advance()
             try:
-                if '.' in token.value:
+                if '.' in token.value or 'e' in token.value.lower():
                     return LiteralNode(float(token.value))
                 return LiteralNode(int(token.value))
             except ValueError:
@@ -363,11 +368,8 @@ class ExpressionParser:
                 index = self._parse_expression()
                 if self._match(TokenType.RBRACKET):
                     if index:
-                        # Convert index to string for computed property
-                        if isinstance(index, LiteralNode):
-                            node = MemberNode(node, str(index.value), computed=True)
-                        else:
-                            node = MemberNode(node, str(index), computed=True)
+                        # Keep the expression AST; repr() is not JavaScript.
+                        node = MemberNode(node, index, computed=True)
                 else:
                     self.errors.append("Expected ']'")
                     return node

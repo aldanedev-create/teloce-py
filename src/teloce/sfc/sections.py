@@ -17,6 +17,7 @@ class SFCSections:
     script: str = ""
     style: str = ""
     template_line: int = 0
+    template_column: int = 1
     script_line: int = 0
     style_line: int = 0
     style_scoped: bool = False

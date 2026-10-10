@@ -1,8 +1,8 @@
 """Real browser smoke test for generated component behavior."""
 
-import shutil
+import importlib.util
+import os
 import subprocess
-import tempfile
 import time
 from pathlib import Path
 
@@ -13,32 +13,29 @@ from teloce.cli.server import start_dev_server
 
 
 def _chrome() -> str | None:
-    candidates = [
-        shutil.which("chrome"),
-        shutil.which("chromium"),
-        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-    ]
-    return next((candidate for candidate in candidates if candidate and Path(candidate).exists()), None)
+    """Keep the shared availability helper while selecting managed Chromium."""
+    if os.getenv("TELOCE_BROWSER_TESTS") != "1" or importlib.util.find_spec("playwright") is None:
+        return None
+    return "playwright"
 
 
 def _dump_dom(url: str, budget: int):
-    """Run Chrome with disposable profiles and retry transient startup stalls."""
-    failure = None
-    for _attempt in range(2):
-        with tempfile.TemporaryDirectory(prefix="teloce-chrome-") as profile:
-            try:
-                return subprocess.run(
-                    [_chrome(), "--headless=new", "--no-sandbox", "--disable-gpu",
-                     "--disable-software-rasterizer", "--disable-extensions", "--disable-sync",
-                     "--disable-background-networking", "--disable-component-update",
-                     "--no-first-run", "--no-default-browser-check",
-                     f"--user-data-dir={profile}", "--dump-dom",
-                     f"--virtual-time-budget={budget}", url],
-                    capture_output=True, text=True, timeout=30,
-                )
-            except subprocess.TimeoutExpired as error:
-                failure = error
-    raise failure
+    """Read rendered HTML with a bounded browser session rather than dump-dom."""
+    from playwright.sync_api import sync_playwright
+
+    if "no_hmr=" not in url:
+        url += ("&" if "?" in url else "?") + "no_hmr=1"
+    errors = []
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(args=["--no-sandbox"])
+        try:
+            page = browser.new_page()
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(url, wait_until="domcontentloaded", timeout=15000)
+            page.wait_for_timeout(budget)
+            return subprocess.CompletedProcess(["playwright", url], 0, page.content(), "\n".join(errors))
+        finally:
+            browser.close()
 
 
 @pytest.mark.skipif(_chrome() is None, reason="Chrome/Chromium is not installed")

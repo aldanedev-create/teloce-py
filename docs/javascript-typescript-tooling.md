@@ -181,7 +181,13 @@ Older applications may still pass an `unsafe_eval` setting. It is retained as
 a compatibility-shaped configuration value but does not enable dynamic code
 execution in current generated or standalone runtimes.
 
-## Jinax and Python frameworks
+## SSR and Python frameworks
+
+New SSR builds use the independent AST renderer in `teloce.server`, with
+explicit public snapshots, manifest entries and hydration. Read
+[SSR and hydration](ssr-and-hydration.md) for the supported expression subset.
+
+### Legacy Jinax adapter
 
 `render_ssr()` accepts a Jinax/Jinja-compatible engine. Flaxon can provide
 Jinax directly, while Flask, Django, and FastAPI applications can pass their
