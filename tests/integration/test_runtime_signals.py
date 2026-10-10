@@ -64,3 +64,22 @@ def test_modular_component_reacts_and_unmounts_with_dom_stub(tmp_path: Path):
     )
     result = subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node is not installed")
+def test_signal_value_accessor_tracks_notifies_and_cleans_up(tmp_path: Path):
+    runtime = Path(__file__).parents[2] / "src/teloce/runtime/signals.js"
+    script = tmp_path / "value-accessor.mjs"
+    script.write_text(
+        f"import {{ createSignal, createEffect }} from {runtime.as_uri()!r};\n"
+        "const signal=createSignal('initial'); const effects=[]; const reports=[];\n"
+        "const effect=createEffect(()=>effects.push(signal.value)); const stop=signal.subscribe(value=>reports.push(value));\n"
+        "signal.value='changed'; await Promise.resolve(); await Promise.resolve();\n"
+        "if(signal()!=='changed'||effects.at(-1)!=='changed'||reports.at(-1)!=='changed') throw Error('accessor lost reactivity');\n"
+        "const calls=effects.length; signal.value='changed'; await Promise.resolve();\n"
+        "if(effects.length!==calls) throw Error('same value notified');\n"
+        "stop();effect.stop();signal.value='';await Promise.resolve();await Promise.resolve();\n"
+        "if(signal()!==''||effects.length!==calls||reports.at(-1)!=='changed') throw Error('cleanup failed');\n"
+    )
+    result = subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr

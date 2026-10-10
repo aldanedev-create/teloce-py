@@ -8,6 +8,11 @@ Release dates below are the first upload dates on [PyPI](https://pypi.org/projec
 
 ## [Unreleased]
 
+### Fixed
+- Make callable signals expose a reactive `.value` accessor so component model bindings and SSR state seeding notify subscribers correctly.
+- Synchronize native `v-model` controls after state changes on direct, structural and fallback paths, using live loop scope for initial values and edits.
+- Preserve normalized `.trim`/`.number` text and focused `.lazy` edits, respect IME composition, synchronize checkbox arrays/radios/selects, and clean up composition handlers.
+
 ### Added
 - Independent AST-based SSR programs, safe public snapshots, named slots, explicit hydration and runtime diagnostics.
 - Manifest-selected SSR entries, bounded render caching and the `teloce prerender` command.
