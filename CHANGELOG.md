@@ -1,5 +1,9 @@
 # Changelog
 
+### Runtime type checks
+
+- Add JSDoc contracts and strict, no-emit JavaScript checking for signals, scheduling, effects/computed exports and lifecycle helpers. Add pinned development tooling and a CI check; runtime stays JavaScript.
+
 All notable changes to Teloce-Py are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).

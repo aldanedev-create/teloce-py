@@ -1,8 +1,13 @@
+/** @typedef {() => unknown} Job */
+
+/** @type {Set<Job>} */
 const pending = new Set();
+/** @type {Set<Job>} */
 const batched = new Set();
 let scheduled = false;
 let batchDepth = 0;
 
+/** @param {Job} job @returns {void} */
 export function queueJob(job) {
   if (batchDepth) {
     batched.add(job);
@@ -15,6 +20,7 @@ export function queueJob(job) {
   }
 }
 
+/** @template T @param {() => T} fn @returns {T} */
 export function batch(fn) {
   batchDepth += 1;
   try {
@@ -32,10 +38,12 @@ export function batch(fn) {
   }
 }
 
+/** @returns {void} */
 export function flushJobs() {
   scheduled = false;
   const jobs = [...pending];
   pending.clear();
+  /** @type {unknown[]} */
   const errors = [];
   for (const job of jobs) {
     try { job(); } catch (error) { errors.push(error); }

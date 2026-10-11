@@ -7,6 +7,16 @@ on:
 permissions:
   contents: read
 jobs:
+  runtime-types:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
   tests:
     timeout-minutes: 10
     runs-on: ubuntu-22.04

@@ -124,3 +124,14 @@ framework and platform.
 ## License
 
 [MIT](LICENSE)
+### Runtime contributor checks
+
+The JavaScript runtime uses JSDoc types with a development-only checker:
+
+```bash
+npm ci --ignore-scripts
+npm run typecheck
+```
+
+See [coverage and workflow](docs/runtime-typechecking.md). Runtime files stay
+`.js`; Python application users do not need Node or TypeScript.
