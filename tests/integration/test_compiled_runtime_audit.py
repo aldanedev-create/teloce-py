@@ -9,6 +9,45 @@ from teloce.compiler.compiler import compile
 
 ROOT = Path(__file__).parents[2]
 CASES = {
+    'scrolly-disposed-observer': """
+let callback;globalThis.IntersectionObserver=class{constructor(cb){callback=cb}observe(){}disconnect(){}};
+const component=create({}, {template:'<section data-teloce-scrolly><p v-step="one"></p><p v-step="two"></p></section>'});const target=host();component.mount(target);const section=target.querySelector('section'),second=section.lastChild;component.unmount();callback([{isIntersecting:true,intersectionRatio:1,target:second}]);assert.equal(section.getAttribute('data-teloce-active-step'),'one');
+""",
+    'virtual-zero-overscan': """
+const body=encodeURIComponent('<p>{{ item.label }}</p>');const component=create({data:()=>({items:Array.from({length:20},(_,id)=>({id,label:String(id)}))})},{template:`<div data-teloce-virtual-for data-teloce-virtual-collection="items" data-teloce-virtual-item="item" data-teloce-virtual-key="item.id" data-teloce-virtual-item-height="40" data-teloce-virtual-overscan="0" data-teloce-virtual-body="${body}"><div class="teloce-virtual-spacer"></div><div class="teloce-virtual-content"></div></div>`});const target=host();component.mount(target);assert.equal(target.querySelectorAll('.teloce-virtual-content p').length,8);component.unmount();
+""",
+
+    'removed-event-directive': """
+const component=create({data:()=>({flag:true,count:0})},{template:'<if condition="flag"><button data-teloce-event-click="count++">First</button><else><button>Second</button></if>'});const target=host();component.mount(target);const button=target.querySelector('button');component.state.flag=false;await settle();assert.equal(target.querySelector('button'),button);button.click();await settle();assert.equal(component.state.count,0);component.unmount();
+""",
+    'removed-show-directive': """
+const component=create({data:()=>({flag:true,visible:false})},{template:'<if condition="flag"><span data-teloce-bind-show="visible">First</span><else><span>Second</span></if>'});const target=host();component.mount(target);component.state.flag=false;await settle();assert.equal(target.querySelector('span').hidden,false);component.unmount();
+""",
+
+    'custom-resource-receiver': """
+let updated=false,destroyed=false; globalThis.teloce={directives:{mark:{mounted(){return {token:42,update(){assert.equal(this.token,42);updated=true},destroy(){assert.equal(this.token,42);destroyed=true}}}}}};
+const component=create({data:()=>({value:1})},{template:'<span v-mark="value"></span>'});component.mount(host());component.state.value=2;await settle();component.unmount();assert.equal(updated,true);assert.equal(destroyed,true);
+""",
+    'action-resource-receiver': """
+let updated=false,destroyed=false;
+const component=create({data:()=>({value:1})},{template:'<span use:mark="value"></span>',actions:{mark(){return {token:42,update(){assert.equal(this.token,42);updated=true},destroy(){assert.equal(this.token,42);destroyed=true}}}}});component.mount(host());component.state.value=2;await settle();component.unmount();assert.equal(updated,true);assert.equal(destroyed,true);
+""",
+    'custom-loop-scope': """
+const seen=[]; globalThis.teloce={directives:{mark:{mounted(element,context){seen.push(context.value)}}}};
+const component=create({data:()=>({items:[{label:'One'},{label:'Two'}]})},{template:'<for item="item" in="items"><span v-mark="item.label"></span></for>'});component.mount(host());assert.deepEqual(seen,['One','Two']);component.unmount();
+""",
+    'action-loop-scope': """
+const seen=[]; const component=create({data:()=>({items:[{label:'One'},{label:'Two'}]})},{template:'<for item="item" in="items"><span use:mark="item.label"></span></for>',actions:{mark(element,value){seen.push(value)}}});component.mount(host());assert.deepEqual(seen,['One','Two']);component.unmount();
+""",
+    'custom-modifier-change': """
+const seen=[]; globalThis.teloce={directives:{mark:{mounted(element,context){seen.push(context.modifiers.join('.'))}}}};
+const component=create({data:()=>({flag:true,value:1})},{template:'<if condition="flag"><span v-mark.first="value"></span><else><span v-mark.second="value"></span></if>'});component.mount(host());component.state.flag=false;await settle();assert.deepEqual(seen,['first','second']);component.unmount();
+""",
+    'custom-function-value': """
+const seen=[]; globalThis.teloce={directives:{mark:{mounted(element,context){seen.push(context.value())},updated(element,context){seen.push(context.value())}}}};
+const component=create({data:()=>({fn:()=>1})},{template:'<span v-mark="fn"></span>'});component.mount(host());component.state.fn=()=>2;await settle();assert.deepEqual(seen,[1,2]);component.unmount();
+""",
+
     'adapter-destroy-context': """
 let disposed=false; globalThis.__teloceLiveAdapters={demo(){return {token:42,destroy(){assert.equal(this.token,42);disposed=true}}}};
 const component=create({}, {template:'<div live="demo"></div>'}); component.mount(host());component.unmount();assert.equal(disposed,true);

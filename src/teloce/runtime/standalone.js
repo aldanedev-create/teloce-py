@@ -3,6 +3,7 @@
 (/** @param {DynamicRecord} root */ function (root) {
   "use strict";
   /** @import {DynamicValue, DynamicRecord, DynamicCallback, RuntimeElement, RuntimeEvent} from './contracts.js' */
+  /** @import {CustomDirective, DirectiveContext} from './directive-contracts.js' */
 
   /** @type {Record<string, DynamicCallback>} */ const filters = {
     uppercase: /** @param {DynamicValue} value */ value => String(value ?? "").toUpperCase(),
@@ -22,7 +23,9 @@
     join: /** @param {DynamicValue} value */ (value, separator = ", ") => Array.isArray(value) ? value.join(separator) : value,
   };
   const plugins = /** @type {DynamicRecord[]} */ ([]);
+  /** @type {Record<string, CustomDirective<DynamicValue>>} */
   const directives = Object.create(null);
+  const loopLocalKeys = Symbol("teloce.loopLocalKeys");
   const components = Object.create(null);
   const helpers = Object.create(null);
   const escapeHtml = /** @param {DynamicValue} value */ value => String(value ?? "").replace(/[&<>\"']/g, c => (/** @type {Record<string, string>} */ ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[c]));
@@ -141,9 +144,12 @@
     const variables = (match[1] || match[2]).split(",").map(/** @param {DynamicValue} value */ value => value.trim());
     const values = evaluate(match[3], scope) || [];
     return Array.from(values).map((value, index) => {
+      /** @type {DynamicRecord} */
       const itemScope = { ...scope, [variables[0]]: value, [variables[1] || "index"]: index, index };
       const token = `loop-${loopScopes.size}`;
-      loopScopes.set(token, itemScope);
+      const localKeys = new Set([...(scope[loopLocalKeys] || []), variables[0], variables[1] || "index", "index"]);
+      itemScope[loopLocalKeys] = localKeys;
+      loopScopes.set(token, Object.fromEntries([...localKeys].map(key => [key, itemScope[key]])));
       const content = render(body, itemScope, loopScopes);
       return `<${tag}${before.replace(/:key="[^"]*"|v-bind:key="[^"]*"/g, "")}${after} data-teloce-loop-scope="${token}">${content}</${tag}>`;
     }).join("");
@@ -215,6 +221,27 @@
     let destroyed = false;
     let mountedComponents = /** @type {DynamicRecord[]} */ ([]);
     let loopScopes = new Map();
+    /** @type {Array<() => void>} */
+    const ownedCleanups = [];
+    /** @param {unknown} error @param {string} phase */
+    const reportDirectiveError = (error, phase) => {
+      const failure = error instanceof Error ? error : null;
+      target.dispatchEvent(new CustomEvent("teloce:error", { bubbles: true, detail: { category: "runtime", phase, message: String(failure?.message || error), stack: failure?.stack || "" } }));
+    };
+    const cleanupDirectives = () => {
+      for (const cleanup of ownedCleanups.splice(0)) {
+        try { cleanup(); } catch (error) { reportDirectiveError(error, "directive:cleanup"); }
+      }
+    };
+    /** @param {RuntimeElement} element @returns {DynamicRecord} */
+    const scopeFor = element => {
+      const local = loopScopes.get(element.closest("[data-teloce-loop-scope]")?.getAttribute("data-teloce-loop-scope"));
+      if (!local) return state;
+      return new Proxy({ ...state, ...local }, {
+        get(object, key) { return Reflect.has(local, key) ? local[key] : state[key]; },
+        set(object, key, value) { if (Reflect.has(local, key)) { local[key] = value; object[key] = value; } else state[key] = value; return true; },
+      });
+    };
     const proxyCache = new WeakMap();
     const makeReactive = /** @param {DynamicValue} value */ value => {
       if (!value || typeof value !== "object") return value;
@@ -239,6 +266,8 @@
       mount: () => { destroyed = false; update(); return instance; },
       unmount: () => {
         if (destroyed) return instance;
+        destroyed = true;
+        cleanupDirectives();
         cleanupComponents();
         for (const plugin of plugins) {
           try { plugin.unmounted?.(target, state); plugin.hooks?.unmount?.(target, { state }); } catch (_) {}
@@ -251,6 +280,7 @@
     update = () => {
       if (destroyed) return;
       for (const plugin of plugins) plugin.hooks?.beforeRender?.(state, { target });
+      cleanupDirectives();
       cleanupComponents();
       loopScopes = new Map();
       target.innerHTML = render(source, state, loopScopes);
@@ -260,11 +290,15 @@
           if (attribute.name.startsWith("data-teloce-event-")) {
             const eventKey = attribute.name.slice("data-teloce-event-".length); const [eventName, ...modifiers] = eventKey.split(".");
             const options = { once: modifiers.includes("once"), capture: modifiers.includes("capture"), passive: modifiers.includes("passive") };
-            element.addEventListener(eventName, /** @param {RuntimeEvent} event */ event => { if (modifiers.includes("self") && event.target !== element) return; if (modifiers.includes("enter") && event.key !== "Enter") return; if (modifiers.includes("esc") && event.key !== "Escape") return; if (modifiers.includes("ctrl") && !event.ctrlKey) return; if (modifiers.includes("shift") && !event.shiftKey) return; if (modifiers.includes("alt") && !event.altKey) return; if (modifiers.includes("meta") && !event.metaKey) return; if (modifiers.includes("right") && event.button !== 2) return; if (modifiers.includes("middle") && event.button !== 1) return; if (modifiers.includes("left") && event.button !== 0) return; if (modifiers.includes("prevent")) event.preventDefault(); if (modifiers.includes("stop")) event.stopPropagation(); state.event = event; state.$event = event; const loopScope = loopScopes.get(element.closest("[data-teloce-loop-scope]")?.getAttribute("data-teloce-loop-scope")); runEventExpression(attribute.value, loopScope ? { ...state, ...loopScope } : state, event); }, options);
+            const listener = /** @param {RuntimeEvent} event */ event => { if (modifiers.includes("self") && event.target !== element) return; if (modifiers.includes("enter") && event.key !== "Enter") return; if (modifiers.includes("esc") && event.key !== "Escape") return; if (modifiers.includes("ctrl") && !event.ctrlKey) return; if (modifiers.includes("shift") && !event.shiftKey) return; if (modifiers.includes("alt") && !event.altKey) return; if (modifiers.includes("meta") && !event.metaKey) return; if (modifiers.includes("right") && event.button !== 2) return; if (modifiers.includes("middle") && event.button !== 1) return; if (modifiers.includes("left") && event.button !== 0) return; if (modifiers.includes("prevent")) event.preventDefault(); if (modifiers.includes("stop")) event.stopPropagation(); state.event = event; state.$event = event; runEventExpression(attribute.value, scopeFor(element), event); };
+            element.addEventListener(eventName, listener, options);
+            ownedCleanups.push(() => element.removeEventListener(eventName, listener, options));
           }
           if (attribute.name === "data-teloce-model") {
             const expression = attribute.value; const eventName = element.type === "checkbox" || element.tagName === "SELECT" ? "change" : "input";
-            element.addEventListener(eventName, () => assign(expression, element.type === "checkbox" ? element.checked : element.value, state));
+            const listener = () => assign(expression, element.type === "checkbox" ? element.checked : element.value, scopeFor(element));
+            element.addEventListener(eventName, listener);
+            ownedCleanups.push(() => element.removeEventListener(eventName, listener));
           }
           if (attribute.name.startsWith("data-teloce-bind-")) {
             const name = attribute.name.slice("data-teloce-bind-".length);
@@ -275,17 +309,27 @@
             else if (value === "false" || value === "null" || value === "undefined") element.removeAttribute(name);
             else element.setAttribute(name, value);
           }
-          const directiveMatch = attribute.name.match(/^v-([\w-]+)$/);
+          const directiveMatch = attribute.name.match(/^v-([\w-]+)(?:\.(.+))?$/);
           const directive = directiveMatch && directives[directiveMatch[1]];
-          if (directive?.render) {
+          if (directiveMatch && directive && (directive.render || directive.mounted)) {
             const expression = attribute.value;
-            directive.render(element, {
-              name: directiveMatch[1],
-              expression,
-              value: evaluate(expression, state),
-              state,
-              modifiers: [],
-            });
+            /** @type {DirectiveContext<DynamicValue>} */
+            const context = { name: directiveMatch[1], expression,
+              value: evaluate(expression, scopeFor(element)), state: scopeFor(element),
+              modifiers: directiveMatch[2]?.split(".").filter(Boolean) || [] };
+            try {
+              const result = (directive.render || directive.mounted)?.call(directive, /** @type {Element} */ (element), context);
+              const resource = result && typeof result === "object" ? result : null;
+              ownedCleanups.push(() => {
+                const hooks = [
+                  () => directive.beforeUnmount?.(/** @type {Element} */ (element), context),
+                  () => typeof result === "function" ? result() : resource?.destroy?.(),
+                  () => directive.destroy?.(/** @type {Element} */ (element), context),
+                  () => directive.unmounted?.(/** @type {Element} */ (element), context),
+                ];
+                for (const hook of hooks) { try { hook(); } catch (error) { reportDirectiveError(error, `directive:${context.name}:cleanup`); } }
+              });
+            } catch (error) { reportDirectiveError(error, `directive:${context.name}:mounted`); }
           }
         }
       });

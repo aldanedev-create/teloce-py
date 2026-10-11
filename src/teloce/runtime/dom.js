@@ -1,5 +1,6 @@
 /** DOM construction, event binding and reactive structural helpers. @module */
 /** @import {DynamicValue, DynamicRecord, DynamicCallback, RuntimeElement, RuntimeEvent} from './contracts.js' */
+/** @import {EventModifier, ModelValue, ClassValue} from './directive-contracts.js' */
 export const __lis = /** @param {number[]} values */ values => {
   const tails = [], previous = new Int32Array(values.length).fill(-1);
   for (let i = 0; i < values.length; i++) {
@@ -27,7 +28,7 @@ export const __lis = /** @param {number[]} values */ values => {
   else element.setAttribute(name, String(value));
 }
 
-/** @param {RuntimeElement} element @param {string} name @param {DynamicCallback} handler @param {DynamicRecord} options */ export function bindEvent(element, name, handler, options) {
+/** @param {RuntimeElement} element @param {string} name @param {DynamicCallback} handler @param {AddEventListenerOptions} [options] */ export function bindEvent(element, name, handler, options = {}) {
   element.addEventListener(name, handler, options);
   return () => element.removeEventListener(name, handler, options);
 }
@@ -42,7 +43,7 @@ export const __lis = /** @param {number[]} values */ values => {
   return () => unbind.forEach(/** @param {DynamicValue} remove */ remove => remove());
 }
 
-/** @param {RuntimeElement} element @param {string} name @param {DynamicCallback} handler */ export function createEventHandlerWithModifiers(element, name, handler) {
+/** v-on/@event adapter: filters precede prevent/stop and native listener options. @param {RuntimeElement} element @param {string} name @param {DynamicCallback} handler */ export function createEventHandlerWithModifiers(element, name, handler) {
   const [eventName, ...modifiers] = String(name).split('.');
   const listener = /** @param {RuntimeEvent} event */ event => {
     if (modifiers.includes('self') && event.target !== element) return;
@@ -130,7 +131,7 @@ export const __lis = /** @param {number[]} values */ values => {
   return { update, unmount() { unsubscribe?.(); for (const record of records.values()) record.unmount?.(); records.clear(); container.replaceChildren(); } };
 }
 
-/** @param {RuntimeElement} container @param {DynamicValue} source @param {DynamicCallback} whenTrue */ export function createIf(container, source, whenTrue, whenFalse = () => null) {
+/** Programmatic v-if equivalent; branch factories return DOM nodes. Owns the source subscription. @param {RuntimeElement} container @param {DynamicValue} source @param {DynamicCallback} whenTrue */ export function createIf(container, source, whenTrue, whenFalse = () => null) {
   /** @type {boolean | undefined} */
   let previous;
   let initialized = false;
@@ -148,7 +149,7 @@ export const __lis = /** @param {number[]} values */ values => {
   return { update, unmount() { unsubscribe?.(); container.replaceChildren(); } };
 }
 
-/** @param {RuntimeElement} element @param {DynamicValue} signal */ export function createModel(element, signal) {
+/** Programmatic text/boolean v-model adapter. Compiler directives additionally support modifiers, arrays, radios and multi-select. Owns listener/subscription cleanup. @param {RuntimeElement} element @param {DynamicValue} signal */ export function createModel(element, signal) {
   const read = () => typeof signal === 'function' ? signal() : signal?.get?.();
   const write = /** @param {DynamicValue} [value] */ value => typeof signal?.set === 'function' ? signal.set(value) : typeof signal === 'function' && signal.set ? signal.set(value) : undefined;
   const update = /** @param {DynamicValue} [value] */ value => {
@@ -164,7 +165,7 @@ export const __lis = /** @param {number[]} values */ values => {
   return { update, unmount() { unsubscribe?.(); element.removeEventListener(eventName, listener); } };
 }
 
-/** @param {RuntimeElement} element @param {DynamicValue} source */ export function createClass(element, source) {
+/** :class adapter preserves static classes while replacing reactive class tokens. @param {RuntimeElement} element @param {DynamicValue} source */ export function createClass(element, source) {
   const staticClass = element.getAttribute('data-teloce-static-class') ?? element.className ?? '';
   element.setAttribute('data-teloce-static-class', staticClass);
   const update = /** @param {DynamicValue} [value] */ value => {

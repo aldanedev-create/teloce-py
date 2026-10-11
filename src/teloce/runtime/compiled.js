@@ -1,5 +1,6 @@
 /** Compiler-generated component rendering, hydration, bindings and diagnostics. @module */
 /** @import {DynamicValue, DynamicRecord, DynamicCallback, RuntimeElement, RuntimeEvent, CompiledOptions, MountedChild, RuntimeDiagnostic, DirectBinding, DirectRegion, KeyedRowPlan, CompiledDefinition, QueryDescriptor, RowCache} from './contracts.js' */
+/** @import {CustomDirective, DirectiveContext, DirectiveRecord, DomAction, ActionRecord, ModelRecord, ModelModifier, EventRecord} from './directive-contracts.js' */
 // Framework-independent diagnostics. Hosts subscribe without owning Teloce.
 /** @type {Set<(report: RuntimeDiagnostic) => void>} */
 const __teloceErrorListeners = new Set();
@@ -306,7 +307,7 @@ const __teloceCreateCompiledComponent = /** @param {CompiledDefinition} definiti
     return node.innerHTML || /** @type {RuntimeElement | undefined} */ (node.content?.firstChild)?.outerHTML || "";
   };
 
-  const applyBinding = /** @param {RuntimeElement} element @param {string} name @param {DynamicValue} value */ (element, name, value) => {
+  const applyBinding = /** :class/:style/:attrs merge managed values; text/html/show/hide and native attributes share this path. Unsafe URLs/handler strings are blocked. @param {RuntimeElement} element @param {string} name @param {DynamicValue} value */ (element, name, value) => {
     if (name === "key") return;
     const securityName = name.toLowerCase();
     if (securityName.startsWith("on") || securityName === "srcdoc") { element.removeAttribute(name); return; }
@@ -352,6 +353,7 @@ const __teloceCreateCompiledComponent = /** @param {CompiledDefinition} definiti
       for (const [key, item] of Object.entries(value)) if (element.style[key] !== String(item ?? "")) element.style[key] = item ?? "";
       element.__teloceDynamicStyles = new Set(Object.keys(value));
     } else if (name === "show" || name === "hide") {
+      element.__teloceManagedAttributes.add("hidden");
       const hidden = name === "show" ? !Boolean(value) : Boolean(value);
       if (element.hidden !== hidden) element.hidden = hidden;
     } else if (name === "html") {
@@ -379,7 +381,7 @@ const __teloceCreateCompiledComponent = /** @param {CompiledDefinition} definiti
     }
   };
 
-  const resolveIfBlocks = /** @param {DynamicValue} source @param {DynamicRecord} scope */ (source, scope) => {
+  const resolveIfBlocks = /** Resolve nested v-if/v-else-if/v-else branches using JavaScript truthiness. @param {DynamicValue} source @param {DynamicRecord} scope */ (source, scope) => {
     let result = "";
     let cursor = 0;
     while (cursor < source.length) {
@@ -451,7 +453,7 @@ const __teloceCreateCompiledComponent = /** @param {CompiledDefinition} definiti
     }),
   });
 
-  const renderForBlocks = /** @param {DynamicValue} source @param {DynamicRecord} scope @param {DynamicValue} loopScopes */ (source, scope, loopScopes) => {
+  const renderForBlocks = /** v-for preserves live row locals, keys and index aliases; locals feed models/events/custom hooks. @param {DynamicValue} source @param {DynamicRecord} scope @param {DynamicValue} loopScopes */ (source, scope, loopScopes) => {
     let result = source;
     let start = result.indexOf("<for ");
     while (start >= 0) {
@@ -636,15 +638,15 @@ const __teloceCreateCompiledComponent = /** @param {CompiledDefinition} definiti
     return props;
   };
 
-  const destroyDirectiveRecord = /** @param {RuntimeElement} element @param {string} name @param {DynamicRecord} record */ (element, name, record) => {
+  const destroyDirectiveRecord = /** Run all disposal hooks even if one fails. @param {RuntimeElement} element @param {string} name @param {DirectiveRecord<DynamicValue> | undefined} record */ (element, name, record) => {
     if (!record) return;
-    try { record.directive?.beforeUnmount?.(element, record.context); }
+    try { record.directive?.beforeUnmount?.(/** @type {Element} */ (element), record.context); }
     catch (error) { handleError(error, `directive:${name}:beforeUnmount`); }
     try { record.cleanup?.(); }
     catch (error) { handleError(error, `directive:${name}:cleanup`); }
-    try { record.directive?.destroy?.(element, record.context); }
+    try { record.directive?.destroy?.(/** @type {Element} */ (element), record.context); }
     catch (error) { handleError(error, `directive:${name}:destroy`); }
-    try { record.directive?.unmounted?.(element, record.context); }
+    try { record.directive?.unmounted?.(/** @type {Element} */ (element), record.context); }
     catch (error) { handleError(error, `directive:${name}:unmounted`); }
   };
 
@@ -806,11 +808,11 @@ const __teloceCreateCompiledComponent = /** @param {CompiledDefinition} definiti
     } catch (error) { handleError(error, name); }
   };
 
-  const readActionParams = /** @param {string} expression */ expression => expression && expression.trim()
-    ? evaluate(__teloceDecodeAttribute(expression), state)
+  const readActionParams = /** Evaluate use:action parameters in the owning row. @param {string} expression @param {DynamicRecord} [scope] */ (expression, scope = state) => expression && expression.trim()
+    ? evaluate(__teloceDecodeAttribute(expression), scope)
     : undefined;
 
-  const renderVirtualList = /** @param {RuntimeElement} element */ element => {
+  const renderVirtualList = /** v-virtual-for bounds rows to the viewport; owns scroll/frame subscriptions and per-row scopes. Overscan zero is valid. @param {RuntimeElement} element */ element => {
     const signature = [
       element.getAttribute("data-teloce-virtual-collection"),
       element.getAttribute("data-teloce-virtual-key"),
@@ -847,7 +849,8 @@ const __teloceCreateCompiledComponent = /** @param {CompiledDefinition} definiti
       const raw = evaluate(collectionExpression, state);
       const values = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? Object.values(raw) : [];
       const rowHeight = Math.max(1, Number(evaluate(rowHeightExpression, state) || rowHeightExpression) || 40);
-      const overscan = Math.max(0, Number(evaluate(overscanExpression, state) || overscanExpression) || 5);
+      const overscanValue = Number(evaluate(overscanExpression, state) ?? overscanExpression);
+      const overscan = Number.isFinite(overscanValue) ? Math.max(0, Math.floor(overscanValue)) : 5;
       const minHeight = Number(evaluate(minHeightExpression, state) || minHeightExpression);
       // With no authored viewport height, a full-height spacer would expand
       // the container and defeat virtualization on the next update.
@@ -899,13 +902,15 @@ const __teloceCreateCompiledComponent = /** @param {CompiledDefinition} definiti
     renderVisible();
   };
 
-  const bindScrolly = /** @param {RuntimeElement} element */ element => {
+  const bindScrolly = /** v-scrolly/v-step activate observed or focused steps; queued callbacks must not outlive cleanup. @param {RuntimeElement} element */ element => {
     const steps = Array.from(element.querySelectorAll("[v-step], [data-v-step]"));
     if (!steps.length) return;
     if (element.__teloceScrollyCleanup && element.__teloceScrollySteps?.length === steps.length &&
         element.__teloceScrollySteps.every(/** @param {DynamicValue} step @param {number} index */ (step, index) => step === steps[index])) return;
     if (element.__teloceScrollyCleanup) element.__teloceScrollyCleanup();
-    const activate = /** @param {DynamicValue} step */ step => {
+    let disposed = false;
+    const activate = /** @param {Element} step */ step => {
+      if (disposed) return;
       const name = step.getAttribute("v-step") || step.getAttribute("data-v-step") || "";
       steps.forEach(item => item.toggleAttribute("data-teloce-step-active", item === step));
       element.setAttribute("data-teloce-active-step", name);
@@ -925,6 +930,7 @@ const __teloceCreateCompiledComponent = /** @param {CompiledDefinition} definiti
     activate(steps[0]);
     element.__teloceScrollySteps = steps;
     element.__teloceScrollyCleanup = () => {
+      disposed = true;
       observer?.disconnect?.();
       steps.forEach(step => step.removeEventListener("focus", focusHandlers.get(step)));
       element.__teloceScrollySteps = null;
@@ -932,7 +938,7 @@ const __teloceCreateCompiledComponent = /** @param {CompiledDefinition} definiti
     };
   };
 
-  const bindAnnotation = /** @param {RuntimeElement} element */ element => {
+  const bindAnnotation = /** v-chart-annotation accepts AnnotationValue, writes plain text, and removes its managed aside on cleanup. @param {RuntimeElement} element */ element => {
     const expression = element.getAttribute("data-teloce-chart-annotation") || "";
     const value = evaluate(__teloceDecodeAttribute(expression), state);
     if (!value || typeof value !== "object") {
@@ -960,7 +966,7 @@ const __teloceCreateCompiledComponent = /** @param {CompiledDefinition} definiti
     element.__teloceAnnotationCleanup = () => { annotation.remove(); element.__teloceAnnotation = null; element.__teloceAnnotationSignature = null; element.__teloceAnnotationCleanup = null; };
   };
 
-  const bindPoll = /** @param {RuntimeElement} element */ element => {
+  const bindPoll = /** poll owns one in-flight fetch, backoff timer and visibility listener; late results are ignored after disposal. @param {RuntimeElement} element */ element => {
     const url = element.getAttribute("poll");
     if (!url) return;
     const signature = [url, element.getAttribute("interval"), element.getAttribute("poll-target")].join("\u0000");
@@ -1008,7 +1014,7 @@ const __teloceCreateCompiledComponent = /** @param {CompiledDefinition} definiti
     element.__telocePollCleanup = () => { stopped = true; controller?.abort?.(); if (timer !== null) clearTimeout(timer); document.removeEventListener("visibilitychange", onVisibility); element.__telocePollSignature = null; element.__telocePollCleanup = null; };
   };
 
-  const bindLive = /** @param {RuntimeElement} element */ element => {
+  const bindLive = /** live owns a WebSocket or LiveAdapter plus reconnect/visibility resources; callbacks are disposal-safe. @param {RuntimeElement} element */ element => {
     const source = element.getAttribute("live");
     if (!source) return;
     const targetPath = element.getAttribute("live-target");
@@ -1088,7 +1094,7 @@ const __teloceCreateCompiledComponent = /** @param {CompiledDefinition} definiti
     connect();
   };
 
-  const bindDataTable = /** @param {RuntimeElement} element */ element => {
+  const bindDataTable = /** data-table passes TableOptions to the factory and updates/unmounts the managed instance. @param {RuntimeElement} element */ element => {
     const expression = element.getAttribute("data-teloce-data-table") || "";
     if (!expression || typeof tableFactory !== "function") return;
     const value = evaluate(__teloceDecodeAttribute(expression), state);
@@ -1107,7 +1113,7 @@ const __teloceCreateCompiledComponent = /** @param {CompiledDefinition} definiti
     } catch (error) { handleError(error, "data-table"); }
   };
 
-  const bindAdvancedDirectives = /** @param {RuntimeElement} element */ element => {
+  const bindAdvancedDirectives = /** Dispatch integration metadata and use:action; replacing/removing an action disposes the old resource. @param {RuntimeElement} element */ element => {
     if (element.hasAttribute("data-teloce-virtual-for")) renderVirtualList(element);
     else element.__teloceVirtualCleanup?.();
     if (element.hasAttribute("data-teloce-scrolly")) bindScrolly(element);
@@ -1140,19 +1146,25 @@ const __teloceCreateCompiledComponent = /** @param {CompiledDefinition} definiti
       const action = actions[actionName]
         || (typeof (/** @type {DynamicRecord} */ (globalThis))[actionName] === "function" ? (/** @type {DynamicRecord} */ (globalThis))[actionName] : undefined);
       if (typeof action !== "function") { if (dev) console.warn(`Teloce action not found: ${name}`); continue; }
-      const params = readActionParams(attribute.value);
+      const params = readActionParams(attribute.value, modelScope(element));
       const signature = `${actionName}:${attribute.name}`;
-      element.__teloceActions ||= new Map();
-      const previous = element.__teloceActions.get(actionName);
+      /** @type {Map<string, ActionRecord>} */
+      const actionRecords = element.__teloceActions ||= new Map();
+      const previous = actionRecords.get(actionName);
       if (previous && previous.signature === signature && sameActionParams(previous.params, params)) continue;
       if (previous && previous.signature === signature && typeof previous.update === "function") {
         try { previous.update(params); previous.params = params; continue; } catch (error) { handleError(error, `action:${actionName}:update`); }
       }
       try { previous?.destroy?.(); } catch (error) { handleError(error, `action:${actionName}`); }
+      actionRecords.delete(actionName);
       try {
-        const result = action(element, params);
-        const record = { signature, params, destroy: typeof result === "function" ? result : result?.destroy, update: result?.update };
-        element.__teloceActions.set(actionName, record);
+        const result = /** @type {DomAction<DynamicValue>} */ (action)(/** @type {Element} */ (element), params);
+        const resource = result && typeof result === "object" ? result : null;
+        /** @type {ActionRecord} */
+        const record = { signature, params,
+          destroy: typeof result === "function" ? result : resource?.destroy ? () => resource.destroy?.() : undefined,
+          update: resource?.update ? next => resource.update?.(next) : undefined };
+        actionRecords.set(actionName, record);
       } catch (error) { handleError(error, `action:${actionName}`); }
     }
     for (const [name, record] of element.__teloceActions || []) {
@@ -1162,18 +1174,18 @@ const __teloceCreateCompiledComponent = /** @param {CompiledDefinition} definiti
     }
   };
 
-  const modelScope = /** @param {RuntimeElement} element */ element => {
+  const modelScope = /** Models, actions and custom directives share nearest-loop locals and live global state. @param {RuntimeElement} element */ element => {
     const scopeElement = element.closest?.("[data-teloce-loop-scope]");
     const local = scopeElement ? loopScopes.get(scopeElement.getAttribute("data-teloce-loop-scope")) : null;
     if (!local) return state;
     return new Proxy({ ...state, ...(local || {}) }, {
-      get(object, key, receiver) { return Reflect.has(object, key) ? Reflect.get(object, key, receiver) : state[key]; },
-      set(object, key, value) { if (Reflect.has(state, key)) state[key] = value; else object[key] = value; return true; },
+      get(object, key) { return Reflect.has(local, key) ? local[key] : state[key]; },
+      set(object, key, value) { if (Reflect.has(local, key)) { local[key] = value; object[key] = value; } else state[key] = value; return true; },
     });
   };
 
-  const modelModifiers = /** @param {RuntimeElement} element */ element => new Set(String(element.getAttribute("data-teloce-model-modifiers") || "").split(".").filter(Boolean));
-  const normalizeModelValue = /** @param {DynamicValue} value @param {DynamicValue} modifiers */ (value, modifiers) => {
+  const modelModifiers = /** Parse v-model.trim/.number/.lazy; custom directive modifiers are separate. @param {RuntimeElement} element */ element => new Set(String(element.getAttribute("data-teloce-model-modifiers") || "").split(".").filter(Boolean));
+  const normalizeModelValue = /** Normalize finite numbers/text without stripping active DOM edits. @param {DynamicValue} value @param {ReadonlySet<string>} modifiers */ (value, modifiers) => {
     if (modifiers.has("trim") && typeof value === "string") value = value.trim();
     if (modifiers.has("number") && typeof value === "string" && value.trim() !== "") {
       const number = Number(value);
@@ -1182,10 +1194,11 @@ const __teloceCreateCompiledComponent = /** @param {CompiledDefinition} definiti
     return value;
   };
 
-  const syncModelValue = /** @param {RuntimeElement} element @param {DynamicValue} value */ (element, value) => {
+  const syncModelValue = /** Synchronize text, checkbox arrays, radios and selects; preserve composition and normalized active edits. @param {RuntimeElement} element @param {DynamicValue} value */ (element, value) => {
     // Unknown expressions must not erase user input. Composition owns the DOM
     // until it commits, and normalized equality preserves spaces/caret position.
     if (value === undefined || element.__teloceModelListener?.composing) return;
+    /** @type {ModelRecord | null | undefined} */
     const record = element.__teloceModelListener;
     const modifiers = record?.modifiers || modelModifiers(element);
     const textControl = element.tagName === "TEXTAREA" || (element.tagName === "INPUT" && !["checkbox", "radio"].includes(element.type));
@@ -1204,7 +1217,8 @@ const __teloceCreateCompiledComponent = /** @param {CompiledDefinition} definiti
     }
   };
 
-  const removeModelListener = /** @param {RuntimeElement} element */ element => {
+  const removeModelListener = /** Remove input/change and both composition listeners as a single owned resource. @param {RuntimeElement} element */ element => {
+    /** @type {ModelRecord | null | undefined} */
     const record = element.__teloceModelListener;
     if (!record) return;
     element.removeEventListener(record.eventName, record.listener);
@@ -1213,17 +1227,21 @@ const __teloceCreateCompiledComponent = /** @param {CompiledDefinition} definiti
     element.__teloceModelListener = null;
   };
 
-  const bindEventsAndDirectives = /** @param {RuntimeElement} element */ element => {
+  const bindEventsAndDirectives = /** Bind @event filters/options, native v-model and custom v-name.modifiers. @param {RuntimeElement} element */ element => {
     if (element.__teloceModelListener && !element.hasAttribute("data-teloce-model")) removeModelListener(element);
     const seenDirectives = new Set();
+    const seenEvents = new Set();
+    /** @type {Map<string, EventRecord>} */
+    const eventRecords = element.__teloceHandlers || new Map();
+    element.__teloceHandlers = eventRecords;
     for (const attribute of Array.from(element.attributes || [])) {
       if (attribute.name.startsWith("data-teloce-event-")) {
+        seenEvents.add(attribute.name);
         const eventKey = attribute.name.slice("data-teloce-event-".length);
         const [eventName, ...modifiers] = eventKey.split(".");
         const actualEvent = nativeEvents.has(eventName) ? eventName : `teloce:${eventName}`;
         const signature = `${eventKey}=${attribute.value}`;
-        if (!element.__teloceHandlers) element.__teloceHandlers = new Map();
-        const previous = element.__teloceHandlers.get(attribute.name);
+        const previous = eventRecords.get(attribute.name);
         if (!previous || previous.signature !== signature) {
           if (previous) element.removeEventListener(previous.actualEvent, previous.listener, previous.options);
           const listener = /** @param {RuntimeEvent} event */ event => {
@@ -1263,7 +1281,7 @@ const __teloceCreateCompiledComponent = /** @param {CompiledDefinition} definiti
             } catch (error) { handleError(error, `event:${eventName}`, attribute.value); }
           };
           const eventOptions = { once: modifiers.includes("once"), capture: modifiers.includes("capture"), passive: modifiers.includes("passive") };
-          element.__teloceHandlers.set(attribute.name, { signature, actualEvent, listener, options: eventOptions });
+          eventRecords.set(attribute.name, { signature, actualEvent, listener, options: eventOptions });
           element.addEventListener(actualEvent, listener, eventOptions);
         }
       }
@@ -1312,22 +1330,27 @@ const __teloceCreateCompiledComponent = /** @param {CompiledDefinition} definiti
       }
 
       const directiveMatch = attribute.name.match(/^v-([\w-]+)(?:\.(.+))?$/);
-      const directive = directiveMatch && (/** @type {DynamicRecord} */ (globalThis)).teloce?.directives?.[directiveMatch[1]];
-      if (directive && (directive.render || directive.mounted)) {
+      const registry = /** @type {{teloce?: {directives?: Record<string, CustomDirective<DynamicValue>>}}} */ (globalThis);
+      const directive = directiveMatch && registry.teloce?.directives?.[directiveMatch[1]];
+      if (directiveMatch && directive && (directive.render || directive.mounted)) {
         const name = directiveMatch[1];
         seenDirectives.add(name);
-        const signature = `${name}=${attribute.value}`;
-        if (!element.__teloceDirectives) element.__teloceDirectives = new Map();
-        const previous = element.__teloceDirectives.get(name);
-        const value = evaluate(attribute.value, state);
+        const signature = `${attribute.name}=${attribute.value}`;
+        /** @type {Map<string, DirectiveRecord<DynamicValue>>} */
+        const directiveRecords = element.__teloceDirectives ||= new Map();
+        const previous = directiveRecords.get(name);
+        const scope = modelScope(element);
+        const value = evaluate(attribute.value, scope);
         let valueSignature;
-        try { valueSignature = JSON.stringify(value); } catch (_) { valueSignature = String(value); }
+        let serializable = true;
+        try { valueSignature = JSON.stringify(value); } catch (_) { serializable = false; }
+        /** @type {DirectiveContext<DynamicValue>} */
         const context = {
           name,
           expression: attribute.value,
           value,
           oldValue: previous?.context?.value,
-          state,
+          state: scope,
           modifiers: directiveMatch[2]?.split(".").filter(Boolean) || [],
         };
         if (!previous || previous.signature !== signature || previous.directive !== directive) {
@@ -1335,25 +1358,35 @@ const __teloceCreateCompiledComponent = /** @param {CompiledDefinition} definiti
           let result;
           try {
             const mountHook = directive.render || directive.mounted;
-            result = mountHook.call(directive, element, context);
-          } catch (error) { handleError(error, `directive:${name}:mounted`); }
-          element.__teloceDirectives.set(name, {
+            result = mountHook?.call(directive, /** @type {Element} */ (element), context);
+          } catch (error) {
+            directiveRecords.delete(name);
+            handleError(error, `directive:${name}:mounted`);
+            continue;
+          }
+          const resource = result && typeof result === "object" ? result : null;
+          directiveRecords.set(name, {
             signature,
             valueSignature,
             directive,
             context,
-            cleanup: typeof result === "function" ? result : result?.destroy,
-            update: result?.update,
+            cleanup: typeof result === "function" ? result : resource?.destroy ? () => resource.destroy?.() : undefined,
+            update: resource?.update ? next => resource.update?.(next) : undefined,
           });
-        } else if (previous.valueSignature !== valueSignature) {
+        } else if (!serializable || previous.valueSignature !== valueSignature || !Object.is(previous.context.value, value)) {
           try {
             if (previous.update) previous.update(context);
-            else directive.updated?.call(directive, element, context);
+            else directive.updated?.call(directive, /** @type {Element} */ (element), context);
           } catch (error) { handleError(error, `directive:${name}:updated`); }
           previous.valueSignature = valueSignature;
           previous.context = context;
         }
       }
+    }
+    for (const [name, record] of eventRecords) {
+      if (seenEvents.has(name)) continue;
+      element.removeEventListener(record.actualEvent, record.listener, record.options);
+      eventRecords.delete(name);
     }
     for (const [name, record] of element.__teloceDirectives || []) {
       if (seenDirectives.has(name)) continue;
