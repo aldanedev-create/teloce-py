@@ -1,3 +1,9 @@
+## Async component lifecycle fixes
+
+- Allow explicit remounts to retry failed lazy imports.
+- Stop the previous component and clear its host when remounting.
+- Preserve shared pending loads and reject stale mounts after cleanup.
+
 ## Runtime JSDoc coverage
 
 - Check every maintained runtime JavaScript module with strict, no-emit TypeScript.

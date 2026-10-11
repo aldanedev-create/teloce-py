@@ -67,14 +67,27 @@ import { createEffect, reactive } from './reactivity.js';
   const resolve = /** @param {DynamicRecord} module */ module => module?.default ?? module;
   const load = async () => {
     if (loaded) return loaded;
-    if (!loading) loading = Promise.resolve(loader()).then(resolve).then(component => { loaded = component; return component; });
+    if (!loading) {
+      // Keep concurrent mounts on one load, but allow a later explicit mount
+      // to retry a rejected import. Defer invocation to catch synchronous errors.
+      loading = Promise.resolve().then(loader).then(resolve).then(component => {
+        loaded = component;
+        return component;
+      }).catch(error => {
+        loading = undefined;
+        throw error;
+      });
+    }
     return loading;
   };
   const instance = {
     get loaded() { return loaded; },
     /** @param {string | Element | null} nextTarget */ async mount(nextTarget, /** @type {DynamicRecord} */ nextProps = {}) {
-      target = typeof nextTarget === 'string' ? document.querySelector(nextTarget) : nextTarget;
-      if (!target) throw new Error('Teloce mount target was not found');
+      const nextMountTarget = typeof nextTarget === 'string' ? document.querySelector(nextTarget) : nextTarget;
+      if (!nextMountTarget) throw new Error('Teloce mount target was not found');
+      // Release the old effect and lifecycle before replacing its host.
+      if (mounted) instance.unmount();
+      target = nextMountTarget;
       props = nextProps;
       const generation = ++mountGeneration;
       mounted = true;
