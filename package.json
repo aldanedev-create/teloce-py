@@ -1,0 +1,6 @@
+{
+  "name": "teloce-runtime-checks",
+  "private": true,
+  "scripts": {"typecheck": "tsc -p tsconfig.runtime.json"},
+  "devDependencies": {"typescript": "5.9.3"}
+}

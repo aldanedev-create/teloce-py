@@ -200,3 +200,6 @@ htmlcov/
 # Independent applications maintained beside the compiler repository
 /teloce-studio/
 /flaxon-os/
+
+# Development-only JavaScript checking tools
+node_modules/

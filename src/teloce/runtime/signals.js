@@ -1,10 +1,32 @@
 import { queueJob, batch as schedulerBatch } from './scheduler.js';
 
+/**
+ * @typedef {{run: () => unknown}} Subscriber
+ */
+/**
+ * @typedef {{dependencies: Set<Set<Subscriber>>, stopped: boolean,
+ *   running: boolean, run: () => unknown, stop: () => void}} Effect
+ */
+/**
+ * @template T
+ * @typedef {((...args: [] | [T]) => T) & {
+ *   value: T, get: () => T, set: (value: T) => T,
+ *   update: (updater: (value: T) => T) => T, peek: () => T,
+ *   subscribe: (listener: ((value: T) => unknown) | {run: (value: T) => unknown}) => () => void,
+ *   __teloce_signal: boolean, __teloce_computed?: boolean, effect?: Effect,
+ *   [Symbol.iterator]: () => Generator<Signal<T> | ((value: T) => T), void, unknown>
+ * }} Signal
+ */
+
+/** @type {Effect | null} */
 let activeEffect = null;
+/** @type {WeakMap<object, Map<PropertyKey, Set<Subscriber>>>} */
 const targetDependencies = new WeakMap();
 const iterateKey = Symbol('teloce.iterate');
+/** @param {PropertyKey} key @returns {boolean} */
 const arrayIndex = key => typeof key === 'string' && /^(0|[1-9]\d*)$/.test(key) && Number(key) < 4294967295;
 
+/** @param {object} target @param {PropertyKey} key @returns {void} */
 export function track(target, key) {
   if (!activeEffect || activeEffect.stopped) return;
   let dependencies = targetDependencies.get(target);
@@ -15,19 +37,23 @@ export function track(target, key) {
   activeEffect.dependencies.add(subscribers);
 }
 
+/** @param {object} target @param {PropertyKey} key @returns {void} */
 export function trigger(target, key) {
   const subscribers = targetDependencies.get(target)?.get(key);
   if (subscribers) for (const effect of [...subscribers]) queueJob(effect.run);
 }
 
+/** @type {WeakMap<object, object>} */
 const reactiveCache = new WeakMap();
+/** @type {WeakSet<object>} */
 const reactiveProxies = new WeakSet();
+/** @template T @param {T} value @returns {T} */
 export function reactive(value) {
   if (!value || typeof value !== 'object') return value;
   if (reactiveProxies.has(value)) return value;
   const prototype = Object.getPrototypeOf(value);
   if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) return value;
-  if (reactiveCache.has(value)) return reactiveCache.get(value);
+  if (reactiveCache.has(value)) return /** @type {T} */ (reactiveCache.get(value));
   const proxy = new Proxy(value, {
     get(target, key, receiver) {
       const result = Reflect.get(target, key, receiver);
@@ -69,12 +95,20 @@ export function reactive(value) {
   return proxy;
 }
 
-export const isReactive = value => reactiveProxies.has(value);
+/** @param {unknown} value @returns {boolean} */
+export const isReactive = value => reactiveProxies.has(/** @type {object} */ (value));
 
-/** Fine-grained signal with the public Teloce reactivity API. */
+/**
+ * Fine-grained signal with the public Teloce reactivity API.
+ * @template [T=undefined]
+ * @param {T} [initial]
+ * @returns {Signal<T>}
+ */
 export function createSignal(initial) {
-  let value = initial;
+  let value = /** @type {T} */ (initial);
+  /** @type {Set<Subscriber>} */
   const subscribers = new Set();
+  /** @type {Signal<T>} */
   const signal = (...args) => {
     if (args.length) {
       const next = args[0];
@@ -117,7 +151,9 @@ export function createSignal(initial) {
   return signal;
 }
 
+/** @param {() => unknown} fn @returns {Effect} */
 export function createEffect(fn) {
+  /** @type {Effect} */
   const effect = {
     dependencies: new Set(), stopped: false, running: false,
     run() {
@@ -140,8 +176,10 @@ export function createEffect(fn) {
   return effect;
 }
 
+/** @template T @param {() => T} fn @returns {Signal<T>} */
 export function createComputed(fn) {
-  const result = createSignal();
+  // The synchronous effect seeds this initially empty signal before it escapes.
+  const result = /** @type {Signal<T>} */ (/** @type {unknown} */ (createSignal()));
   const effect = createEffect(() => result(fn()));
   result.__teloce_computed = true;
   result.effect = effect;
@@ -149,13 +187,19 @@ export function createComputed(fn) {
 }
 
 export const createMemo = createComputed;
+/** @template T @param {() => T} fn @returns {T} */
 export function batch(fn) { return schedulerBatch(fn); }
+/** @template T @param {() => T} fn @returns {T} */
 export function untracked(fn) {
   const previous = activeEffect;
   activeEffect = null;
   try { return fn(); } finally { activeEffect = previous; }
 }
-export const isSignal = value => Boolean(value && value.__teloce_signal);
-export const isComputed = value => Boolean(value && value.__teloce_computed);
+/** @template T @param {T | Signal<T>} value @returns {value is Signal<T>} */
+export const isSignal = value => Boolean(value && /** @type {Partial<Signal<T>>} */ (value).__teloce_signal);
+/** @param {unknown} value @returns {boolean} */
+export const isComputed = value => Boolean(value && /** @type {Partial<Signal<unknown>>} */ (value).__teloce_computed);
+/** @template T @param {T | Signal<T>} value @returns {Signal<T>} */
 export const toSignal = value => isSignal(value) ? value : createSignal(value);
+/** @template T @param {T | Signal<T>} value @returns {T} */
 export const getValue = value => isSignal(value) ? value() : value;
