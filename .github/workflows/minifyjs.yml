@@ -28,6 +28,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
       - name: Install package and example test dependencies
         run: python -m pip install -e . minifyjs==0.1.3 pytest pytest-timeout jinja2 flask 'flask-admin<2' 'wtforms<3' flask-sqlalchemy 'flaxon; python_version >= "3.11"'
       - name: Run suite

@@ -48,3 +48,14 @@ parseDelimited('name', { delimiter: 42 });
 createDataTable(document.createElement('div'), { pageSize: 'ten' });
 // @ts-expect-error Component render functions return DOM nodes.
 createComponent({ render: () => 'not a node' });
+
+import { __teloceCreateCompiledComponent, onTeloceError } from '../../src/teloce/runtime/compiled.js';
+__teloceCreateCompiledComponent({ data: () => ({ count: 0 }) }).mount('#app');
+// @ts-expect-error Watch entries must be callable.
+__teloceCreateCompiledComponent({ watch: { count: 42 } });
+// @ts-expect-error Binding dependencies are string paths.
+__teloceCreateCompiledComponent({}, { directPlan: { bindings: [{id: 'b0', kind: 'text', name: '', expression: 'count', dependencies: [42]}] } });
+// @ts-expect-error Source diagnostic messages are strings.
+onTeloceError(report => report.message.toFixed());
+// @ts-expect-error Mount targets are elements or selectors.
+__teloceCreateCompiledComponent({}).mount(42);
