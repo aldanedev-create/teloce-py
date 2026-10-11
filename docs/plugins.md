@@ -25,3 +25,8 @@ Filters should be presentation helpers, not authorization or data-access
 functions. Directives should define how they transform or bind DOM behavior.
 Components registered by a plugin should follow the same props and event
 contract as local components.
+
+## Optional first-party modules
+
+See [First-party plugins](first-party-plugins.md) for Forms, PWA, internationalization,
+accessibility and Head/SEO configuration, APIs, Flaxon setup and other framework integration.

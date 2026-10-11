@@ -65,7 +65,7 @@ include-package-data = true
 where = ["src"]
 
 [tool.setuptools.package-data]
-"teloce.runtime" = ["*.js"]
+"teloce.runtime" = ["*.js", "plugins/*.js"]
 
 [tool.setuptools.dynamic]
 version = { attr = "teloce.version.__version__" }

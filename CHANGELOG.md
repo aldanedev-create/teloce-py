@@ -1,3 +1,10 @@
+## Optional first-party plugins
+
+- Add opt-in Forms, internationalization, accessibility, Head/SEO and PWA modules.
+- Emit enabled modules and plugin descriptors in the build manifest.
+- Generate an explicit static-asset service worker and offline fallback; keep API data uncached.
+- Include plugin runtime files in wheels and document Flaxon configuration and cleanup.
+
 ## Directive contracts and lifecycle fixes
 
 - Add detailed JSDoc for built-in directive families, custom hooks and actions.

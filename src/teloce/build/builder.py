@@ -542,6 +542,12 @@ class Builder:
         if self.options.get('dev', False) or (self.root_dir / 'templates' / 'index.html').exists():
             self._write_dev_entrypoint()
 
+        from teloce.plugins.builtin import emit_plugins
+        plugins = emit_plugins(self.out_dir, results, self.options,
+                               self._minify_generated_js if self.options.get("minify") else None)
+        if plugins:
+            results["plugins"] = plugins
+
         # Generate the manifest after assets and optional bundling are complete.
         ssr_entries = {}
         for item in results['files']:
