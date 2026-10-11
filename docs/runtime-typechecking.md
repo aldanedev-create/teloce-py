@@ -52,3 +52,25 @@ No extra setup is required. `pip install teloce-py` continues to ship JavaScript
 runtime files. Node and TypeScript are contributor/CI tools, not dependencies
 for Python application users. Production compilation and MinifyJS optimization
 are unchanged. This adds development checks, not a runtime speed improvement.
+
+## Compiled renderer regression checks
+
+Run `python -m pytest tests/integration/test_compiled_runtime_audit.py -q`
+after `npm ci --ignore-scripts`. The pinned jsdom dependency is development-only.
+The tests load the actual generated expression and DOM helpers with `compiled.js`,
+and repeat checks after MinifyJS optimization. Generated HTML components also
+exercise keyed lists and structural model bindings.
+
+Checked areas include mount/remount ownership, lifecycle order, lazy imports,
+HMR registration, polling, visibility changes, WebSocket and adapter cleanup,
+direct text bindings, event removal, child cleanup failures, public diagnostics,
+forwarded attribute safety, HTML URL sanitization, models and hydration.
+
+Compiled contracts now describe binding/region plans, keyed row plans, props,
+query descriptors, watchers, diagnostics and mounted children. Native sockets,
+abort controllers and timers are typed independently of application state.
+
+These DOM tests do not reproduce browser layout, IME or every hydration mismatch.
+Chromium regressions remain a separate CI job. Application expressions and plugin
+metadata retain explicit dynamic boundaries; passing type checks is not proof
+that every runtime path is correct or that raw HTML is safe from every attack.

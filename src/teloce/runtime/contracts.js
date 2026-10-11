@@ -46,6 +46,50 @@ export {};
 /** @typedef {{template?: string, components?: DynamicRecord, filters?: Record<string, DynamicCallback>,
  *   actions?: DynamicRecord, table?: DynamicCallback, style?: string, styleId?: string,
  *   styleClasses?: Record<string, string>, dev?: boolean, moduleUrl?: string,
- *   hydrate?: boolean, direct?: boolean, directPlan?: DynamicRecord, props?: DynamicRecord,
+ *   hydrate?: boolean, direct?: boolean, directPlan?: DirectPlan, props?: DynamicRecord,
  *   component?: string, sourceLocations?: DynamicRecord, onError?: (error: unknown, phase: string) => void}} CompiledOptions
+ */
+
+/** Mounted child resources owned by the compiled renderer.
+ * @typedef {{updateProps?: (props: DynamicRecord) => void, unmount?: () => void}} MountedChild
+ */
+
+/** A public error report consumed by host integrations.
+ * @typedef {{category: string, message: string, stack: string, phase?: string,
+ *   expression?: string | null, component?: string, filename?: string,
+ *   line?: number, column?: number}} RuntimeDiagnostic
+ */
+/** Compiler-owned simple binding; evaluated application values remain dynamic.
+ * @typedef {{id: string, kind: 'text' | 'binding', name: string, expression: string,
+ *   dependencies?: string[], read?: (state: DynamicRecord) => DynamicValue}} DirectBinding
+ */
+/** @typedef {{item: string, collection: string, key: string, body: string,
+ *   paths: string[]}} KeyedRowPlan
+ */
+/** @typedef {{id: string, template: string, dependencies?: string[], rows?: KeyedRowPlan}} DirectRegion
+ */
+/** @typedef {{enabled?: boolean, fallback?: boolean | string, structural?: boolean,
+ *   targetedStructural?: boolean, refreshIntegrations?: boolean,
+ *   bindings?: DirectBinding[], regions?: DirectRegion[]}} DirectPlan
+ */
+
+/** @typedef {{type?: string, required?: boolean, default?: DynamicValue,
+ *   defaultFactory?: () => DynamicValue, validator?: (value: DynamicValue) => boolean}} PropDescriptor
+ */
+/** @typedef {{key?: string, type?: string}} QueryDescriptor */
+/** Public compiled component definition; state and plugin extensions stay open.
+ * @typedef {{name?: string, data?: () => DynamicRecord,
+ *   props?: Record<string, string | PropDescriptor>,
+ *   queryState?: Record<string, string | QueryDescriptor>,
+ *   methods?: Record<string, DynamicCallback>, computed?: Record<string, DynamicCallback>,
+ *   watch?: Record<string, (value: DynamicValue, previous: DynamicValue) => DynamicValue>} & DynamicRecord} CompiledDefinition
+ */
+
+/** @typedef {{scopeId: string, snapshot: DynamicValue[] | null, node: Node | null,
+ *   needsBind: boolean, markup?: string}} CachedRow
+ */
+/** Framework-owned keyed row snapshots; values inside snapshots are application data.
+ * @typedef {{rows: Map<string, CachedRow>, order: CachedRow[], rowRoots: Set<string>,
+ *   rowReaders: Array<(scope: DynamicRecord) => DynamicValue>,
+ *   byScope?: Map<string, CachedRow>}} RowCache
  */

@@ -25,6 +25,9 @@ Release dates below are the first upload dates on [PyPI](https://pypi.org/projec
 ## [Unreleased]
 
 ### Fixed
+- Harden compiled component remounting, lazy-load ownership/retries, polling/live cleanup and visibility scheduling.
+- Report cleanup failures without abandoning remaining resources; register HMR records only on mount and run `beforeMount` before rendering.
+- Block mixed-case dangerous forwarded URLs, inline handler/srcdoc attributes, and dangerous SVG `xlink:href` values in rendered HTML.
 - Make callable signals expose a reactive `.value` accessor so component model bindings and SSR state seeding notify subscribers correctly.
 - Synchronize native `v-model` controls after state changes on direct, structural and fallback paths, using live loop scope for initial values and edits.
 - Preserve normalized `.trim`/`.number` text and focused `.lazy` edits, respect IME composition, synchronize checkbox arrays/radios/selects, and clean up composition handlers.
