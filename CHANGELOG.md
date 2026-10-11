@@ -1,3 +1,11 @@
+## Directive contracts and lifecycle fixes
+
+- Add detailed JSDoc for built-in directive families, custom hooks and actions.
+- Preserve custom resource receivers, row scopes and modifier changes.
+- Update function-valued directives and remove obsolete event listeners and visibility state.
+- Dispose standalone directive resources and listeners when replacing nodes.
+- Guard disposed scrolly callbacks and honor zero virtual-list overscan.
+
 ## Async component lifecycle fixes
 
 - Allow explicit remounts to retry failed lazy imports.
