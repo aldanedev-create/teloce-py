@@ -1,4 +1,5 @@
-export * from './scheduler.js';
+/** Unified runtime exports; batch belongs to the signal API. */
+export { queueJob, flushJobs } from './scheduler.js';
 export * from './signals.js';
 export * from './reactivity.js';
 export * from './dom.js';

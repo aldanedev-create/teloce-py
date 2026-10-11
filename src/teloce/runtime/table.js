@@ -1,3 +1,5 @@
+/** Searchable and paginated data table rendering. @module */
+/** @import {DynamicValue, DynamicRecord, DynamicCallback, RuntimeElement, RuntimeEvent, TableOptions} from './contracts.js' */
 import { exportRowsToCsv, downloadText } from './data.js';
 
 /**
@@ -6,15 +8,15 @@ import { exportRowsToCsv, downloadText } from './data.js';
  * It is intentionally small enough to use from a .vel action or ordinary
  * module, while keeping filtering/sorting/pagination deterministic and keyed.
  */
-export function createDataTable(container, options = {}) {
+/** @param {Element} container */ export function createDataTable(container, /** @type {TableOptions} */ options = {}) {
   if (!container) throw new TypeError('createDataTable requires a container');
-  const columns = (options.columns || []).map(column => typeof column === 'string' ? { key: column, label: column } : column);
+  const columns = (options.columns || []).map(/** @param {DynamicValue} column */ column => typeof column === 'string' ? { key: column, label: column } : column);
   let rows = Array.isArray(options.rows) ? options.rows : [];
   let query = '';
-  let sort = null;
+  let sort = /** @type {{key: string, direction: string} | null} */ (null);
   let page = 0;
   const pageSize = Math.max(1, Number(options.pageSize || 25));
-  const keyOf = options.key || (row => row?.id ?? row?.key ?? rows.indexOf(row));
+  const keyOf = options.key || (/** @param {DynamicValue} row */ row => row?.id ?? row?.key ?? rows.indexOf(row));
   const shell = document.createElement('div'); shell.className = 'teloce-data-table';
   const controls = document.createElement('div'); controls.className = 'teloce-data-table-controls';
   const input = document.createElement('input'); input.type = 'search'; input.placeholder = options.searchPlaceholder || 'Filter rows'; input.setAttribute('aria-label', 'Filter rows');
@@ -25,8 +27,8 @@ export function createDataTable(container, options = {}) {
   controls.append(input, status); table.append(head, body); shell.append(controls, table, footer); container.replaceChildren(shell);
   const filtered = () => {
     const needle = query.trim().toLowerCase();
-    let result = needle ? rows.filter(row => columns.some(column => String(row?.[column.key] ?? '').toLowerCase().includes(needle))) : [...rows];
-    if (sort) result.sort((left, right) => { const a = left?.[sort.key]; const b = right?.[sort.key]; const value = a === b ? 0 : a == null ? -1 : b == null ? 1 : a < b ? -1 : 1; return sort.direction === 'desc' ? -value : value; });
+    let result = needle ? rows.filter(/** @param {DynamicValue} row */ row => columns.some(/** @param {DynamicValue} column */ column => String(row?.[column.key] ?? '').toLowerCase().includes(needle))) : [...rows];
+    if (sort) result.sort(/** @param {DynamicValue} left @param {DynamicValue} right */ (left, right) => { const a = left?.[/** @type {{key:string, direction:string}} */ (sort).key]; const b = right?.[/** @type {{key:string, direction:string}} */ (sort).key]; const value = a === b ? 0 : a == null ? -1 : b == null ? 1 : a < b ? -1 : 1; return /** @type {{key:string, direction:string}} */ (sort).direction === 'desc' ? -value : value; });
     return result;
   };
   const render = () => {
@@ -35,7 +37,7 @@ export function createDataTable(container, options = {}) {
     head.replaceChildren(); const headerRow = document.createElement('tr');
     for (const column of columns) {
       const th = document.createElement('th'); th.scope = 'col';
-      if (column.sortable !== false && options.sortable !== false) { const button = document.createElement('button'); button.type = 'button'; button.textContent = column.label || column.key; button.setAttribute('aria-label', `Sort by ${column.label || column.key}`); button.onclick = () => { sort = sort?.key === column.key ? { key: column.key, direction: sort.direction === 'asc' ? 'desc' : 'asc' } : { key: column.key, direction: 'asc' }; render(); }; th.append(button); }
+      if (column.sortable !== false && options.sortable !== false) { const button = document.createElement('button'); button.type = 'button'; button.textContent = column.label || column.key; button.setAttribute('aria-label', `Sort by ${column.label || column.key}`); button.onclick = () => { sort = sort?.key === column.key ? { key: column.key, direction: /** @type {{key:string, direction:string}} */ (sort).direction === 'asc' ? 'desc' : 'asc' } : { key: column.key, direction: 'asc' }; render(); }; th.append(button); }
       else th.textContent = column.label || column.key;
       headerRow.append(th);
     }
@@ -47,10 +49,10 @@ export function createDataTable(container, options = {}) {
   };
   input.addEventListener('input', () => { query = input.value; page = 0; render(); }); render();
   return {
-    update(next = {}) { if (Object.prototype.hasOwnProperty.call(next, 'rows')) rows = Array.isArray(next.rows) ? next.rows : []; if (Object.prototype.hasOwnProperty.call(next, 'columns')) columns.splice(0, columns.length, ...(next.columns || []).map(column => typeof column === 'string' ? { key: column, label: column } : column)); render(); },
-    setRows(next) { rows = Array.isArray(next) ? next : []; page = 0; render(); },
+    update(/** @type {TableOptions} */ next = {}) { if (Object.prototype.hasOwnProperty.call(next, 'rows')) rows = Array.isArray(next.rows) ? next.rows : []; if (Object.prototype.hasOwnProperty.call(next, 'columns')) columns.splice(0, columns.length, ...(next.columns || []).map(/** @param {DynamicValue} column */ column => typeof column === 'string' ? { key: column, label: column } : column)); render(); },
+    /** @param {DynamicRecord[]} next */ setRows(next) { rows = Array.isArray(next) ? next : []; page = 0; render(); },
     getVisibleRows() { return filtered().slice(page * pageSize, (page + 1) * pageSize); },
-    exportCsv(filename = 'table.csv') { downloadText(exportRowsToCsv(filtered(), { columns: columns.map(column => column.key) }), filename, 'text/csv;charset=utf-8'); },
+    exportCsv(filename = 'table.csv') { downloadText(exportRowsToCsv(filtered(), { columns: columns.map(/** @param {DynamicValue} column */ column => column.key) }), filename, 'text/csv;charset=utf-8'); },
     unmount() { container.replaceChildren(); },
   };
 }

@@ -27,16 +27,24 @@ count.value = 2;
 
 ## Current coverage
 
-Strict checking covers `signals.js`, `scheduler.js`, their `effects.js` and
-`computed.js` exports, and `lifecycle.js`. Contract fixtures under `tests/types/`
-check valid usage and intentionally invalid examples. An unused
-`@ts-expect-error` fails the check, so the invalid examples also verify that
-types have not silently become permissive.
+Every maintained `.js` file under `src/teloce/runtime/` is included: signals,
+scheduler, lifecycle, components, compiled and standalone rendering, DOM helpers,
+data, tables, props, slots, events, and re-export modules. New runtime files are
+included automatically by the glob in `tsconfig.runtime.json`.
 
-The larger component, DOM renderer, router and integration modules are not yet
-strictly checked. Expand coverage module by module as their contracts are
-annotated. Browser and runtime behavior tests remain required; types cannot
-prove correct rendering, cleanup, focus handling or hydration.
+Contract fixtures under `tests/types/` check valid usage and intentionally invalid
+examples. An unused `@ts-expect-error` fails the check, so negative examples also
+verify that types have not silently become permissive.
+
+`contracts.js` documents shared option types and intentional dynamic boundaries:
+application state, evaluated expressions, plugin extensions, and renderer node
+metadata. These boundaries still accept arbitrary values; checking does not make
+user expressions or private DOM metadata fully type-safe. `compiler-globals.d.ts`
+describes helpers prepended by the Python compiler; it emits no JavaScript and
+does not check JavaScript source embedded in Python strings.
+
+Browser and runtime behavior tests remain required. Types cannot prove correct
+rendering, cleanup, focus handling or hydration.
 
 ## For application developers
 

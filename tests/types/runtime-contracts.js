@@ -1,3 +1,4 @@
+/** Runtime public API type regression fixtures. */
 // This file is checked only; intentionally invalid calls are never executed.
 import { createSignal, createEffect, createComputed, reactive, getValue, toSignal, untracked } from '../../src/teloce/runtime/signals.js';
 import { queueJob, batch } from '../../src/teloce/runtime/scheduler.js';
@@ -34,3 +35,16 @@ queueJob(42);
 reactive({ name: 'Ada' }).missing;
 // @ts-expect-error Computed values preserve the callback's return type.
 createComputed(() => 'hello').get().toFixed();
+
+import { parseDelimited } from '../../src/teloce/runtime/data.js';
+import { createDataTable } from '../../src/teloce/runtime/table.js';
+import { createComponent } from '../../src/teloce/runtime/component.js';
+import { batch as runtimeBatch } from '../../src/teloce/runtime/runtime.js';
+parseDelimited('name\nAda', { headers: ['name'] });
+runtimeBatch(() => 42).toFixed();
+// @ts-expect-error CSV delimiters must be strings.
+parseDelimited('name', { delimiter: 42 });
+// @ts-expect-error Table pagination is numeric.
+createDataTable(document.createElement('div'), { pageSize: 'ten' });
+// @ts-expect-error Component render functions return DOM nodes.
+createComponent({ render: () => 'not a node' });

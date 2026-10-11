@@ -1,10 +1,12 @@
+/** Compiler-generated component rendering, hydration, bindings and diagnostics. @module */
+/** @import {DynamicValue, DynamicRecord, DynamicCallback, RuntimeElement, RuntimeEvent, CompiledOptions} from './contracts.js' */
 // Framework-independent diagnostics. Hosts subscribe without owning Teloce.
 const __teloceErrorListeners = new Set();
-export function onTeloceError(listener) {
+/** @param {DynamicCallback} listener */ export function onTeloceError(listener) {
   __teloceErrorListeners.add(listener);
   return () => __teloceErrorListeners.delete(listener);
 }
-export function reportTeloceError(error, detail = {}) {
+/** @param {DynamicValue} error */ export function reportTeloceError(error, detail = {}) {
   const report = { category: 'runtime', message: String(error?.message || error),
     stack: String(error?.stack || ''), ...detail };
   for (const listener of [...__teloceErrorListeners]) {
@@ -13,9 +15,9 @@ export function reportTeloceError(error, detail = {}) {
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('teloce:error', { detail: report }));
   return report;
 }
-const __hydrationShape = (root, componentTags = new Set()) => [...root.childNodes].filter(node => node.nodeType === 1).map(node => {
-  if (node.hasAttribute('data-teloce-ssr-boundary') || componentTags.has(node.tagName)) return node.tagName;
-  return node.tagName + '(' + __hydrationShape(node, componentTags) + ')';
+const __hydrationShape = /** @returns {string} @param {RuntimeElement} root */ (root, componentTags = new Set()) => [...root.childNodes].filter(node => node.nodeType === 1).map(node => {
+  if (/** @type {Element} */ (node).hasAttribute('data-teloce-ssr-boundary') || componentTags.has(/** @type {Element} */ (node).tagName)) return /** @type {Element} */ (node).tagName;
+  return /** @type {Element} */ (node).tagName + '(' + __hydrationShape(/** @type {RuntimeElement} */ (node), componentTags) + ')';
 }).join(',');
 
 /* Shared renderer for compiler-generated Teloce components.
@@ -25,12 +27,12 @@ const __hydrationShape = (root, componentTags = new Set()) => [...root.childNode
  * bridge lives here once per application build.
  */
 
-const __teloceEscapeHtml = value => String(value ?? "").replace(/[&<>"']/g, character => ({
+const __teloceEscapeHtml = /** @param {DynamicValue} value */ value => String(value ?? "").replace(/[&<>"']/g, character => (/** @type {Record<string, string>} */ ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-}[character]));
+})[character]));
 
-const __teloceEscapeAttribute = value => __teloceEscapeHtml(value);
-const __teloceDecodeAttribute = value => String(value ?? "")
+const __teloceEscapeAttribute = /** @param {DynamicValue} value */ value => __teloceEscapeHtml(value);
+const __teloceDecodeAttribute = /** @param {DynamicValue} value */ value => String(value ?? "")
   .replace(/&quot;/g, '"')
   .replace(/&#39;/g, "'")
   .replace(/&#x27;/gi, "'")
@@ -39,11 +41,11 @@ const __teloceDecodeAttribute = value => String(value ?? "")
   .replace(/&amp;/g, "&");
 
 const __teloceBuiltInTransitions = {
-  fade(node, opts = {}) {
+  /** @param {RuntimeElement} node */ fade(node, /** @type {DynamicRecord} */ opts = {}) {
     const { duration = 200, easing = "ease" } = opts;
     return node.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration, easing, fill: "forwards" });
   },
-  slide(node, opts = {}) {
+  /** @param {RuntimeElement} node */ slide(node, /** @type {DynamicRecord} */ opts = {}) {
     const { axis = "y", distance = 10, duration = 200, easing = "ease-out" } = opts;
     const property = axis === "y" ? "translateY" : "translateX";
     return node.animate?.([
@@ -51,7 +53,7 @@ const __teloceBuiltInTransitions = {
       { transform: `${property}(0)`, opacity: 1 },
     ], { duration, easing, fill: "forwards" });
   },
-  scale(node, opts = {}) {
+  /** @param {RuntimeElement} node */ scale(node, /** @type {DynamicRecord} */ opts = {}) {
     const { start = 0.9, duration = 150, easing = "ease-out" } = opts;
     return node.animate?.([
       { transform: `scale(${start})`, opacity: 0 },
@@ -60,7 +62,7 @@ const __teloceBuiltInTransitions = {
   },
 };
 
-const __teloceParseTransition = value => {
+const __teloceParseTransition = /** @param {DynamicValue} value */ value => {
   const source = String(value ?? "");
   const separator = source.indexOf(":");
   if (separator < 0) return { name: source, options: undefined };
@@ -78,32 +80,32 @@ const __teloceParseTransition = value => {
   return { name, options };
 };
 
-const __teloceTransitionHooks = definition => {
+const __teloceTransitionHooks = /** @param {DynamicRecord} definition */ definition => {
   const registry = { ...__teloceBuiltInTransitions, ...(definition?.transitions || {}) };
-  const run = (node, attribute) => {
+  const run = /** @param {RuntimeElement} node @param {string} attribute */ (node, attribute) => {
     const raw = node?.getAttribute?.(attribute);
     if (!raw) return null;
     const { name, options } = __teloceParseTransition(raw);
     const transition = registry[name];
     return typeof transition === "function" ? transition(node, options) : null;
   };
-  const playEnter = node => {
+  const playEnter = /** @param {RuntimeElement} node */ node => {
     if (!node || node.nodeType !== 1) return;
     const attribute = node.hasAttribute("data-teloce-in")
       ? "data-teloce-in"
       : node.hasAttribute("data-teloce-transition") ? "data-teloce-transition" : null;
     if (attribute) run(node, attribute);
-    node.querySelectorAll?.("[data-teloce-in], [data-teloce-transition]").forEach(child => {
+    node.querySelectorAll?.("[data-teloce-in], [data-teloce-transition]").forEach(/** @param {RuntimeElement} child */ child => {
       run(child, child.hasAttribute("data-teloce-in") ? "data-teloce-in" : "data-teloce-transition");
     });
   };
-  const playExit = node => {
+  const playExit = /** @param {RuntimeElement} node */ node => {
     if (!node || node.nodeType !== 1 || !node.isConnected) return;
     const attribute = node.hasAttribute("data-teloce-out")
       ? "data-teloce-out"
       : node.hasAttribute("data-teloce-transition") ? "data-teloce-transition" : null;
     if (!attribute || !node.parentNode) return;
-    const ghost = node.cloneNode(true);
+    const ghost = /** @type {ChildNode} */ (node.cloneNode(true));
     node.parentNode.insertBefore(ghost, node.nextSibling);
     const animation = run(ghost, attribute);
     if (animation?.finished?.then) animation.finished.then(() => ghost.remove()).catch(() => ghost.remove());
@@ -112,17 +114,17 @@ const __teloceTransitionHooks = definition => {
   return { playEnter, playExit };
 };
 
-const __teloceLazy = loader => {
+const __teloceLazy = /** @param {DynamicCallback} loader */ loader => {
   if (typeof loader !== "function") throw new TypeError("Teloce lazy loader must be a function");
-  let loading = null;
+  let loading = /** @type {Promise<DynamicValue> | null} */ (null);
   let loaded = null;
-  let active = null;
-  let target = null;
-  let props = {};
+  let active = /** @type {DynamicRecord | null} */ (null);
+  let target = /** @type {RuntimeElement | null | undefined} */ (null);
+  let /** @type {DynamicRecord} */ props = {};
   let mounted = false;
   let generation = 0;
 
-  const resolve = module => module?.default ?? module;
+  const resolve = /** @param {DynamicRecord} module */ module => module?.default ?? module;
   const load = () => {
     if (!loading) loading = Promise.resolve().then(loader).then(resolve).then(component => {
       loaded = component;
@@ -132,7 +134,7 @@ const __teloceLazy = loader => {
   };
 
   return {
-    mount(nextTarget, nextProps = {}) {
+    /** @param {RuntimeElement} nextTarget */ mount(nextTarget, /** @type {DynamicRecord} */ nextProps = {}) {
       target = typeof nextTarget === "string" ? document.querySelector(nextTarget) : nextTarget;
       if (!target) throw new Error("Teloce mount target was not found");
       props = nextProps;
@@ -156,11 +158,11 @@ const __teloceLazy = loader => {
           target = null;
         },
       };
-      load().then(component => {
+      load().then(/** @param {DynamicValue} component */ component => {
         if (!mounted || currentGeneration !== generation || !target) return;
         target.removeAttribute("data-teloce-loading");
         if (component?.mount) active = component.mount(target, props);
-      }).catch(error => {
+      }).catch(/** @param {DynamicValue} error */ error => {
         if (mounted && currentGeneration === generation && target) {
           target.removeAttribute("data-teloce-loading");
           target.dispatchEvent?.(new CustomEvent("teloce:lazy-error", { detail: error }));
@@ -186,7 +188,7 @@ const __teloceLazy = loader => {
 // Small, dependency-free browser primitives used by generated components.
 // They live in the shared runtime so a project does not ship a copy per
 // component.
-const __teloceSplitArguments = source => {
+const __teloceSplitArguments = /** @param {DynamicValue} source */ source => {
   const result = [];
   let start = 0;
   let depth = 0;
@@ -211,9 +213,9 @@ const __teloceSplitArguments = source => {
   return result;
 };
 
-const __teloceCreateCompiledComponent = (definition, options = {}) => {
+const __teloceCreateCompiledComponent = /** @param {DynamicRecord} definition */ (definition, /** @type {CompiledOptions} */ options = {}) => {
   const template = String(options.template ?? "");
-  const camelizeProp = name => String(name).replace(/-([a-z])/g, (_, character) => character.toUpperCase());
+  const camelizeProp = /** @param {string} name */ name => String(name).replace(/-([a-z])/g, (_, character) => character.toUpperCase());
   const components = options.components || {};
   const filters = options.filters || {};
   const actions = options.actions || definition?.actions || {};
@@ -230,7 +232,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
   const directEnabled = Boolean(options.direct && directPlan.enabled && !directPlan.fallback);
   const directBindings = Array.isArray(directPlan.bindings) ? directPlan.bindings : [];
   const directRegions = Array.isArray(directPlan.regions) ? directPlan.regions : [];
-  const directRegionIndex = new Map(directRegions.map(record => [record.id, record]));
+  const directRegionIndex = new Map(directRegions.map(/** @param {DynamicRecord} record */ record => [record.id, record]));
   const initialRowCaches = new Map();
   const bindingIndex = new Map();
   const alwaysBindings = new Set();
@@ -248,7 +250,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     "mouseenter", "mouseleave", "mousedown", "mouseup", "pointerdown", "pointerup",
   ]);
 
-  const evaluate = (expression, scope) => {
+  const evaluate = /** @param {string} expression @param {DynamicRecord} scope */ (expression, scope) => {
     try {
       const parts = String(expression ?? "").split(/\s+\|\s+/);
       let value = __safeEvaluate(parts.shift(), scope || {});
@@ -269,18 +271,18 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     }
   };
 
-  const mapClass = value => {
-    const map = token => styleClasses[token] || token;
+  const mapClass = /** @param {DynamicValue} value */ value => {
+    const map = /** @param {DynamicValue} token */ token => styleClasses[token] || token;
     if (Array.isArray(value)) return value.map(map).join(" ");
     if (value && typeof value === "object") return Object.keys(value).filter(key => value[key]).map(map).join(" ");
     if (typeof value === "string") return value.split(/\s+/).filter(Boolean).map(map).join(" ");
     return value;
   };
 
-  const isDangerousUrl = value => /^(?:javascript|vbscript|data|file):/.test(
+  const isDangerousUrl = /** @param {DynamicValue} value */ value => /^(?:javascript|vbscript|data|file):/.test(
     String(value ?? "").replace(/[\t\n\r\0]/g, "").trim().toLowerCase()
   );
-  const sanitizeHtml = value => {
+  const sanitizeHtml = /** @param {DynamicValue} value */ value => {
     const node = document.createElement("template");
     node.innerHTML = String(value ?? "");
     node.content.querySelectorAll("script,iframe,object,embed,link,meta,base").forEach(child => child.remove());
@@ -292,10 +294,10 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
         }
       }
     });
-    return node.innerHTML || node.content?.firstChild?.outerHTML || "";
+    return node.innerHTML || /** @type {RuntimeElement | undefined} */ (node.content?.firstChild)?.outerHTML || "";
   };
 
-  const applyBinding = (element, name, value) => {
+  const applyBinding = /** @param {RuntimeElement} element @param {string} name @param {DynamicValue} value */ (element, name, value) => {
     if (name === "key") return;
     // Bindings can materialize real DOM attributes (for example `disabled`)
     // after reconciliation has cloned the declarative template. Track those
@@ -365,7 +367,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     }
   };
 
-  const resolveIfBlocks = (source, scope) => {
+  const resolveIfBlocks = /** @param {DynamicValue} source @param {DynamicRecord} scope */ (source, scope) => {
     let result = "";
     let cursor = 0;
     while (cursor < source.length) {
@@ -421,12 +423,12 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     return result;
   };
 
-  const prepareRowCache = plan => ({
+  const prepareRowCache = /** @returns {DynamicRecord} @param {DynamicRecord} plan */ plan => ({
     rows: new Map(), order: [],
-    rowRoots: new Set(plan.paths.map(path => path.split('.')[0])),
-    rowReaders: plan.paths.map(path => {
+    rowRoots: new Set(plan.paths.map(/** @param {DynamicValue} path */ path => path.split('.')[0])),
+    rowReaders: plan.paths.map(/** @param {DynamicValue} path */ path => {
       const parts = path.split('.');
-      return scope => {
+      return /** @param {DynamicRecord} scope */ scope => {
         let value = scope;
         for (const part of parts) {
           if (part === '__proto__' || part === 'prototype' || part === 'constructor') return undefined;
@@ -437,7 +439,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     }),
   });
 
-  const renderForBlocks = (source, scope, loopScopes) => {
+  const renderForBlocks = /** @param {DynamicValue} source @param {DynamicRecord} scope @param {DynamicValue} loopScopes */ (source, scope, loopScopes) => {
     let result = source;
     let start = result.indexOf("<for ");
     while (start >= 0) {
@@ -487,7 +489,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
         if (cache) {
           const key = String(evaluate(rowPlan.key, loopScope));
           if (cache.rows.has(key)) throw new Error(`Duplicate keyed loop value: ${key}`);
-          const row = { scopeId, snapshot: cache.rowReaders.map(read => read(loopScope)), node: null, needsBind: false };
+          const row = { scopeId, snapshot: cache.rowReaders.map(/** @param {DynamicValue} read */ read => read(loopScope)), node: null, needsBind: false };
           cache.rows.set(key, row); cache.byScope.set(scopeId, row); cache.order.push(row);
         }
         let content = renderTemplate(body, loopScope, loopScopes);
@@ -505,7 +507,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
   // Virtual loops are opt-in. Normal ``v-for`` remains the compatibility
   // path; this renderer only materializes the visible window and keeps the
   // full collection out of the DOM.
-  const renderVirtualForBlocks = (source, scope) => {
+  const renderVirtualForBlocks = /** @param {DynamicValue} source @param {DynamicRecord} scope */ (source, scope) => {
     let result = String(source ?? "");
     let start = result.indexOf("<virtual-for ");
     while (start >= 0) {
@@ -515,7 +517,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       const closeStart = result.indexOf("</virtual-for>", openingEnd + 1);
       if (closeStart < 0) break;
       const body = result.slice(openingEnd + 1, closeStart);
-      const attr = name => opening.match(new RegExp(`\\b${name}="([^"]*)"`))?.[1] ?? "";
+      const attr = /** @param {string} name */ name => opening.match(new RegExp(`\\b${name}="([^"]*)"`))?.[1] ?? "";
       const item = attr("item") || "item";
       const collection = attr("in") || attr("collection");
       const key = attr("key") || "index";
@@ -532,7 +534,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     return result;
   };
 
-  const renderTemplate = (source, scope, loopScopes = new Map()) => {
+  const renderTemplate = /** @param {DynamicValue} source @param {DynamicRecord} scope */ (source, scope, loopScopes = new Map()) => {
     let output = String(source ?? "");
     output = output.replace(/<slot\b([^>]*)>\s*<\/slot>/g, (_, attributes) => {
       const name = attributes.match(/(?:^|\s)name="([^"]*)"/)?.[1] || "default";
@@ -559,9 +561,10 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     return output;
   };
 
-  const readProps = (element, parentState) => {
+  const readProps = /** @param {RuntimeElement} element @param {DynamicRecord} parentState */ (element, parentState) => {
+    /** @type {Record<string, string>} */
     const slots = { default: "" };
-    for (const child of Array.from(element.childNodes || [])) {
+    for (const child of /** @type {RuntimeElement[]} */ (Array.from(element.childNodes || []))) {
       if (child.nodeType === 1 && child.hasAttribute("slot")) {
         const name = child.getAttribute("slot") || "default";
         slots[name] = (slots[name] || "") + child.outerHTML;
@@ -574,7 +577,9 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
         slots.default += child.outerHTML ?? child.textContent ?? "";
       }
     }
+    /** @type {DynamicRecord} */
     const props = { __slots: slots };
+    /** @type {DynamicRecord} */
     const forwarded = {};
     const declaredNames = new Set(Object.keys(definition?.props || {}).map(camelizeProp));
     const attributes = Array.from(element.attributes || []);
@@ -619,7 +624,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     return props;
   };
 
-  const destroyDirectiveRecord = (element, name, record) => {
+  const destroyDirectiveRecord = /** @param {RuntimeElement} element @param {string} name @param {DynamicRecord} record */ (element, name, record) => {
     if (!record) return;
     try { record.directive?.beforeUnmount?.(element, record.context); }
     catch (error) { handleError(error, `directive:${name}:beforeUnmount`); }
@@ -631,7 +636,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     catch (error) { handleError(error, `directive:${name}:unmounted`); }
   };
 
-  const cleanupElement = element => {
+  const cleanupElement = /** @param {RuntimeElement} element */ element => {
     if (element.__teloceHandlers) {
       for (const record of element.__teloceHandlers.values()) element.removeEventListener(record.actualEvent, record.listener, record.options);
       element.__teloceHandlers.clear();
@@ -661,7 +666,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     element.__teloceDataTable = null;
   };
 
-  let target = null;
+  let target = /** @type {RuntimeElement | null | undefined} */ (null);
   let mounted = false;
   let destroyed = false;
   let rendering = false;
@@ -671,19 +676,20 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
   const loopLocals = Symbol('teloce.loopLocals');
   let loopScopeSequence = 0;
   let state;
+  /** @type {DynamicRecord} */
   let previousWatchValues = {};
   let pendingDependencies = new Set();
   let schedulerVersion = 0;
 
-  const handleError = (error, phase, expression = null) => {
+  const handleError = /** @param {DynamicValue} error @param {string} phase */ (error, phase, /** @type {string | null} */ expression = null) => {
     if (dev) console.error(`Teloce ${phase} error:`, error);
-    const location = options.sourceLocations?.[expression] || {};
+    const location = options.sourceLocations?.[/** @type {string} */ (expression)] || {};
     reportTeloceError(error, { category: phase === 'hydration' ? 'hydration' : 'runtime',
       phase, expression, component: options.component || definition?.name,
       filename: moduleUrl, ...location });
     try { options.onError?.(error, phase); } catch (_) {}
   };
-  const requestUpdate = dependency => {
+  const requestUpdate = /** @param {DynamicValue} [dependency] */ dependency => {
     if (destroyed || suppressUpdates) return;
     if (dependency != null) pendingDependencies.add(String(dependency).split(".")[0]);
     else pendingDependencies.add("*");
@@ -702,7 +708,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
   const rawData = typeof definition?.data === "function" ? definition.data() || {} : {};
   const propDefinitions = definition?.props || {};
   const queryState = definition?.queryState || {};
-  const normalizeProps = input => {
+  const normalizeProps = /** @param {DynamicRecord} input */ input => {
     const output = { ...(input || {}) };
     for (const [name, descriptorValue] of Object.entries(propDefinitions)) {
       const descriptor = typeof descriptorValue === "string" ? { type: descriptorValue } : descriptorValue || {};
@@ -729,17 +735,17 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
   const incomingAttrs = options.props?.$attrs || options.props?.__attrs || {};
   state.$attrs = Object.fromEntries(Object.entries(incomingAttrs).filter(([name]) => !declaredPropNames.has(camelizeProp(name)) && !name.startsWith("data-teloce-")));
   for (const [name, method] of Object.entries(definition?.methods || {})) {
-    if (typeof method === "function") state[name] = (...args) => method.apply(state, args);
+    if (typeof method === "function") state[name] = (/** @type {DynamicValue[]} */ ...args) => method.apply(state, args);
   }
   for (const [name, computed] of Object.entries(definition?.computed || {})) {
     if (typeof computed === "function") {
       Object.defineProperty(state, name, { configurable: true, enumerable: true, get: () => computed.call(state) });
     }
   }
-  state.$emit = (name, detail) => target?.dispatchEvent?.(new CustomEvent(`teloce:${name}`, { detail, bubbles: true }));
+  state.$emit = /** @param {string} name @param {DynamicRecord} detail */ (name, detail) => target?.dispatchEvent?.(new CustomEvent(`teloce:${name}`, { detail, bubbles: true }));
   suppressUpdates = false;
 
-  const parseQueryValue = (raw, definition) => {
+  const parseQueryValue = /** @param {DynamicValue} raw @param {DynamicRecord} definition */ (raw, definition) => {
     if (raw == null) return undefined;
     const type = typeof definition === "string" ? definition : definition?.type;
     if (type === "number") { const number = Number(raw); return Number.isFinite(number) ? number : undefined; }
@@ -747,7 +753,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     if (type === "json" || type === "array") { try { return JSON.parse(raw); } catch (_) { return undefined; } }
     return raw;
   };
-  const queryKey = (name, config) => typeof config === "string" ? config : config?.key || name;
+  const queryKey = /** @param {string} name @param {DynamicRecord} config */ (name, config) => typeof config === "string" ? config : config?.key || name;
   const hydrateQueryState = () => {
     if (typeof window === "undefined" || !window.location?.search) return;
     const params = new URLSearchParams(window.location.search);
@@ -774,22 +780,22 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
   };
 
   const initialData = () => ({ ...rawData, ...normalizeProps({}) });
-  const watchValue = name => String(name).split(".").reduce((value, key) => value == null ? undefined : value[key], state);
-  const callHook = (name, ...args) => {
+  const watchValue = /** @param {string} name */ name => String(name).split(".").reduce((value, key) => value == null ? undefined : value[key], state);
+  const callHook = /** @param {string} name */ (name, /** @type {DynamicValue[]} */ ...args) => {
     const hook = definition?.[name];
     if (typeof hook !== "function") return;
     try {
       const result = hook.apply(state, args);
-      if (result?.then) result.catch(error => handleError(error, name));
+      if (result?.then) result.catch(/** @param {DynamicValue} error */ error => handleError(error, name));
       return result;
     } catch (error) { handleError(error, name); }
   };
 
-  const readActionParams = expression => expression && expression.trim()
+  const readActionParams = /** @param {string} expression */ expression => expression && expression.trim()
     ? evaluate(__teloceDecodeAttribute(expression), state)
     : undefined;
 
-  const renderVirtualList = element => {
+  const renderVirtualList = /** @param {RuntimeElement} element */ element => {
     const signature = [
       element.getAttribute("data-teloce-virtual-collection"),
       element.getAttribute("data-teloce-virtual-key"),
@@ -816,7 +822,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     const minHeightExpression = element.getAttribute("data-teloce-virtual-min-height") || "";
     let scheduled = false;
     let disposed = false;
-    let frame = null;
+    let frame = /** @type {DynamicValue} */ (null);
     let virtualScopeIds = new Set();
     const renderVisible = () => {
       scheduled = false;
@@ -878,25 +884,26 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     renderVisible();
   };
 
-  const bindScrolly = element => {
+  const bindScrolly = /** @param {RuntimeElement} element */ element => {
     const steps = Array.from(element.querySelectorAll("[v-step], [data-v-step]"));
     if (!steps.length) return;
     if (element.__teloceScrollyCleanup && element.__teloceScrollySteps?.length === steps.length &&
-        element.__teloceScrollySteps.every((step, index) => step === steps[index])) return;
+        element.__teloceScrollySteps.every(/** @param {DynamicValue} step @param {number} index */ (step, index) => step === steps[index])) return;
     if (element.__teloceScrollyCleanup) element.__teloceScrollyCleanup();
-    const activate = step => {
+    const activate = /** @param {DynamicValue} step */ step => {
       const name = step.getAttribute("v-step") || step.getAttribute("data-v-step") || "";
       steps.forEach(item => item.toggleAttribute("data-teloce-step-active", item === step));
       element.setAttribute("data-teloce-active-step", name);
       element.dispatchEvent?.(new CustomEvent("teloce:step", { detail: { name, element: step }, bubbles: true }));
     };
+    /** @type {IntersectionObserver | undefined} */
     let observer;
     if (typeof IntersectionObserver === "function") {
       observer = new IntersectionObserver(entries => {
         const visible = entries.filter(entry => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
         if (visible) activate(visible.target);
       }, { rootMargin: "-35% 0px -35% 0px", threshold: [0.1, 0.5, 0.9] });
-      steps.forEach(step => observer.observe(step));
+      steps.forEach(step => /** @type {IntersectionObserver} */ (observer).observe(step));
     }
     const focusHandlers = new Map();
     steps.forEach(step => { step.tabIndex ||= 0; const handler = () => activate(step); focusHandlers.set(step, handler); step.addEventListener("focus", handler); });
@@ -910,7 +917,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     };
   };
 
-  const bindAnnotation = element => {
+  const bindAnnotation = /** @param {RuntimeElement} element */ element => {
     const expression = element.getAttribute("data-teloce-chart-annotation") || "";
     const value = evaluate(__teloceDecodeAttribute(expression), state);
     if (!value || typeof value !== "object") {
@@ -931,24 +938,24 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     annotation.style.zIndex = "2";
     annotation.style[value.position === "bottom" ? "bottom" : "top"] = "0.75rem";
     annotation.style.left = value.x == null ? "0.75rem" : `${Number(value.x)}%`;
-    if (getComputedStyle(element).position === "static") element.style.position = "relative";
+    if (getComputedStyle(/** @type {Element} */ (element)).position === "static") element.style.position = "relative";
     element.append(annotation);
     element.__teloceAnnotation = annotation;
     element.__teloceAnnotationSignature = signature;
     element.__teloceAnnotationCleanup = () => { annotation.remove(); element.__teloceAnnotation = null; element.__teloceAnnotationSignature = null; element.__teloceAnnotationCleanup = null; };
   };
 
-  const bindPoll = element => {
+  const bindPoll = /** @param {RuntimeElement} element */ element => {
     const url = element.getAttribute("poll");
     if (!url) return;
     const signature = [url, element.getAttribute("interval"), element.getAttribute("poll-target")].join("\u0000");
     if (element.__telocePollCleanup && element.__telocePollSignature === signature) return;
     if (element.__telocePollCleanup) element.__telocePollCleanup();
     let stopped = false;
-    let controller = null;
-    let timer = null;
+    let controller = /** @type {DynamicValue} */ (null);
+    let timer = /** @type {DynamicValue} */ (null);
     let delay = Math.max(1000, Number(element.getAttribute("interval") || 10000));
-    const apply = payload => {
+    const apply = /** @param {DynamicValue} payload */ payload => {
       const targetPath = element.getAttribute("poll-target");
       if (targetPath) __setSafePath(targetPath, payload, state);
       else if (payload && typeof payload === "object" && !Array.isArray(payload)) Object.assign(state, payload);
@@ -964,7 +971,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
         apply(await response.json());
         delay = Math.max(1000, Number(element.getAttribute("interval") || 10000));
       } catch (error) {
-        if (error?.name !== "AbortError") { delay = Math.min(delay * 2, 120000); handleError(error, "poll"); }
+        if (/** @type {Error | null} */ (error)?.name !== "AbortError") { delay = Math.min(delay * 2, 120000); handleError(error, "poll"); }
       } finally { if (!stopped) timer = setTimeout(fetchData, delay); }
     };
     const onVisibility = () => { if (!document.hidden) fetchData(); };
@@ -974,18 +981,18 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     element.__telocePollCleanup = () => { stopped = true; controller?.abort?.(); clearTimeout(timer); document.removeEventListener("visibilitychange", onVisibility); element.__telocePollSignature = null; element.__telocePollCleanup = null; };
   };
 
-  const bindLive = element => {
+  const bindLive = /** @param {RuntimeElement} element */ element => {
     const source = element.getAttribute("live");
     if (!source) return;
     const targetPath = element.getAttribute("live-target");
-    let socket = null;
+    let socket = /** @type {DynamicValue} */ (null);
     let stopped = false;
-    let retryTimer = null;
+    let retryTimer = /** @type {DynamicValue} */ (null);
     let retryDelay = 1000;
     const signature = [source, targetPath].join("\u0000");
     if (element.__teloceLiveCleanup && element.__teloceLiveSignature === signature) return;
     if (element.__teloceLiveCleanup) element.__teloceLiveCleanup();
-    const apply = payload => {
+    const apply = /** @param {DynamicValue} payload */ payload => {
       if (targetPath) __setSafePath(targetPath, payload, state);
       else if (payload && typeof payload === "object" && !Array.isArray(payload)) Object.assign(state, payload);
       element.dispatchEvent?.(new CustomEvent("teloce:live", { detail: payload, bubbles: true }));
@@ -1006,11 +1013,11 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
             : `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}${source}`;
           socket = new WebSocket(socketUrl);
           socket.onopen = () => { retryDelay = 1000; };
-          socket.onmessage = event => { try { apply(JSON.parse(event.data)); } catch (_) { apply(event.data); } };
-          socket.onerror = error => handleError(error, "live");
+          socket.onmessage = /** @param {RuntimeEvent} event */ event => { try { apply(JSON.parse(event.data)); } catch (_) { apply(event.data); } };
+          socket.onerror = /** @param {DynamicValue} error */ error => handleError(error, "live");
           socket.onclose = () => { socket = null; scheduleReconnect(); };
         } else {
-          const adapter = globalThis.__teloceLiveAdapters?.[source];
+          const adapter = (/** @type {DynamicRecord} */ (globalThis)).__teloceLiveAdapters?.[source];
           if (typeof adapter === "function") {
             const result = adapter(apply);
             if (typeof result === "function") element.__teloceLiveAdapterCleanup = result;
@@ -1037,7 +1044,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     connect();
   };
 
-  const bindDataTable = element => {
+  const bindDataTable = /** @param {RuntimeElement} element */ element => {
     const expression = element.getAttribute("data-teloce-data-table") || "";
     if (!expression || typeof tableFactory !== "function") return;
     const value = evaluate(__teloceDecodeAttribute(expression), state);
@@ -1056,7 +1063,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     } catch (error) { handleError(error, "data-table"); }
   };
 
-  const bindAdvancedDirectives = element => {
+  const bindAdvancedDirectives = /** @param {RuntimeElement} element */ element => {
     if (element.hasAttribute("data-teloce-virtual-for")) renderVirtualList(element);
     else element.__teloceVirtualCleanup?.();
     if (element.hasAttribute("data-teloce-scrolly")) bindScrolly(element);
@@ -1073,7 +1080,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       element.__teloceDataTable = null;
     }
     const seenActions = new Set();
-    const sameActionParams = (left, right) => {
+    const sameActionParams = /** @param {DynamicValue} left @param {DynamicValue} right */ (left, right) => {
       if (Object.is(left, right)) return true;
       try { return JSON.stringify(left) === JSON.stringify(right); } catch (_) { return false; }
     };
@@ -1087,7 +1094,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       const actionName = Object.keys(actions).find(key => key.toLowerCase() === name.toLowerCase()) || name;
       seenActions.add(actionName);
       const action = actions[actionName]
-        || (typeof globalThis[actionName] === "function" ? globalThis[actionName] : undefined);
+        || (typeof (/** @type {DynamicRecord} */ (globalThis))[actionName] === "function" ? (/** @type {DynamicRecord} */ (globalThis))[actionName] : undefined);
       if (typeof action !== "function") { if (dev) console.warn(`Teloce action not found: ${name}`); continue; }
       const params = readActionParams(attribute.value);
       const signature = `${actionName}:${attribute.name}`;
@@ -1111,7 +1118,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     }
   };
 
-  const modelScope = element => {
+  const modelScope = /** @param {RuntimeElement} element */ element => {
     const scopeElement = element.closest?.("[data-teloce-loop-scope]");
     const local = scopeElement ? loopScopes.get(scopeElement.getAttribute("data-teloce-loop-scope")) : null;
     if (!local) return state;
@@ -1121,8 +1128,8 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     });
   };
 
-  const modelModifiers = element => new Set(String(element.getAttribute("data-teloce-model-modifiers") || "").split(".").filter(Boolean));
-  const normalizeModelValue = (value, modifiers) => {
+  const modelModifiers = /** @param {RuntimeElement} element */ element => new Set(String(element.getAttribute("data-teloce-model-modifiers") || "").split(".").filter(Boolean));
+  const normalizeModelValue = /** @param {DynamicValue} value @param {DynamicValue} modifiers */ (value, modifiers) => {
     if (modifiers.has("trim") && typeof value === "string") value = value.trim();
     if (modifiers.has("number") && typeof value === "string" && value.trim() !== "") {
       const number = Number(value);
@@ -1131,7 +1138,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     return value;
   };
 
-  const syncModelValue = (element, value) => {
+  const syncModelValue = /** @param {RuntimeElement} element @param {DynamicValue} value */ (element, value) => {
     // Unknown expressions must not erase user input. Composition owns the DOM
     // until it commits, and normalized equality preserves spaces/caret position.
     if (value === undefined || element.__teloceModelListener?.composing) return;
@@ -1153,7 +1160,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     }
   };
 
-  const removeModelListener = element => {
+  const removeModelListener = /** @param {RuntimeElement} element */ element => {
     const record = element.__teloceModelListener;
     if (!record) return;
     element.removeEventListener(record.eventName, record.listener);
@@ -1162,7 +1169,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     element.__teloceModelListener = null;
   };
 
-  const bindEventsAndDirectives = element => {
+  const bindEventsAndDirectives = /** @param {RuntimeElement} element */ element => {
     if (element.__teloceModelListener && !element.hasAttribute("data-teloce-model")) removeModelListener(element);
     const seenDirectives = new Set();
     for (const attribute of Array.from(element.attributes || [])) {
@@ -1175,7 +1182,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
         const previous = element.__teloceHandlers.get(attribute.name);
         if (!previous || previous.signature !== signature) {
           if (previous) element.removeEventListener(previous.actualEvent, previous.listener, previous.options);
-          const listener = event => {
+          const listener = /** @param {RuntimeEvent} event */ event => {
             if (modifiers.includes("self") && event.target !== element) return;
             if (modifiers.includes("enter") && event.key !== "Enter") return;
             if (modifiers.includes("esc") && event.key !== "Escape") return;
@@ -1208,7 +1215,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
               const result = typeof handler === "function"
                 ? handler(event?.detail ?? event)
                 : __runEventExpression(expression, eventScope);
-              if (result?.then) result.catch(error => handleError(error, `event:${eventName}`, attribute.value));
+              if (result?.then) result.catch(/** @param {DynamicValue} error */ error => handleError(error, `event:${eventName}`, attribute.value));
             } catch (error) { handleError(error, `event:${eventName}`, attribute.value); }
           };
           const eventOptions = { once: modifiers.includes("once"), capture: modifiers.includes("capture"), passive: modifiers.includes("passive") };
@@ -1224,7 +1231,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
         const signature = `${expression}:${element.type}:${eventName}:${[...modifiers].join(".")}`;
         if (element.__teloceModelListener?.signature !== signature) {
           removeModelListener(element);
-          const listener = event => {
+          const listener = /** @param {RuntimeEvent} [event] */ event => {
             if (event?.isComposing || element.__teloceModelListener?.composing) return;
             const values = modelScope(element);
             const currentValue = __safeEvaluate(expression, values);
@@ -1261,7 +1268,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       }
 
       const directiveMatch = attribute.name.match(/^v-([\w-]+)(?:\.(.+))?$/);
-      const directive = directiveMatch && globalThis.teloce?.directives?.[directiveMatch[1]];
+      const directive = directiveMatch && (/** @type {DynamicRecord} */ (globalThis)).teloce?.directives?.[directiveMatch[1]];
       if (directive && (directive.render || directive.mounted)) {
         const name = directiveMatch[1];
         seenDirectives.add(name);
@@ -1318,7 +1325,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     let found = true;
     while (found) {
       found = false;
-      for (const element of Array.from(target.querySelectorAll("*"))) {
+      for (const element of Array.from(/** @type {RuntimeElement} */ (target).querySelectorAll("*"))) {
         const child = lookup.get(element.tagName.toLowerCase());
         if (!child || element.__teloceMounted || typeof child.mount !== "function") continue;
         element.__teloceMounted = true;
@@ -1329,14 +1336,14 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
         break;
       }
     }
-    for (const element of Array.from(target.querySelectorAll("*"))) {
+    for (const element of Array.from(/** @type {RuntimeElement} */ (target).querySelectorAll("*"))) {
       if (lookup.has(element.tagName.toLowerCase()) && !newlyMounted.has(element) && element.__teloceInstance?.updateProps) {
         const source = element.__telocePendingPropsSource || element;
         element.__teloceInstance.updateProps(readProps(source, state));
         element.__telocePendingPropsSource = undefined;
       }
     }
-    target.querySelectorAll("teloce-dynamic").forEach(element => {
+    /** @type {RuntimeElement} */ (target).querySelectorAll("teloce-dynamic").forEach(/** @param {RuntimeElement} element */ element => {
       const name = evaluate(element.getAttribute("data-teloce-is") || "", state);
       const child = lookup.get(String(name).toLowerCase());
       if (!element.__teloceMounted && child?.mount) {
@@ -1353,10 +1360,10 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
   let directBound = false;
   const regionNodes = new Map();
 
-  const directNeedsUpdate = (record, changed) => {
+  const directNeedsUpdate = /** @param {DynamicRecord} record @param {DynamicValue} changed */ (record, changed) => {
     if (!changed || !changed.size || changed.has("*")) return true;
     const dependencies = Array.isArray(record.dependencies) ? record.dependencies : [];
-    return !dependencies.length || dependencies.includes("*") || dependencies.some(dependency => changed.has(String(dependency).split(".")[0]));
+    return !dependencies.length || dependencies.includes("*") || dependencies.some(/** @param {DynamicValue} dependency */ dependency => changed.has(String(dependency).split(".")[0]));
   };
 
   const bindDirectNodes = () => {
@@ -1365,7 +1372,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     directBindingNodes = new Map();
     const walker = document.createTreeWalker(target, 0xFFFFFFFF, {
       acceptNode(node) {
-        if (node.nodeType === 1 && node.__teloceInstance) return 2;
+        if (node.nodeType === 1 && /** @type {RuntimeElement} */ (node).__teloceInstance) return 2;
         return node.nodeType === 8 ? 1 : 3;
       },
     });
@@ -1380,7 +1387,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
         // comment as the value node: that would keep later text invisible.
         if (text?.nodeType !== 3) {
           text = document.createTextNode('');
-          current.parentNode.insertBefore(text, current.nextSibling);
+          /** @type {Node} */ (current.parentNode).insertBefore(text, current.nextSibling);
         }
         directTextNodes.set(match[1], text);
       }
@@ -1408,7 +1415,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       }
       current = walker.nextNode();
     }
-    target.querySelectorAll("[data-teloce-direct-bindings]").forEach(element => {
+    /** @type {RuntimeElement} */ (target).querySelectorAll("[data-teloce-direct-bindings]").forEach(/** @param {RuntimeElement} element */ element => {
       for (const id of String(element.getAttribute("data-teloce-direct-bindings") || "").split(",").filter(Boolean)) {
         directBindingNodes.set(id, element);
       }
@@ -1417,12 +1424,13 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     directBound = true;
   };
 
-  const updateDirectNodes = changed => {
+  const updateDirectNodes = /** @param {DynamicValue} changed */ changed => {
     if (!directEnabled || !directBound) return;
+    /** @type {Iterable<DynamicValue>} */
     let records = directBindings;
     if (changed?.size && !changed.has('*')) {
       records = new Set(alwaysBindings);
-      for (const dependency of changed) for (const record of bindingIndex.get(dependency) || []) records.add(record);
+      for (const dependency of changed) for (const record of bindingIndex.get(dependency) || []) /** @type {Set<DynamicValue>} */ (records).add(record);
     }
     for (const record of records) {
       if (!directNeedsUpdate(record, changed)) continue;
@@ -1446,7 +1454,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     }
   };
 
-  const updateKeyedRows = (record, region) => {
+  const updateKeyedRows = /** @param {DynamicRecord} record @param {DynamicRecord} region */ (record, region) => {
     const plan = record.rows;
     const values = evaluate(plan.collection, state);
     if (!Array.isArray(values)) return false;
@@ -1462,20 +1470,21 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       region.rowRoots = prepared.rowRoots;
       region.rowReaders = prepared.rowReaders;
     }
-    const rows = region.rows, active = new Set(), next = [], ordered = [];
+    const rows = region.rows, active = new Set(), next = [], ordered = /** @type {DynamicValue[]} */ ([]);
     for (let index = 0; index < values.length; index++) {
       const item = values[index];
       const locals = { [plan.item]: item, index };
+      /** @type {DynamicRecord} */
       const scope = { ...locals, [loopLocals]: locals };
       for (const root of region.rowRoots) if (!(root in locals) && Object.prototype.hasOwnProperty.call(state, root)) scope[root] = state[root];
       const key = String(evaluate(plan.key, scope));
       if (active.has(key)) throw new Error(`Duplicate keyed loop value: ${key}`);
       active.add(key);
-      const snapshot = region.rowReaders.map(read => read(scope));
+      const snapshot = region.rowReaders.map(/** @param {DynamicValue} read */ read => read(scope));
       let row = rows.get(key);
       if (!row) row = { scopeId: String(loopScopeSequence++), snapshot: null, node: null };
       loopScopes.set(row.scopeId, locals);
-      const dirty = !row.snapshot || snapshot.some((value, i) =>
+      const dirty = !row.snapshot || snapshot.some(/** @param {DynamicValue} value @param {number} i */ (value, i) =>
         (value !== null && typeof value === 'object') || !Object.is(value, row.snapshot[i]));
       row.needsBind = dirty;
       if (dirty) {
@@ -1507,14 +1516,14 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
         __patch(region.start.parentNode, null, {
           ...__teloceTransitionHooks(definition), onDispose: cleanupElement,
           start: row.node.previousSibling, end: row.node.nextSibling, nodes: [next[index]],
-          onNodes(nodes) { row.node = nodes[0]; },
+          /** @param {DynamicValue} nodes */ onNodes(nodes) { row.node = nodes[0]; },
         });
       }
     } else {
       __patch(region.start.parentNode, null, {
         ...__teloceTransitionHooks(definition), onDispose: cleanupElement,
         start: region.start, end: region.end, nodes: next,
-        onNodes(nodes) { nodes.forEach((node, index) => { ordered[index].node = node; }); },
+        /** @param {DynamicValue} nodes */ onNodes(nodes) { nodes.forEach(/** @param {RuntimeElement} node @param {number} index */ (node, index) => { ordered[index].node = node; }); },
       });
     }
     region.order = ordered;
@@ -1528,7 +1537,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     return true;
   };
 
-  const update = (changed = null) => {
+  const update = (/** @type {Set<string> | null} */ changed = null) => {
     if (destroyed || !target || rendering) return;
     const wasMounted = mounted;
     rendering = true;
@@ -1564,7 +1573,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
         // static subtree on every state change. This is the key difference
         // between the targeted path and the compatibility renderer.
         if (Object.keys(components).length) mountChildren();
-        if (directPlan.refreshIntegrations) target.querySelectorAll("*").forEach(bindEventsAndDirectives);
+        if (directPlan.refreshIntegrations) /** @type {RuntimeElement} */ (target).querySelectorAll("*").forEach(bindEventsAndDirectives);
       } else {
         loopScopes = new Map();
         loopScopeSequence = 0;
@@ -1573,7 +1582,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
           ...transitions,
           onDispose: cleanupElement,
         });
-        target.querySelectorAll("*").forEach(bindEventsAndDirectives);
+        /** @type {RuntimeElement} */ (target).querySelectorAll("*").forEach(bindEventsAndDirectives);
         mountChildren();
         if (directEnabled && !directBound) {
           bindDirectNodes();
@@ -1595,7 +1604,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       if (!Object.is(previousWatchValues[name], value)) {
         try {
           const result = handler.call(state, value, previousWatchValues[name]);
-          if (result?.then) result.catch(error => handleError(error, `watch:${name}`));
+          if (result?.then) result.catch(/** @param {DynamicValue} error */ error => handleError(error, `watch:${name}`));
         } catch (error) { handleError(error, `watch:${name}`); }
         previousWatchValues[name] = value;
       }
@@ -1603,8 +1612,8 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     syncQueryState();
   };
 
-  const signalCleanups = [];
-  const seedProp = (name, value) => {
+  const signalCleanups = /** @type {Array<() => void>} */ ([]);
+  const seedProp = /** @param {string} name @param {DynamicValue} value */ (name, value) => {
     const current = state[name];
     if (typeof current === 'function' && typeof current.subscribe === 'function' && value && typeof value === 'object' && Object.keys(value).length === 1 && 'value' in value) current.value = value.value;
     else state[name] = value;
@@ -1624,14 +1633,15 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
   callHook("created");
   suppressUpdates = false;
 
-  const hmrRegistry = globalThis.__teloce_hmr_instances ||= new Map();
+  const hmrRegistry = (/** @type {DynamicRecord} */ (globalThis)).__teloce_hmr_instances ||= new Map();
   const hmrKey = moduleUrl || definition?.name || "component";
   const hmrRecord = {
-    target: null,
+    target: /** @type {RuntimeElement | null} */ (null),
     state,
     reload: async () => {
       if (!target || destroyed || !moduleUrl) return;
       const oldTarget = target;
+      /** @type {DynamicRecord} */
       const snapshot = {};
       for (const [key, value] of Object.entries(state)) if (!key.startsWith("$") && typeof value !== "function") snapshot[key] = value;
       instance.unmount();
@@ -1641,7 +1651,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
   };
   if (!hmrRegistry.has(hmrKey)) hmrRegistry.set(hmrKey, new Set());
   hmrRegistry.get(hmrKey).add(hmrRecord);
-  if (!globalThis.__teloce_hmr_reload) globalThis.__teloce_hmr_reload = async () => {
+  if (!(/** @type {DynamicRecord} */ (globalThis)).__teloce_hmr_reload) (/** @type {DynamicRecord} */ (globalThis)).__teloce_hmr_reload = async () => {
     const records = [...hmrRegistry.values()].flatMap(set => [...set]);
     for (const record of records) await record.reload();
   };
@@ -1649,7 +1659,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
   const instance = {
     state,
     update,
-    updateProps(nextProps = {}) {
+    updateProps(/** @type {DynamicRecord} */ nextProps = {}) {
       const normalized = normalizeProps(nextProps);
       suppressUpdates = true;
       let changed = false;
@@ -1664,7 +1674,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       if (changed) update(changedKeys);
       return instance;
     },
-    mount(nextTarget, props = {}) {
+    /** @param {RuntimeElement} nextTarget */ mount(nextTarget, /** @type {DynamicRecord} */ props = {}) {
       target = typeof nextTarget === "string" ? document.querySelector(nextTarget) : nextTarget;
       if (!target) throw new Error("Teloce mount target was not found");
       if (mounted) instance.unmount();
@@ -1680,7 +1690,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
         try { instance.updateProps(props); } finally { target = mountingTarget; }
       }
       const hydrating = Boolean(options.hydrate || target.getAttribute('data-teloce-ssr') === '1');
-      const controls = hydrating ? [...target.querySelectorAll('input,textarea,select')].map(element => ({
+      const controls = hydrating ? [.../** @type {RuntimeElement} */ (target).querySelectorAll('input,textarea,select')].map(element => ({
         element, value: element.value, checked: element.checked,
         start: element.selectionStart, end: element.selectionEnd,
         active: document.activeElement === element,
@@ -1713,7 +1723,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
       if (!target || destroyed) return instance;
       callHook("deactivated");
       callHook("beforeUnmount");
-      const nodes = Array.from(target.querySelectorAll("*")).reverse();
+      const nodes = Array.from(/** @type {RuntimeElement} */ (target).querySelectorAll("*")).reverse();
       for (const element of nodes) {
         element.__teloceInstance?.unmount?.();
         cleanupElement(element);
@@ -1742,7 +1752,7 @@ const __teloceCreateCompiledComponent = (definition, options = {}) => {
     },
   };
 
-  instance.__teloceStyle = style;
+  /** @type {DynamicRecord} */ (instance).__teloceStyle = style;
   if (style && typeof document !== "undefined" && !document.querySelector(`style[data-teloce-style="${styleId}"]`)) {
     const styleElement = document.createElement("style");
     styleElement.setAttribute("data-teloce-style", styleId);

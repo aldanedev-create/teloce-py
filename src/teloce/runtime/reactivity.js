@@ -1,3 +1,4 @@
+/** Runtime reactivity exports. @module */
 export {
   createSignal,
   createEffect,

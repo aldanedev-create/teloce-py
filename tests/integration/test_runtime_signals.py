@@ -34,7 +34,8 @@ def test_modular_runtime_exports_reactive_component_dependencies(tmp_path: Path)
     (tmp_path / "package.json").write_text('{"type":"module"}', encoding="utf-8")
     script = tmp_path / "modular.mjs"
     script.write_text(
-        f"import {{ reactive, createEffect, isReactive }} from {str((runtime / 'runtime.js').as_uri())!r};\n"
+        f"import {{ reactive, createEffect, isReactive, batch, createSignal }} from {str((runtime / 'runtime.js').as_uri())!r};\n"
+        "const count = createSignal(0); batch(() => { count.set(1); count.set(2); }); if (count() !== 2) throw new Error('combined batch export');\n"
         "const state = reactive({ count: 0 }); let observed = 0;\n"
         "createEffect(() => { observed = state.count; }); state.count = 4;\n"
         "await Promise.resolve(); if (!isReactive(state) || observed !== 4) throw new Error(String(observed));\n",
