@@ -1,9 +1,10 @@
+/** Delimited-data parsing, loading, exports and browser downloads. @module */
+/** @import {DynamicValue, DynamicRecord, DynamicCallback, RuntimeElement, RuntimeEvent, DataOptions} from './contracts.js' */
 /* Browser data and sharing helpers for Teloce applications. */
 
-const toDate = value => value instanceof Date ? value : new Date(value);
+const toDate = /** @param {DynamicValue} value */ value => value instanceof Date ? value : new Date(value);
 
-/** Parse RFC-4180-style CSV/TSV without depending on a third-party package. */
-export function parseDelimited(source, options = {}) {
+/** @param {DynamicValue} source */ export function parseDelimited(source, /** @type {DataOptions} */ options = {}) {
   const delimiter = options.delimiter || (options.tsv ? "\t" : ",");
   const text = String(source ?? "").replace(/^\uFEFF/, "");
   const rows = [];
@@ -33,14 +34,15 @@ export function parseDelimited(source, options = {}) {
   if (!headers) return rows;
   return rows.map((values, rowIndex) => {
     if (values.length > headers.length && options.strict) throw new SyntaxError(`Row ${rowIndex + 1} has more fields than the header`);
+    /** @type {DynamicRecord} */
     const result = {};
-    headers.forEach((header, index) => { result[String(header).trim()] = coerce(values[index] ?? "", options.types?.[header]); });
+    headers.forEach(/** @param {DynamicValue} header @param {number} index */ (header, index) => { result[String(header).trim()] = coerce(values[index] ?? "", options.types?.[header]); });
     if (values.length !== headers.length && options.onRowError) options.onRowError({ row: rowIndex + 1, expected: headers.length, received: values.length });
     return result;
   });
 }
 
-export function coerce(value, type) {
+/** @param {DynamicValue} value @param {DynamicValue} type */ export function coerce(value, type) {
   if (value === "" || value == null) return type === "string" ? "" : null;
   if (!type || type === "string") return String(value);
   if (type === "number") { const result = Number(String(value).replace(/,/g, "")); return Number.isFinite(result) ? result : null; }
@@ -50,7 +52,7 @@ export function coerce(value, type) {
   return value;
 }
 
-export async function loadCsv(url, options = {}) {
+/** @param {string} url */ export async function loadCsv(url, /** @type {DataOptions} */ options = {}) {
   const controller = options.signal ? null : (typeof AbortController === "function" ? new AbortController() : null);
   const signal = options.signal || controller?.signal;
   const response = await fetch(url, { signal, headers: { Accept: "text/csv,text/tab-separated-values,text/plain" } });
@@ -59,22 +61,22 @@ export async function loadCsv(url, options = {}) {
   return parseDelimited(source, options);
 }
 
-const safeCsvCell = value => {
+const safeCsvCell = /** @param {DynamicValue} value */ value => {
   const text = value == null ? "" : value instanceof Date ? value.toISOString() : String(value);
   // Prevent spreadsheet formula injection when the export is opened in Excel.
   const safe = /^[=+\-@]/.test(text) ? `'${text}` : text;
   return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 };
 
-export function exportRowsToCsv(rows, options = {}) {
+/** @param {DynamicRecord[]} rows */ export function exportRowsToCsv(rows, /** @type {DataOptions} */ options = {}) {
   const values = Array.isArray(rows) ? rows : [];
   const columns = options.columns || [...new Set(values.flatMap(row => Object.keys(row || {})))];
   const lines = [columns.map(safeCsvCell).join(",")];
-  for (const row of values) lines.push(columns.map(column => safeCsvCell(row?.[column])).join(","));
+  for (const row of values) lines.push(columns.map(/** @param {DynamicValue} column */ column => safeCsvCell(row?.[column])).join(","));
   return lines.join("\r\n") + "\r\n";
 }
 
-export function downloadText(text, filename = "export.txt", type = "text/plain;charset=utf-8") {
+/** @param {string} text */ export function downloadText(text, filename = "export.txt", type = "text/plain;charset=utf-8") {
   const blob = new Blob([text], { type });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -82,21 +84,21 @@ export function downloadText(text, filename = "export.txt", type = "text/plain;c
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-export function downloadRowsAsCsv(rows, filename = "data.csv", options = {}) {
+/** @param {DynamicRecord[]} rows */ export function downloadRowsAsCsv(rows, filename = "data.csv", /** @type {DataOptions} */ options = {}) {
   downloadText(exportRowsToCsv(rows, options), filename, "text/csv;charset=utf-8");
 }
 
-export function exportChartToPng(element, filename = "chart.png", scale = 2) {
+/** @param {Element} element */ export function exportChartToPng(element, filename = "chart.png", scale = 2) {
   if (!element) throw new TypeError("A chart element is required");
   const canvas = element instanceof HTMLCanvasElement ? element : element.querySelector?.("canvas");
   if (!canvas) throw new Error("PNG export requires a canvas chart");
   const output = document.createElement("canvas"); output.width = canvas.width * scale; output.height = canvas.height * scale;
-  const context = output.getContext("2d"); context.scale(scale, scale); context.drawImage(canvas, 0, 0);
+  const context = /** @type {CanvasRenderingContext2D} */ (output.getContext("2d")); context.scale(scale, scale); context.drawImage(canvas, 0, 0);
   const anchor = document.createElement("a");
   anchor.href = output.toDataURL("image/png"); anchor.download = filename; anchor.click();
 }
 
-export function exportChartToSvg(element, filename = "chart.svg") {
+/** @param {Element} element */ export function exportChartToSvg(element, filename = "chart.svg") {
   const svg = element?.matches?.("svg") ? element : element?.querySelector?.("svg");
   if (!svg) throw new Error("SVG export requires an SVG chart");
   downloadText(new XMLSerializer().serializeToString(svg), filename, "image/svg+xml");

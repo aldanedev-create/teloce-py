@@ -1,4 +1,6 @@
-export const __lis = values => {
+/** DOM construction, event binding and reactive structural helpers. @module */
+/** @import {DynamicValue, DynamicRecord, DynamicCallback, RuntimeElement, RuntimeEvent} from './contracts.js' */
+export const __lis = /** @param {number[]} values */ values => {
   const tails = [], previous = new Int32Array(values.length).fill(-1);
   for (let i = 0; i < values.length; i++) {
     if (values[i] < 0) continue;
@@ -11,38 +13,38 @@ export const __lis = values => {
   for (let i = tails.length ? tails[tails.length - 1] : -1; i >= 0; i = previous[i]) stable.add(i);
   return stable;
 };
-export function createElement(tag, props = {}, children = []) {
+/** @param {string} tag @param {DynamicValue} children */ export function createElement(tag, /** @type {Record<string, unknown>} */ props = {}, children = []) {
   const element = document.createElement(tag);
   for (const [name, value] of Object.entries(props)) setAttribute(element, name, value);
   for (const child of children.flat()) if (child != null) element.append(child);
   return element;
 }
 
-export function setAttribute(element, name, value) {
+/** @param {Element} element @param {string} name @param {unknown} value */ export function setAttribute(element, name, value) {
   if (name === 'className') name = 'class';
   if (value === false || value == null) element.removeAttribute(name);
   else if (value === true) element.setAttribute(name, '');
   else element.setAttribute(name, String(value));
 }
 
-export function bindEvent(element, name, handler, options) {
+/** @param {RuntimeElement} element @param {string} name @param {DynamicCallback} handler @param {DynamicRecord} options */ export function bindEvent(element, name, handler, options) {
   element.addEventListener(name, handler, options);
   return () => element.removeEventListener(name, handler, options);
 }
 
-export function bindEvents(element, bindings = []) {
-  const unbind = bindings.map(binding => {
-    const event = typeof binding === 'function' ? binding.event : binding.event || binding.name || binding.type;
+/** @param {RuntimeElement} element @param {DynamicValue} bindings */ export function bindEvents(element, bindings = []) {
+  const unbind = bindings.map(/** @param {DynamicRecord} binding */ binding => {
+    const event = typeof binding === 'function' ? /** @type {DynamicRecord} */ (binding).event : binding.event || binding.name || binding.type;
     const handler = typeof binding === 'function' ? binding : binding.handler || binding.listener || binding.fn;
     if (!event || typeof handler !== 'function') return () => {};
-    return bindEvent(element, event, handler, typeof binding === 'function' ? binding.options : binding.options);
+    return bindEvent(element, event, handler, typeof binding === 'function' ? /** @type {DynamicRecord} */ (binding).options : binding.options);
   });
-  return () => unbind.forEach(remove => remove());
+  return () => unbind.forEach(/** @param {DynamicValue} remove */ remove => remove());
 }
 
-export function createEventHandlerWithModifiers(element, name, handler) {
+/** @param {RuntimeElement} element @param {string} name @param {DynamicCallback} handler */ export function createEventHandlerWithModifiers(element, name, handler) {
   const [eventName, ...modifiers] = String(name).split('.');
-  const listener = event => {
+  const listener = /** @param {RuntimeEvent} event */ event => {
     if (modifiers.includes('self') && event.target !== element) return;
     if (modifiers.includes('enter') && event.key !== 'Enter') return;
     if (modifiers.includes('esc') && event.key !== 'Escape') return;
@@ -66,14 +68,15 @@ export function createEventHandlerWithModifiers(element, name, handler) {
   return listener;
 }
 
-export function createFor(container, source, renderItem, key = (_, index) => index) {
+/** @param {RuntimeElement} container @param {DynamicValue} source @param {DynamicCallback} renderItem */ export function createFor(container, source, renderItem, key = /** @param {DynamicValue} _ @param {number} index */ (_, index) => index) {
   const records = new Map();
-  let order = [];
-  const read = value => typeof value === 'function' && value.__teloce_signal ? value() : value;
-  const update = value => {
-    const focused = container.contains?.(document.activeElement) ? document.activeElement : null;
-    const selection = focused && typeof focused.selectionStart === 'number'
-      ? [focused.selectionStart, focused.selectionEnd, focused.selectionDirection] : null;
+  let order = /** @type {Node[]} */ ([]);
+  const read = /** @param {DynamicValue} [value] */ value => typeof value === 'function' && value.__teloce_signal ? value() : value;
+  const update = /** @param {DynamicValue} [value] */ value => {
+    const focused = /** @type {HTMLInputElement | null} */ (container.contains?.(document.activeElement) ? document.activeElement : null);
+    /** @type {[number, number | null, "forward" | "backward" | "none"] | null} */
+    const selection = /** @type {[number, number | null, "forward" | "backward" | "none"] | null} */ (focused && typeof focused.selectionStart === 'number'
+      ? [focused.selectionStart, focused.selectionEnd, focused.selectionDirection] : null);
     const next = Array.from(read(value) || []);
     const active = new Set();
     const positions = new Map(order.map((node, index) => [node, index]));
@@ -127,11 +130,12 @@ export function createFor(container, source, renderItem, key = (_, index) => ind
   return { update, unmount() { unsubscribe?.(); for (const record of records.values()) record.unmount?.(); records.clear(); container.replaceChildren(); } };
 }
 
-export function createIf(container, source, whenTrue, whenFalse = () => null) {
+/** @param {RuntimeElement} container @param {DynamicValue} source @param {DynamicCallback} whenTrue */ export function createIf(container, source, whenTrue, whenFalse = () => null) {
+  /** @type {boolean | undefined} */
   let previous;
   let initialized = false;
-  const read = value => typeof value === 'function' && value.__teloce_signal ? value() : value;
-  const update = value => {
+  const read = /** @param {DynamicValue} [value] */ value => typeof value === 'function' && value.__teloce_signal ? value() : value;
+  const update = /** @param {DynamicValue} [value] */ value => {
     const condition = Boolean(read(value));
     if (initialized && previous === condition) return;
     initialized = true;
@@ -144,10 +148,10 @@ export function createIf(container, source, whenTrue, whenFalse = () => null) {
   return { update, unmount() { unsubscribe?.(); container.replaceChildren(); } };
 }
 
-export function createModel(element, signal) {
+/** @param {RuntimeElement} element @param {DynamicValue} signal */ export function createModel(element, signal) {
   const read = () => typeof signal === 'function' ? signal() : signal?.get?.();
-  const write = value => typeof signal?.set === 'function' ? signal.set(value) : typeof signal === 'function' && signal.set ? signal.set(value) : undefined;
-  const update = value => {
+  const write = /** @param {DynamicValue} [value] */ value => typeof signal?.set === 'function' ? signal.set(value) : typeof signal === 'function' && signal.set ? signal.set(value) : undefined;
+  const update = /** @param {DynamicValue} [value] */ value => {
     const next = value === undefined ? read() : value;
     if (element.type === 'checkbox') element.checked = Boolean(next);
     else if (element.value !== String(next ?? '')) element.value = next ?? '';
@@ -160,10 +164,10 @@ export function createModel(element, signal) {
   return { update, unmount() { unsubscribe?.(); element.removeEventListener(eventName, listener); } };
 }
 
-export function createClass(element, source) {
+/** @param {RuntimeElement} element @param {DynamicValue} source */ export function createClass(element, source) {
   const staticClass = element.getAttribute('data-teloce-static-class') ?? element.className ?? '';
   element.setAttribute('data-teloce-static-class', staticClass);
-  const update = value => {
+  const update = /** @param {DynamicValue} [value] */ value => {
     const next = value === undefined ? (typeof source === 'function' ? source() : source?.get?.()) : value;
     let dynamicClass = '';
     if (typeof next === 'string') dynamicClass = next;
@@ -176,4 +180,4 @@ export function createClass(element, source) {
   return { update, unmount() { unsubscribe?.(); } };
 }
 
-export function clear(element) { while (element.firstChild) element.firstChild.remove(); }
+/** @param {RuntimeElement} element */ export function clear(element) { while (element.firstChild) element.firstChild.remove(); }

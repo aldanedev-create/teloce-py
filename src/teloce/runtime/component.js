@@ -1,11 +1,16 @@
+/** Component creation, mounting, lifecycle cleanup and asynchronous loading. @module */
+/** @import {DynamicValue, DynamicRecord, DynamicCallback, RuntimeElement, RuntimeEvent, ComponentDefinition, ComponentInstance, AsyncOptions} from './contracts.js' */
 import { createEffect, reactive } from './reactivity.js';
 
-export function createComponent(definition, props = {}) {
+/** @param {ComponentDefinition} definition */ export function createComponent(definition, /** @type {DynamicRecord} */ props = {}) {
   const state = reactive({ ...(definition.data ? definition.data() : {}), ...props });
+  /** @type {RuntimeElement | undefined} */
   let currentTarget;
+  /** @type {import("./signals.js").Effect | undefined} */
   let stopEffect;
-  const instance = { definition, props, state, mounted: false };
-  instance.mount = (target) => {
+  /** @type {ComponentInstance} */
+  const instance = /** @type {ComponentInstance} */ ({ definition, props, state, mounted: false });
+  instance.mount = /** @param {string | Element | null} target */ (target) => {
     if (typeof target === 'string') target = document.querySelector(target);
     if (!target) throw new Error('Teloce mount target was not found');
     if (instance.mounted) instance.unmount();
@@ -21,7 +26,7 @@ export function createComponent(definition, props = {}) {
     definition.mounted?.call(state);
     return instance;
   };
-  instance.updateProps = (nextProps = {}) => {
+  instance.updateProps = (/** @type {DynamicRecord} */ nextProps = {}) => {
     instance.props = nextProps;
     Object.assign(state, nextProps);
     return instance;
@@ -40,23 +45,26 @@ export function createComponent(definition, props = {}) {
   return instance;
 }
 
-export function createApp(definition) {
-  return { mount(target, props) { return createComponent(definition, props).mount(target); } };
+/** @param {ComponentDefinition} definition */ export function createApp(definition) {
+  return { /** @param {string | Element | null} target @param {DynamicRecord} [props] */ mount(/** @type {string | Element | null} */ target, /** @type {DynamicRecord} */ props) { return createComponent(definition, props).mount(target); } };
 }
 
-/** Create a component whose implementation is loaded only when mounted. */
-export function defineAsyncComponent(loader, options = {}) {
+/** @param {DynamicCallback} loader */ export function defineAsyncComponent(loader, /** @type {AsyncOptions} */ options = {}) {
   if (typeof loader !== 'function') throw new TypeError('defineAsyncComponent expects a loader function');
+  /** @type {DynamicValue} */
   let loaded;
+  /** @type {Promise<DynamicValue> | undefined} */
   let loading;
+  /** @type {DynamicRecord | undefined} */
   let current;
+  /** @type {Element | null | undefined} */
   let target;
-  let props = {};
+  let /** @type {DynamicRecord} */ props = {};
   let mountGeneration = 0;
   let mounted = false;
   const placeholder = options.loading ?? (() => document.createComment('teloce-async-loading'));
   const failure = options.error ?? (() => document.createComment('teloce-async-error'));
-  const resolve = module => module?.default ?? module;
+  const resolve = /** @param {DynamicRecord} module */ module => module?.default ?? module;
   const load = async () => {
     if (loaded) return loaded;
     if (!loading) loading = Promise.resolve(loader()).then(resolve).then(component => { loaded = component; return component; });
@@ -64,7 +72,7 @@ export function defineAsyncComponent(loader, options = {}) {
   };
   const instance = {
     get loaded() { return loaded; },
-    async mount(nextTarget, nextProps = {}) {
+    /** @param {string | Element | null} nextTarget */ async mount(nextTarget, /** @type {DynamicRecord} */ nextProps = {}) {
       target = typeof nextTarget === 'string' ? document.querySelector(nextTarget) : nextTarget;
       if (!target) throw new Error('Teloce mount target was not found');
       props = nextProps;
@@ -85,7 +93,7 @@ export function defineAsyncComponent(loader, options = {}) {
         throw error;
       }
     },
-    updateProps(nextProps = {}) { props = nextProps; current?.updateProps?.(nextProps); },
+    updateProps(/** @type {DynamicRecord} */ nextProps = {}) { props = nextProps; current?.updateProps?.(nextProps); },
     unmount() {
       mounted = false;
       mountGeneration += 1;

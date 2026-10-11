@@ -1,3 +1,9 @@
+## Runtime JSDoc coverage
+
+- Check every maintained runtime JavaScript module with strict, no-emit TypeScript.
+- Document shared option contracts and intentional dynamic boundaries.
+- Resolve the ambiguous combined-runtime `batch` export to the signal API.
+
 # Changelog
 
 ### Runtime type checks
