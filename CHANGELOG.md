@@ -1,3 +1,9 @@
+## Type checking with pytscheck
+
+- Add `teloce typecheck` and `teloce.typecheck.check_project()` to type-check `<script lang="ts">` blocks, `.ts` files and template expressions (`{{ }}`, `:attr`, `v-if`/`v-else-if`/`v-show`/`v-text`/`v-html`/`v-model`, `v-for` sources and `@event` handlers) with the optional `pytscheck` package.
+- Report diagnostics at the original `.html`/`.vel` line and column, with typed `v-for` variables and readable messages.
+- Add the `typecheck` extra: `pip install "teloce-py[typecheck]"`.
+
 ## Optional first-party plugins
 
 - Add opt-in Forms, internationalization, accessibility, Head/SEO and PWA modules.

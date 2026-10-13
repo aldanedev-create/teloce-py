@@ -135,3 +135,9 @@ npm run typecheck
 
 See [coverage and workflow](docs/runtime-typechecking.md). Runtime files stay
 `.js`; Python application users do not need Node or TypeScript.
+
+## Optional component type checking
+
+On Python 3.11+, install `pip install "teloce-py[typecheck]"`, then run `teloce typecheck ui` (or `teloce typecheck ui --json` for CI). This checks TypeScript script blocks, `.ts` files/declarations, and supported template expressions using the bundled PyTSCheck compiler.
+
+See [type-checking guide](docs/typecheck.md) for API examples, diagnostic locations, optional dependency handling, and prototype limits. Plain JavaScript components are skipped, props are currently untyped, and project tsconfig/dependency inheritance is not automatic.
