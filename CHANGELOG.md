@@ -1,3 +1,7 @@
+## Parent-to-child prop type checking
+
+- Validate bindings, static attributes, required props, and unknown names for relative default-imported TypeScript child components; map findings to parent template locations.
+
 ## Type checking with pytscheck
 
 - Add `teloce typecheck` and `teloce.typecheck.check_project()` to type-check `<script lang="ts">` blocks, `.ts` files and template expressions (`{{ }}`, `:attr`, `v-if`/`v-else-if`/`v-show`/`v-text`/`v-html`/`v-model`, `v-for` sources and `@event` handlers) with the optional `pytscheck` package.

@@ -396,3 +396,129 @@ def test_extended_config_and_installed_package_types(tmp_path):
         "toUpperCase" in finding.message and "number" in finding.message
         for finding in result.findings
     )
+
+
+def child_project(tmp_path, markup):
+    ui = tmp_path / "ui"
+    ui.mkdir()
+    (ui / "Child.html").write_text("""<script lang="ts">
+export default { props: {
+  label: { type: String, required: true },
+  count: { type: Number, default: 0 },
+  active: { type: Boolean },
+} };
+</script><template>{{ label }} {{ count }}</template>""")
+    parent = ui / "Parent.html"
+    parent.write_text(
+        """<script lang="ts">
+import Counter from "./Child.html";
+export default { components: { Counter }, data() {
+  return { amount: 3, text: "Hi", rows: [1, 2] };
+} };
+</script><template>"""
+        + markup
+        + "</template>"
+    )
+    return ui, parent
+
+
+@pytest.mark.usefixtures("installed_pytscheck")
+@pytest.mark.parametrize(
+    "markup",
+    [
+        '<Counter label="Hello" :count="amount" :active="true" />',
+        '<Counter :label="text" />',
+        '<Counter v-for="row in rows" label="Hello" :count="row" />',
+        '<Counter label="Hello" class="card" style="color:red" id="counter" aria-label="Counter" data-test="counter" @click="amount++" />',
+    ],
+)
+def test_parent_supplies_valid_child_props(tmp_path, markup):
+    ui, parent = child_project(tmp_path, markup)
+    result = check_project([ui])
+    assert result.ok, result.findings
+
+
+@pytest.mark.usefixtures("installed_pytscheck")
+@pytest.mark.parametrize(
+    "markup, expected",
+    [
+        ('<Counter label="Hello" :count="text" />', "number"),
+        ('<Counter :count="amount" />', "label"),
+        ('<Counter label="Hello" :coutn="amount" />', "coutn"),
+        ('<Counter label="Hello" count="3" />', "number"),
+        ('<Counter label="Hello" :active="amount" />', "boolean"),
+        (
+            '<Counter v-for="row in rows" label="Hello" :count="row.toFixed()" />',
+            "number",
+        ),
+    ],
+)
+def test_parent_prop_errors_map_back_to_parent(tmp_path, markup, expected):
+    ui, parent = child_project(tmp_path, markup)
+    before = parent.read_bytes()
+    result = check_project([ui])
+    assert any(
+        f.file == "Parent.html" and f.line == 6 and expected in f.message
+        for f in result.findings
+    ), result.findings
+    assert parent.read_bytes() == before
+    assert not (ui / "Parent.html.tpl.ts").exists()
+    assert check_project([ui], templates=False).ok
+
+
+@pytest.mark.usefixtures("installed_pytscheck")
+def test_unknown_props_on_component_without_declared_props(tmp_path):
+    ui, _ = child_project(tmp_path, '<Counter :extra="amount" />')
+    (ui / "Child.html").write_text(
+        '<script lang="ts">export default { };</script><template>Hi</template>'
+    )
+    result = check_project([ui])
+    assert any(
+        f.file == "Parent.html" and "never" in f.message for f in result.findings
+    )
+
+
+@pytest.mark.usefixtures("installed_pytscheck")
+def test_untyped_javascript_child_keeps_working(tmp_path):
+    ui, _ = child_project(tmp_path, '<Counter :unknown="amount" />')
+    (ui / "Child.html").write_text(
+        '<script>export default { props: ["unknown"] };</script><template>Hi</template>'
+    )
+    assert check_project([ui]).ok
+
+
+@pytest.mark.usefixtures("installed_pytscheck")
+def test_multiline_child_prop_finding_points_to_attribute_line(tmp_path):
+    ui, parent = child_project(tmp_path, '<Counter label="Hello"\n  :count="text" />')
+    result = check_project([ui])
+    assert any(
+        f.file == "Parent.html"
+        and f.line == 7
+        and f.column == 3
+        and "number" in f.message
+        for f in result.findings
+    ), result.findings
+
+
+@pytest.mark.usefixtures("installed_pytscheck")
+def test_non_object_child_export_is_not_mistaken_for_typed_contract(tmp_path):
+    ui, _ = child_project(tmp_path, '<Counter :unknown="amount" />')
+    (ui / "Child.html").write_text(
+        '<script lang="ts">const component = {}; export default component;</script>'
+    )
+    assert check_project([ui]).ok
+
+
+@pytest.mark.usefixtures("installed_pytscheck")
+def test_kebab_case_attributes_match_camel_case_prop_contract(tmp_path):
+    ui, parent = child_project(
+        tmp_path, '<Counter label="Hi" :item-count="amount" :project-name="text" />'
+    )
+    (ui / "Child.html").write_text(
+        '<script lang="ts">export default { props: { label: {type: String, required: true}, itemCount: {type: Number, required: true}, projectName: {type: String} } };</script>'
+    )
+    assert check_project([ui]).ok
+    parent.write_text(
+        parent.read_text().replace(':item-count="amount"', ':item-count="text"')
+    )
+    assert any("number" in finding.message for finding in check_project([ui]).findings)
