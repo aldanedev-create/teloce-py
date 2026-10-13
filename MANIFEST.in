@@ -1,0 +1,2 @@
+include scripts/publish.py
+include docs/publishing.md

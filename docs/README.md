@@ -83,3 +83,5 @@ Then open the URL printed by the server. You do not need to manually run a separ
 Start with the guided [Teloce-Py and Flaxon lessons](lessons/README.md). They cover `.vel` syntax, reusable components, Python framework integration, production habits, and building an original OS-style web application.
 
 - [MinifyJS production integration](minifyjs.md)
+
+- [Publishing releases](publishing.md)
