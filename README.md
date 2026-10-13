@@ -108,7 +108,7 @@ teloce lint --strict
 teloce build --source-map --hash-assets --bundle --report
 ```
 
-Teloce strips common TypeScript syntax but does not type-check.
+Teloce strips common TypeScript syntax during compilation. The optional `teloce typecheck` command checks scripts and supported template expressions with PyTSCheck.
 
 ## Documentation
 
@@ -140,4 +140,4 @@ See [coverage and workflow](docs/runtime-typechecking.md). Runtime files stay
 
 On Python 3.11+, install `pip install "teloce-py[typecheck]"`, then run `teloce typecheck ui` (or `teloce typecheck ui --json` for CI). This checks TypeScript script blocks, `.ts` files/declarations, and supported template expressions using the bundled PyTSCheck compiler.
 
-See [type-checking guide](docs/typecheck.md) for API examples, diagnostic locations, optional dependency handling, and prototype limits. Plain JavaScript components are skipped, props are currently untyped, and project tsconfig/dependency inheritance is not automatic.
+See [type-checking guide](docs/typecheck.md) for API examples, diagnostic locations, optional dependency handling, and prototype limits. Plain JavaScript components are skipped. Project tsconfig settings and dependency declarations are inherited automatically; object-style props infer supported constructor types. Array-style props and checks between components remain limited.
