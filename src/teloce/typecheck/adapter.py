@@ -32,17 +32,25 @@ SKIP_DIRS = {
 DEFINE_DTS = """
 type Fn = (...args: any[]) => any;
 type Computed<C> = { [K in keyof C]: C[K] extends (...a: any[]) => infer R ? R : never };
-declare function __define<P extends string = never, D = {}, C extends Record<string, Fn> = {}, M extends Record<string, Fn> = {}>(
+type PropValue<T> = T extends StringConstructor ? string : T extends NumberConstructor ? number :
+  T extends BooleanConstructor ? boolean : T extends ArrayConstructor ? unknown[] :
+  T extends ObjectConstructor ? Record<string, unknown> : T extends FunctionConstructor ? Fn :
+  T extends abstract new (...args: any[]) => infer V ? V : unknown;
+type DeclaredProp<T> = T extends { type: infer V } ? PropValue<V> : PropValue<T>;
+type OptionalProp<T> = T extends { required: true } | { default: unknown } ? DeclaredProp<T> : DeclaredProp<T> | undefined;
+type Props<P> = P extends readonly string[] ? { readonly [K in P[number]]: any } :
+  { readonly [K in keyof P]: OptionalProp<P[K]> };
+declare function __define<const P extends readonly string[] | Record<string, unknown> = readonly [], D = {}, C extends Record<string, Fn> = {}, M extends Record<string, Fn> = {}>(
   options: {
     components?: Record<string, unknown>;
-    props?: readonly P[];
+    props?: P;
     data?: () => D;
     computed?: C;
     methods?: M;
     mounted?: () => unknown;
     unmounted?: () => unknown;
-  } & ThisType<D & Computed<C> & M & { [K in P]: any }>
-): { readonly __ctx: D & Computed<C> & M & { [K in P]: any } };
+  } & ThisType<D & Computed<C> & M & Props<P>>
+): { readonly __ctx: D & Computed<C> & M & Props<P> };
 declare function __forEach<T>(source: readonly T[], cb: (item: T, index: number) => void): void;
 declare function __forEach(source: number, cb: (item: number, index: number) => void): void;
 declare function __forEach<T extends object>(source: T, cb: (value: T[keyof T], key: string, index: number) => void): void;
@@ -420,6 +428,11 @@ class _Adapter:
         ] = {}
         self.original_text: dict[str, str] = {}
 
+    context: Any = None
+
+    def get_context(self, project_root: str | Path) -> Any:
+        return self.context
+
     def get_sources(self, project_root: str | Path) -> list[Any]:
         from pytscheck import SourceFile
 
@@ -439,7 +452,7 @@ class _Adapter:
                 )
         by_rel = {p.relative_to(base).as_posix(): p for p in files}
         for rel, path in by_rel.items():
-            if path.suffix == ".ts":
+            if path.suffix == ".ts" and self.context is None:
                 sources.append(
                     SourceFile(path=rel, text=path.read_text(encoding="utf-8"))
                 )
@@ -589,7 +602,12 @@ def discover_roots(start: str | Path) -> list[Path]:
 
 
 def check_project(
-    roots: Sequence[str | Path], *, templates: bool = True, strict: bool = True
+    roots: Sequence[str | Path],
+    *,
+    templates: bool = True,
+    strict: bool | None = None,
+    project_root: str | Path | None = None,
+    tsconfig: str | Path | None = None,
 ) -> TypecheckResult:
     """Type-check every component and TypeScript file under ``roots`` with pytscheck."""
     import sys
@@ -600,7 +618,7 @@ def check_project(
         )
     try:
         import pytscheck
-        from pytscheck import CompilerOptions
+        from pytscheck.adapters import ProjectContext
     except (
         ImportError
     ) as exc:  # pragma: no cover - exercised through monkeypatching in tests
@@ -614,24 +632,48 @@ def check_project(
         if not root.is_dir():
             raise TypecheckUnavailable(f"UI path is not a directory: {root}")
     try:
-        project_root = Path(os.path.commonpath([str(r) for r in resolved]))
+        common_root = Path(os.path.commonpath([str(r) for r in resolved]))
     except ValueError as exc:
         raise TypecheckUnavailable(
             "UI directories must share a filesystem root."
         ) from exc
+    root = Path(project_root).resolve() if project_root is not None else common_root
+    config = (root / tsconfig).resolve() if tsconfig is not None else None
+    if project_root is None and config is None:
+        config = next(
+            (
+                parent / "tsconfig.json"
+                for parent in (root, *root.parents)
+                if (parent / "tsconfig.json").is_file()
+            ),
+            None,
+        )
+        if config is not None:
+            root = config.parent
+    if not root.is_dir() or any(
+        not directory.is_relative_to(root) for directory in resolved
+    ):
+        raise TypecheckUnavailable("UI directories must be inside the project root.")
+    inherited = config is not None or (root / "tsconfig.json").is_file()
+    settings: dict[str, object] = {"allowImportingTsExtensions": True}
+    if not inherited:
+        settings.update(
+            {
+                "target": "es2022",
+                "module": "esnext",
+                "moduleResolution": "bundler",
+                "lib": ["es2022", "dom"],
+                "strict": True,
+            }
+        )
+    if strict is not None:
+        settings["strict"] = strict
     adapter = _Adapter(resolved, templates)
-    options = CompilerOptions(
-        strict=strict,
-        target="es2022",
-        module="esnext",
-        module_resolution="bundler",
-        lib=["es2022", "dom"],
-        extra={"allowImportingTsExtensions": True},
-    )
+    adapter.context = ProjectContext(tsconfig=config, compiler_options=settings)
     from pytscheck.exceptions import PyTSCheckError
 
     try:
-        result = pytscheck.check_project(project_root, options=options, adapter=adapter)
+        result = pytscheck.check_project(root, adapter=adapter)
     except (PyTSCheckError, OSError, UnicodeError) as exc:
         raise TypecheckUnavailable(f"Type checking could not run: {exc}") from exc
     return TypecheckResult(
