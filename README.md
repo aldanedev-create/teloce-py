@@ -141,3 +141,7 @@ See [coverage and workflow](docs/runtime-typechecking.md). Runtime files stay
 On Python 3.11+, install `pip install "teloce-py[typecheck]"`, then run `teloce typecheck ui` (or `teloce typecheck ui --json` for CI). This checks TypeScript script blocks, `.ts` files/declarations, and supported template expressions using the bundled PyTSCheck compiler.
 
 See [type-checking guide](docs/typecheck.md) for API examples, diagnostic locations, optional dependency handling, and prototype limits. Plain JavaScript components are skipped. Project tsconfig settings and dependency declarations are inherited automatically; object-style props infer supported constructor types. Props passed to statically imported TypeScript children are validated. Array-style prop values, dynamic children, and some import forms remain limited.
+
+## Publishing releases
+
+See [the publishing guide](docs/publishing.md) for `python scripts/publish.py`, TestPyPI, credentials, and release order.
