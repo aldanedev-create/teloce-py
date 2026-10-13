@@ -302,6 +302,8 @@ def main(args: Optional[list] = None) -> int:
     typecheck_parser.add_argument('paths', nargs='*', help='UI folders to check (default: ./ui and ./modules/*/ui)')
     typecheck_parser.add_argument('--no-templates', action='store_true', help='Only check <script lang="ts"> blocks and .ts files')
     typecheck_parser.add_argument('--no-strict', action='store_true', help='Disable TypeScript strict mode')
+    typecheck_parser.add_argument('--project-root', help='Application root for real files and dependencies')
+    typecheck_parser.add_argument('--tsconfig', help='Configuration path relative to the project root')
     typecheck_parser.add_argument('--json', action='store_true', help='Print findings as JSON')
 
     # Create command

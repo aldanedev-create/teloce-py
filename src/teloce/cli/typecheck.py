@@ -19,7 +19,11 @@ def typecheck_command(args: Any) -> int:
         return 2
     try:
         result = check_project(
-            roots, templates=not args.no_templates, strict=not args.no_strict
+            roots,
+            templates=not args.no_templates,
+            strict=False if args.no_strict else None,
+            project_root=getattr(args, "project_root", None),
+            tsconfig=getattr(args, "tsconfig", None),
         )
     except TypecheckUnavailable as exc:
         print(f"error: {exc}", file=sys.stderr)

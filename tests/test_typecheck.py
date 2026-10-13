@@ -289,3 +289,110 @@ def test_missing_compiler_is_cli_exit_two(tmp_path, capsys):
         assert "could not run" in capsys.readouterr().err
     finally:
         backup.rename(binary)
+
+
+@pytest.mark.usefixtures("installed_pytscheck")
+def test_project_config_aliases_real_files_and_strictness(tmp_path):
+    import json
+
+    ui = tmp_path / "ui"
+    ui.mkdir()
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "utils.ts").write_text('export const title: string = "Hello";')
+    config = tmp_path / "tsconfig.json"
+    config.write_text(
+        json.dumps(
+            {
+                "compilerOptions": {
+                    "strict": False,
+                    "paths": {"@/*": ["./src/*"]},
+                    "module": "esnext",
+                    "moduleResolution": "bundler",
+                },
+                "include": ["src"],
+            }
+        )
+    )
+    component = ui / "App.html"
+    component.write_text(
+        '<script lang="ts">import { title } from "@/utils"; export default { data() { let label: string = null; return { title, label }; } };</script><template>{{ title }}</template>'
+    )
+    before = component.read_bytes()
+    assert check_project([ui]).ok
+    assert any(f.code == 2322 for f in check_project([ui], strict=True).findings)
+    assert component.read_bytes() == before
+    assert not (ui / "App.html.ts").exists()
+    (src / "utils.ts").write_text("export const title: string = 123;")
+    assert any(f.file == "src/utils.ts" for f in check_project([ui]).findings)
+
+
+@pytest.mark.usefixtures("installed_pytscheck")
+def test_explicit_config_and_invalid_config(tmp_path):
+    ui = tmp_path / "ui"
+    ui.mkdir()
+    (ui / "plain.ts").write_text("const label: string = null;")
+    (tmp_path / "custom.json").write_text(
+        '{"compilerOptions":{"strict":false},"include":["ui"]}'
+    )
+    assert check_project([ui], project_root=tmp_path, tsconfig="custom.json").ok
+    with pytest.raises(TypecheckUnavailable, match="could not run"):
+        check_project([ui], project_root=tmp_path, tsconfig="missing.json")
+    (tmp_path / "tsconfig.json").write_text("{ invalid")
+    with pytest.raises(TypecheckUnavailable, match="could not run"):
+        check_project([ui], project_root=tmp_path)
+
+
+@pytest.mark.usefixtures("installed_pytscheck")
+def test_object_props_have_types_in_scripts_and_templates(tmp_path):
+    ui = tmp_path / "ui"
+    ui.mkdir()
+    component = ui / "App.html"
+    component.write_text(
+        '<script lang="ts">export default { props: { title: { type: String, required: true }, count: { type: Number, default: 0 }, active: { type: Boolean, default: false } }, methods: { label() { return this.title.toUpperCase(); } } };</script><template>{{ title.toUpperCase() }} {{ count.toFixed() }} {{ active }}</template>'
+    )
+    assert check_project([ui]).ok
+    component.write_text(
+        component.read_text().replace("count.toFixed()", "count.toUpperCase()")
+    )
+    assert any(
+        "toUpperCase" in f.message and "number" in f.message
+        for f in check_project([ui]).findings
+    )
+
+
+@pytest.mark.usefixtures("installed_pytscheck")
+def test_extended_config_and_installed_package_types(tmp_path):
+    import json
+
+    ui = tmp_path / "ui"
+    ui.mkdir()
+    package = tmp_path / "node_modules/example"
+    package.mkdir(parents=True)
+    (package / "package.json").write_text('{"name":"example","types":"index.d.ts"}')
+    (package / "index.d.ts").write_text("export declare const value: number;")
+    (tmp_path / "base.json").write_text(
+        json.dumps(
+            {
+                "compilerOptions": {
+                    "strict": False,
+                    "module": "esnext",
+                    "moduleResolution": "bundler",
+                }
+            }
+        )
+    )
+    (tmp_path / "tsconfig.json").write_text(
+        '{"extends":"./base.json","include":["ui"]}'
+    )
+    (ui / "App.html").write_text(
+        '<script lang="ts">import { value } from "example"; export default { data() { let label: string = null; return { value, label }; } };</script><template>{{ value.toFixed() }}</template>'
+    )
+    assert check_project([ui]).ok
+    page = ui / "App.html"
+    page.write_text(page.read_text().replace("value.toFixed()", "value.toUpperCase()"))
+    result = check_project([ui])
+    assert any(
+        "toUpperCase" in finding.message and "number" in finding.message
+        for finding in result.findings
+    )

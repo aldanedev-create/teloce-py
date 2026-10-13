@@ -44,7 +44,7 @@ Computed properties that read other computed properties need an explicit return 
 ## Limits
 
 * Only `lang="ts"` components are checked; plain `<script>` components are skipped.
-* Component `props` are untyped (`any`), so values passed to child components are not checked yet.
+* Array-style `props` remain untyped (`any`). Object-style props infer String, Number, Boolean, Array, Object, Function, and class-constructor types within the component. Required/default props are defined; optional props may be undefined. Array items and plain Object members need further annotations; props passed to child components are not checked yet.
 * Slots, dynamic `<component :is>`, and unknown component tags are not checked.
 * Template extraction uses a position-preserving scanner; it will move to the template AST once nodes carry exact source spans.
 * pytscheck bundles a preview build of the TypeScript compiler; pin the pytscheck version in CI.
@@ -59,6 +59,31 @@ for finding in result.findings:
     print(finding.format())
 ```
 
-Supply existing directories. Empty input and compiler/configuration/I/O failures raise `TypecheckUnavailable`; the CLI reports exit code 2. Declaration files (`.d.ts`) under these directories are included. This prototype checks an isolated virtual project with explicit compiler options; it does not automatically inherit the application's tsconfig or installed package declarations. Include suitable declarations under the supplied roots.
+Supply existing directories. Empty input and compiler/configuration/I/O failures raise `TypecheckUnavailable`; the CLI reports exit code 2. Declaration files (`.d.ts`) under these directories are included. Checks inherit the nearest ancestor `tsconfig.json` automatically, including extended compiler options, JSX, strictness and import aliases, and resolve real project files and installed declarations. Without a config, checking uses strict ES2022/bundler defaults. `--no-strict` explicitly overrides strictness. Generated files use a temporary workspace and never overwrite project files; conflicting generated filenames are errors.
+
+For multiple source folders, pass the application's root explicitly:
+
+```python
+result = check_project(["ui", "modules/shop/ui"], project_root=".", tsconfig="tsconfig.json")
+```
+
+The `tsconfig` argument is optional. CLI equivalents are `--project-root .` and `--tsconfig tsconfig.json`. Relative configuration paths resolve against the project root. PyTSCheck checks project files selected by the config in addition to generated components, so findings may also reference files outside the UI folders. Installed npm declarations are resolved from the consuming project's `node_modules`; Python declaration packages may expose declarations in the project. No npm packages are installed automatically. The adapter only overrides emission settings and enables TypeScript extension imports for generated template imports; other configured compiler rules are retained.
 
 Locations are 1-based; columns use UTF-16 coordinates. Template property/identifier errors point to the first matching identifier in the expression; other template diagnostics point to the expression start. The expression scanner is a prototype and does not model every JavaScript lexical scope, regular expression, or HTML entity mapping.
+
+## Typed object-style props
+
+```ts
+export default {
+  props: {
+    title: { type: String, required: true },
+    count: { type: Number, default: 0 },
+    subtitle: { type: String }
+  },
+  methods: {
+    label() { return this.title.toUpperCase(); }
+  }
+};
+```
+
+`title` is a string, `count` is a number, and `subtitle` is `string | undefined`. Template expressions use the same types.

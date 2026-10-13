@@ -54,6 +54,7 @@ Release dates below are the first upload dates on [PyPI](https://pypi.org/projec
 - Preserve normalized `.trim`/`.number` text and focused `.lazy` edits, respect IME composition, synchronize checkbox arrays/radios/selects, and clean up composition handlers.
 
 ### Added
+- Type checking inherits project tsconfig settings, real-file imports, and installed declarations through PyTSCheck project context; object-style props infer supported constructor types.
 - Independent AST-based SSR programs, safe public snapshots, named slots, explicit hydration and runtime diagnostics.
 - Manifest-selected SSR entries, bounded render caching and the `teloce prerender` command.
 - Node expression parity and Chromium hydration regression coverage.
