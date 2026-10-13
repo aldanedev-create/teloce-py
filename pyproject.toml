@@ -47,6 +47,9 @@ dependencies = [
 ]
 dynamic = ["version"]
 
+[project.optional-dependencies]
+typecheck = ['pytscheck>=0.1.1,<0.2; python_version >= "3.11"']
+
 [project.urls]
 Homepage = "https://github.com/aldanedev-create/teloce-py"
 Documentation = "https://github.com/aldanedev-create/teloce-py/tree/main/docs"

@@ -15,6 +15,7 @@ from teloce.cli.watch import watch_command
 from teloce.cli.debug import debug_command
 from teloce.cli.doctor import doctor_command
 from teloce.cli.lint import lint_command
+from teloce.cli.typecheck import typecheck_command
 from teloce.cli.create import create_command
 from teloce.cli.benchmark import benchmark_command
 from teloce.cli.compile import compile_command
@@ -295,6 +296,14 @@ def main(args: Optional[list] = None) -> int:
         help='Strict linting mode'
     )
     
+    typecheck_parser = subparsers.add_parser(
+        'typecheck', help='Type-check TypeScript in components and template expressions (needs pytscheck)'
+    )
+    typecheck_parser.add_argument('paths', nargs='*', help='UI folders to check (default: ./ui and ./modules/*/ui)')
+    typecheck_parser.add_argument('--no-templates', action='store_true', help='Only check <script lang="ts"> blocks and .ts files')
+    typecheck_parser.add_argument('--no-strict', action='store_true', help='Disable TypeScript strict mode')
+    typecheck_parser.add_argument('--json', action='store_true', help='Print findings as JSON')
+
     # Create command
     create_parser = subparsers.add_parser('create', help='Create a new Teloce project')
     create_parser.add_argument(
@@ -335,6 +344,7 @@ def main(args: Optional[list] = None) -> int:
         'debug': debug_command,
         'doctor': doctor_command,
         'lint': lint_command,
+        'typecheck': typecheck_command,
         'create': create_command,
         'benchmark': benchmark_command,
         'compile': compile_command,
