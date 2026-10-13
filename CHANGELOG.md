@@ -47,7 +47,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 Release dates below are the first upload dates on [PyPI](https://pypi.org/project/teloce-py/#history), in UTC. Historical summaries were reconstructed from repository changes up to each publication date. The repository has no release tags; comparison links use commits instead. Teloce-Py remains beta software.
 
-## [Unreleased]
+## [3.0]
 
 ### Fixed
 - Harden compiled component remounting, lazy-load ownership/retries, polling/live cleanup and visibility scheduling.
