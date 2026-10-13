@@ -507,3 +507,18 @@ def test_non_object_child_export_is_not_mistaken_for_typed_contract(tmp_path):
         '<script lang="ts">const component = {}; export default component;</script>'
     )
     assert check_project([ui]).ok
+
+
+@pytest.mark.usefixtures("installed_pytscheck")
+def test_kebab_case_attributes_match_camel_case_prop_contract(tmp_path):
+    ui, parent = child_project(
+        tmp_path, '<Counter label="Hi" :item-count="amount" :project-name="text" />'
+    )
+    (ui / "Child.html").write_text(
+        '<script lang="ts">export default { props: { label: {type: String, required: true}, itemCount: {type: Number, required: true}, projectName: {type: String} } };</script>'
+    )
+    assert check_project([ui]).ok
+    parent.write_text(
+        parent.read_text().replace(':item-count="amount"', ':item-count="text"')
+    )
+    assert any("number" in finding.message for finding in check_project([ui]).findings)

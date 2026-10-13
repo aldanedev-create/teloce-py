@@ -463,6 +463,7 @@ class _TemplateWalker(HTMLParser):
                 expressions.append(value)
             elif name.startswith((":", "v-bind:")):
                 key = name[1:] if name.startswith(":") else name[7:]
+                key = re.sub(r"-([a-z])", lambda match: match.group(1).upper(), key)
                 if key in passthrough or key.startswith(("data-", "aria-")):
                     continue
                 if value:
@@ -473,7 +474,7 @@ class _TemplateWalker(HTMLParser):
                 # matching the runtime's getAttribute-based prop extraction.
                 fields.append(
                     (
-                        f"{json.dumps(name)}: {json.dumps(value or '')}",
+                        f"{json.dumps(re.sub(r'-([a-z])', lambda match: match.group(1).upper(), name))}: {json.dumps(value or '')}",
                         (loc, value or name),
                     )
                 )
