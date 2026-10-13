@@ -12,6 +12,7 @@ Two kinds of virtual TypeScript are generated and checked by pytscheck:
 from __future__ import annotations
 
 import os
+import json
 import re
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
@@ -40,6 +41,11 @@ type DeclaredProp<T> = T extends { type: infer V } ? PropValue<V> : PropValue<T>
 type OptionalProp<T> = T extends { required: true } | { default: unknown } ? DeclaredProp<T> : DeclaredProp<T> | undefined;
 type Props<P> = P extends readonly string[] ? { readonly [K in P[number]]: any } :
   { readonly [K in keyof P]: OptionalProp<P[K]> };
+type RequiredProps<P> = { [K in keyof P]: P[K] extends { required: true } ? K : never }[keyof P];
+type PublicProps<P> = P extends readonly string[] ? ([P[number]] extends [never] ? Record<string, never> : { [K in P[number]]?: any }) :
+  keyof P extends never ? Record<string, never> :
+  { [K in RequiredProps<P>]: DeclaredProp<P[K]> } & { [K in Exclude<keyof P, RequiredProps<P>>]?: DeclaredProp<P[K]> };
+declare function __checkProps<P>(props: P): void;
 declare function __define<const P extends readonly string[] | Record<string, unknown> = readonly [], D = {}, C extends Record<string, Fn> = {}, M extends Record<string, Fn> = {}>(
   options: {
     components?: Record<string, unknown>;
@@ -50,7 +56,7 @@ declare function __define<const P extends readonly string[] | Record<string, unk
     mounted?: () => unknown;
     unmounted?: () => unknown;
   } & ThisType<D & Computed<C> & M & Props<P>>
-): { readonly __ctx: D & Computed<C> & M & Props<P> };
+): { readonly __ctx: D & Computed<C> & M & Props<P>; readonly __props: PublicProps<P> };
 declare function __forEach<T>(source: readonly T[], cb: (item: T, index: number) => void): void;
 declare function __forEach(source: number, cb: (item: number, index: number) => void): void;
 declare function __forEach<T extends object>(source: T, cb: (value: T[keyof T], key: string, index: number) => void): void;
@@ -154,6 +160,43 @@ def _export_object_span(body: str) -> tuple[int, int] | None:
                 len(encoded[: value.end_byte].decode("utf-8")),
             )
     return None
+
+
+def _component_imports(body: str, path: Path, generated: set[Path]) -> dict[str, str]:
+    """Identify default imports of local TypeScript components using the script AST."""
+    from teloce.javascript.tree_sitter_backend import parse_tree
+
+    encoded = body.encode("utf-8")
+    imports = {}
+    for statement in parse_tree(body, "ts").root_node.named_children:
+        if statement.type != "import_statement":
+            continue
+        source = statement.child_by_field_name("source")
+        clause = next(
+            (
+                child
+                for child in statement.named_children
+                if child.type == "import_clause"
+            ),
+            None,
+        )
+        if source is None or clause is None:
+            continue
+        default = next(
+            (child for child in clause.named_children if child.type == "identifier"),
+            None,
+        )
+        if default is None:
+            continue
+        source_text = encoded[source.start_byte + 1 : source.end_byte - 1].decode(
+            "utf-8"
+        )
+        target = (path.parent / source_text).resolve()
+        if not source_text.startswith(".") or target not in generated:
+            continue
+        name = encoded[default.start_byte : default.end_byte].decode("utf-8")
+        imports[name.lower()] = source_text
+    return imports
 
 
 def rewrite_default_export(body: str) -> str | None:
@@ -293,8 +336,9 @@ def free_identifiers(expr: str, locals_: Iterable[str] = ()) -> list[str]:
 class _TemplateWalker(HTMLParser):
     """Emit one TypeScript statement per template expression, remembering where each came from."""
 
-    def __init__(self) -> None:
+    def __init__(self, components: dict[str, str] | None = None) -> None:
         super().__init__(convert_charrefs=False)
+        self.components = components or {}
         self.out: list[str] = []
         self.origins: list[tuple[tuple[int, int], str] | None] = []
         self._stack: list[tuple[str, bool]] = []
@@ -386,11 +430,68 @@ class _TemplateWalker(HTMLParser):
                 self._unit(value, loc)
             elif name.startswith(("@", "v-on:")):
                 self._unit(value, loc, event=True)
+        if tag in self.components:
+            self._component_props(tag, attrs, raw, line, col)
         if self_closing or tag in _VOID:
             if opened:
                 self._close_loop()
         else:
             self._stack.append((tag, opened))
+
+    def _component_props(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+        raw: str,
+        line: int,
+        col: int,
+    ) -> None:
+        # Keep the validation in the v-for scope opened by _start.
+        fields, expressions = [], []
+        passthrough = {"class", "style", "id", "key", "ref", "slot", "role", "tabindex"}
+        for name, value in attrs:
+            found = re.search(
+                r"(?<![\w:-])" + re.escape(name) + r"(?=\s|=|/?>)", raw, re.I
+            )
+            loc = (
+                self._position(line, col, raw, found.start()) if found else (line, col)
+            )
+            if name.startswith(("@", "v-on:", "data-", "aria-")) or name in passthrough:
+                continue
+            if name == "v-bind" and value:
+                fields.append((f"...({value})", (loc, value)))
+                expressions.append(value)
+            elif name.startswith((":", "v-bind:")):
+                key = name[1:] if name.startswith(":") else name[7:]
+                if key in passthrough or key.startswith(("data-", "aria-")):
+                    continue
+                if value:
+                    fields.append((f"{json.dumps(key)}: ({value})", (loc, value)))
+                    expressions.append(value)
+            elif not name.startswith("v-"):
+                # Static attributes are strings; bare attributes are empty strings,
+                # matching the runtime's getAttribute-based prop extraction.
+                fields.append(
+                    (
+                        f"{json.dumps(name)}: {json.dumps(value or '')}",
+                        (loc, value or name),
+                    )
+                )
+        ids = sorted(
+            set().union(
+                *(set(free_identifiers(expr, self._locals())) for expr in expressions)
+            )
+        )
+        pattern = "{ " + ", ".join(ids) + " }" if ids else "{}"
+        self._emit(f"(({pattern}: Ctx) => {{", ((line, col), raw))
+        self._emit(
+            f"__checkProps<typeof {self.components[tag]}.__props>({{",
+            ((line, col), raw),
+        )
+        for prop_field, origin in fields:
+            self._emit(prop_field + ",", origin)
+        self._emit("});", ((line, col), raw))
+        self._emit("})(__ctx);", ((line, col), raw))
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         self._start(tag, attrs, False)
@@ -451,6 +552,12 @@ class _Adapter:
                     if (Path(directory) / name).is_file()
                 )
         by_rel = {p.relative_to(base).as_posix(): p for p in files}
+        generated = set()
+        for path in by_rel.values():
+            if path.suffix in {".html", ".vel"}:
+                script = _SCRIPT.search(path.read_text(encoding="utf-8"))
+                if script and _export_object_span(script.group(2)) is not None:
+                    generated.add(path.resolve())
         for rel, path in by_rel.items():
             if path.suffix == ".ts" and self.context is None:
                 sources.append(
@@ -482,18 +589,32 @@ class _Adapter:
             sources.append(SourceFile(path=rel + ".ts", text=padded, origin_path=rel))
             template = _TEMPLATE.search(text)
             if self.templates and wrapped is not None and template:
-                sources.append(self._template_source(rel, path.name, text, template))
+                sources.append(
+                    self._template_source(
+                        rel,
+                        path.name,
+                        text,
+                        template,
+                        _component_imports(body, path, generated),
+                    )
+                )
         return sources
 
     def _template_source(
-        self, rel: str, filename: str, text: str, template: re.Match[str]
+        self,
+        rel: str,
+        filename: str,
+        text: str,
+        template: re.Match[str],
+        components: dict[str, str],
     ) -> Any:
         from pytscheck import SourceFile
 
         inner = template.group(1)
         first_line = text[: template.start(1)].count("\n") + 1
         first_col = template.start(1) - (text.rfind("\n", 0, template.start(1)) + 1)
-        walker = _TemplateWalker()
+        names = {tag: f"__child_{index}" for index, tag in enumerate(components)}
+        walker = _TemplateWalker(names)
         walker.feed(inner)
         walker.close()
         header = [
@@ -501,6 +622,10 @@ class _Adapter:
             "type Ctx = typeof __component extends { readonly __ctx: infer X } ? X : never;",
             "declare const __ctx: Ctx;",
             "function __template() {",
+        ]
+        header[1:1] = [
+            f"import {names[tag]} from {json.dumps(source + '.ts')};"
+            for tag, source in components.items()
         ]
         mapped: list[tuple[tuple[int, int], str] | None] = [None] * len(header)
         for origin in walker.origins:

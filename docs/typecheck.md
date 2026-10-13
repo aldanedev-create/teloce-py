@@ -44,8 +44,8 @@ Computed properties that read other computed properties need an explicit return 
 ## Limits
 
 * Only `lang="ts"` components are checked; plain `<script>` components are skipped.
-* Array-style `props` remain untyped (`any`). Object-style props infer String, Number, Boolean, Array, Object, Function, and class-constructor types within the component. Required/default props are defined; optional props may be undefined. Array items and plain Object members need further annotations; props passed to child components are not checked yet.
-* Slots, dynamic `<component :is>`, and unknown component tags are not checked.
+* Array-style `props` remain untyped (`any`). Object-style props infer String, Number, Boolean, Array, Object, Function, and class-constructor types within the component. Required/default props are defined; optional props may be undefined. Array items and plain Object members need further annotations; props passed to statically imported TypeScript children are checked against their public contract.
+* Slots, dynamic `<component :is>`, unknown tags, JavaScript children, and non-object default exports are not checked. Child checking currently follows relative default imports within the supplied UI roots; named/package/alias component imports are not resolved into child contracts. Object spreads are checked structurally, but additional keys hidden in a spread or values typed as `any` cannot be fully validated.
 * Template extraction uses a position-preserving scanner; it will move to the template AST once nodes carry exact source spans.
 * pytscheck bundles a preview build of the TypeScript compiler; pin the pytscheck version in CI.
 
@@ -87,3 +87,24 @@ export default {
 ```
 
 `title` is a string, `count` is a number, and `subtitle` is `string | undefined`. Template expressions use the same types.
+
+## Props passed between components
+
+Default-import a TypeScript child component from a relative `.html` or `.vel` path under the checked UI roots. The checker uses its prop declaration for template attributes and bindings:
+
+```html
+<script lang="ts">
+import Counter from "./Counter.html";
+export default {
+  components: { Counter },
+  data() { return { count: 3 }; }
+};
+</script>
+<template>
+  <Counter label="Items" :count="count" />
+</template>
+```
+
+If `Counter` requires a string `label` and accepts a numeric `count`, a missing `label`, `:count="'hello'"`, or a misspelled `:coutn="count"` reports a finding against the parent template. Optional props and props with defaults may be omitted; `required: true` still requires a supplied value. Bindings inside `v-for` use the loop variable's type. Attribute findings map to the parent attribute's line/column; missing-prop findings point to the component tag.
+
+Static attributes are strings (`count="3"` is not a number); use `:count="3"` and `:active="true"` for numeric/boolean values. Events, framework directives, and supported passthrough attributes (`class`, `style`, `id`, `key`, `ref`, `slot`, `role`, `tabindex`, `aria-*`, `data-*`) are handled separately from declared props. `--no-templates` disables these template checks.
