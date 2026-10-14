@@ -11,13 +11,14 @@ Two kinds of virtual TypeScript are generated and checked by pytscheck:
 
 from __future__ import annotations
 
-import os
 import json
+import os
 import re
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 SKIP_DIRS = {
     "node_modules",
@@ -34,7 +35,7 @@ DEFINE_DTS = """
 type Fn = (...args: any[]) => any;
 type Computed<C> = { [K in keyof C]: C[K] extends (...a: any[]) => infer R ? R : never };
 type PropValue<T> = T extends StringConstructor ? string : T extends NumberConstructor ? number :
-  T extends BooleanConstructor ? boolean : T extends ArrayConstructor ? unknown[] :
+  T extends BooleanConstructor ? boolean : T extends readonly unknown[] ? PropValue<T[number]> : T extends ArrayConstructor ? unknown[] :
   T extends ObjectConstructor ? Record<string, unknown> : T extends FunctionConstructor ? Fn :
   T extends abstract new (...args: any[]) => infer V ? V : unknown;
 type DeclaredProp<T> = T extends { type: infer V } ? PropValue<V> : PropValue<T>;
@@ -46,17 +47,57 @@ type PublicProps<P> = P extends readonly string[] ? ([P[number]] extends [never]
   keyof P extends never ? Record<string, never> :
   { [K in RequiredProps<P>]: DeclaredProp<P[K]> } & { [K in Exclude<keyof P, RequiredProps<P>>]?: DeclaredProp<P[K]> };
 declare function __checkProps<P>(props: P): void;
-declare function __define<const P extends readonly string[] | Record<string, unknown> = readonly [], D = {}, C extends Record<string, Fn> = {}, M extends Record<string, Fn> = {}>(
+type RuntimeContext<E extends readonly string[]> = {
+  $emit(name: E[number], detail?: unknown): void;
+  readonly $attrs: Record<string, unknown>;
+};
+declare namespace __TeloceSignals {
+  interface Signal<T> {
+    (): T;
+    (value: T): T;
+    value: T;
+    get(): T;
+    set(value: T): T;
+    update(updater: (value: T) => T): T;
+    peek(): T;
+    subscribe(listener: ((value: T) => void) | { run(value: T): void }): () => void;
+    readonly __teloce_signal: true;
+  }
+  interface Effect { run(): unknown; stop(): void; stopped: boolean; }
+  function createSignal<T>(initial: T): Signal<T>;
+  function createSignal(): Signal<undefined>;
+  function createComputed<T>(fn: () => T): Signal<T>;
+  const createMemo: typeof createComputed;
+  function createEffect(fn: () => unknown): Effect;
+  function batch<T>(fn: () => T): T;
+  function untracked<T>(fn: () => T): T;
+  function isSignal(value: unknown): value is Signal<unknown>;
+  function isComputed(value: unknown): value is Signal<unknown>;
+  function toSignal<T>(value: T | Signal<T>): Signal<T>;
+  function getValue<T>(value: T | Signal<T>): T;
+}
+declare function __define<const P extends readonly string[] | Record<string, unknown> = readonly [], D = {}, C extends Record<string, Fn> = {}, M extends Record<string, Fn> = {}, const E extends readonly string[] = readonly string[]>(
   options: {
+    name?: string;
     components?: Record<string, unknown>;
+    emits?: E;
+    watch?: { [K in keyof D]?: (value: D[K], previous: D[K]) => unknown } & ThisType<D & Computed<C> & M & Props<P> & RuntimeContext<E>>;
+    beforeCreate?: () => unknown;
+    created?: () => unknown;
+    beforeMount?: () => unknown;
+    beforeUpdate?: () => unknown;
+    updated?: () => unknown;
+    activated?: () => unknown;
+    deactivated?: () => unknown;
+    beforeUnmount?: () => unknown;
     props?: P;
     data?: () => D;
     computed?: C;
     methods?: M;
     mounted?: () => unknown;
     unmounted?: () => unknown;
-  } & ThisType<D & Computed<C> & M & Props<P>>
-): { readonly __ctx: D & Computed<C> & M & Props<P>; readonly __props: PublicProps<P> };
+  } & ThisType<D & Computed<C> & M & Props<P> & RuntimeContext<E>>
+): { readonly __ctx: D & Computed<C> & M & Props<P> & RuntimeContext<E>; readonly __props: PublicProps<P> };
 declare function __forEach<T>(source: readonly T[], cb: (item: T, index: number) => void): void;
 declare function __forEach(source: number, cb: (item: number, index: number) => void): void;
 declare function __forEach<T extends object>(source: T, cb: (value: T[keyof T], key: string, index: number) => void): void;
@@ -138,9 +179,10 @@ def _match_brace(text: str, i: int) -> int:
 
 
 _SCRIPT = re.compile(
-    r"(<script\b[^>]*\blang\s*=\s*[\"']ts[\"'][^>]*>)(.*?)(</script>)", re.S | re.I
+    r"(<script\b[^>]*\blang\s*=\s*[\"']ts[\"'][^>]*>)(.*?)(</script>)",
+    re.DOTALL | re.IGNORECASE,
 )
-_TEMPLATE = re.compile(r"<template\b[^>]*>(.*)</template>", re.S | re.I)
+_TEMPLATE = re.compile(r"<template\b[^>]*>(.*)</template>", re.DOTALL | re.IGNORECASE)
 
 
 def _export_object_span(body: str) -> tuple[int, int] | None:
@@ -270,66 +312,130 @@ _IDENT = re.compile(r"[A-Za-z_$][\w$]*")
 
 
 def free_identifiers(expr: str, locals_: Iterable[str] = ()) -> list[str]:
-    """Names an expression reads from the component (not properties, object keys, loop vars, or globals)."""
-    local = set(locals_)
-    arrow: set[str] = set()
-    for m in re.finditer(r"\(([^()]*)\)\s*=>", expr):
-        arrow.update(_IDENT.findall(m.group(1)))
-    for m in re.finditer(r"([A-Za-z_$][\w$]*)\s*=>", expr):
-        arrow.add(m.group(1))
+    """Resolve expression references with lexical scopes from the TypeScript AST."""
+    from teloce.javascript.tree_sitter_backend import parse_tree
+
+    source = "(" + expr + ")"
+    tree = parse_tree(source, "ts")
+    if tree.root_node.has_error:
+        source = expr
+        tree = parse_tree(source, "ts")
+    encoded = source.encode("utf-8")
     found: set[str] = set()
-    stack: list[str] = []
-    i, n = 0, len(expr)
-    while i < n:
-        char = expr[i]
-        if char in "'\"`":
-            quote, i = char, i + 1
-            while i < n and expr[i] != quote:
-                if quote == "`" and expr[i : i + 2] == "${":
-                    end = _match_brace(expr, i + 1)
-                    end = n if end < 0 else end
-                    found.update(free_identifiers(expr[i + 2 : end], local))
-                    i = end + 1
-                    continue
-                i += 2 if expr[i] == "\\" else 1
-            i += 1
-            continue
-        if char in "([{":
-            stack.append(char)
-            i += 1
-            continue
-        if char in ")]}":
-            if stack:
-                stack.pop()
-            i += 1
-            continue
-        if char.isdigit():
-            i += len(re.match(r"\d[\w.]*", expr[i:]).group(0))  # type: ignore[union-attr]
-            continue
-        match = _IDENT.match(expr, i)
-        if match:
-            name, end = match.group(0), match.end()
-            before, rest = expr[:i].rstrip(), expr[end:].lstrip()
-            is_property = before.endswith(".") and not before.endswith("..")
-            is_key = bool(
-                stack
-                and stack[-1] == "{"
-                and before
-                and before[-1] in "{,"
-                and rest.startswith(":")
+
+    def text(node):
+        return encoded[node.start_byte : node.end_byte].decode("utf-8")
+
+    def bindings(node):
+        if node is None:
+            return set()
+        if node.type in {"identifier", "shorthand_property_identifier_pattern"}:
+            return {text(node)}
+        if node.type in {
+            "pair_pattern",
+            "assignment_pattern",
+            "required_parameter",
+            "optional_parameter",
+        }:
+            target = (
+                node.child_by_field_name("value")
+                if node.type == "pair_pattern"
+                else (
+                    node.child_by_field_name("left")
+                    or node.child_by_field_name("pattern")
+                )
             )
-            if not (
-                is_property
-                or is_key
-                or name in _KEYWORDS
-                or name in _GLOBALS
-                or name in local
-                or name in arrow
+            return bindings(target)
+        if node.type in {"type_annotation", "property_identifier"}:
+            return set()
+        result = set()
+        for child in node.named_children:
+            result.update(bindings(child))
+        return result
+
+    functions = {
+        "arrow_function",
+        "function_expression",
+        "function_declaration",
+        "generator_function",
+        "generator_function_declaration",
+        "method_definition",
+    }
+
+    def visit_defaults(node, scope):
+        if node is None:
+            return
+        if node.type in {
+            "assignment_pattern",
+            "required_parameter",
+            "optional_parameter",
+            "object_assignment_pattern",
+        }:
+            value = node.child_by_field_name("right") or node.child_by_field_name(
+                "value"
+            )
+            if value is not None:
+                visit(value, scope)
+        for child in node.named_children:
+            visit_defaults(child, scope)
+
+    def visit(node, scope):
+        if node.type in {"comment", "regex", "type_annotation"}:
+            return
+        if node.type in functions:
+            scope = (
+                scope
+                | bindings(node.child_by_field_name("parameters"))
+                | bindings(node.child_by_field_name("parameter"))
+            )
+            scope |= bindings(node.child_by_field_name("name"))
+            visit_defaults(node.child_by_field_name("parameters"), scope)
+            visit_defaults(node.child_by_field_name("parameter"), scope)
+        if node.type in {
+            "statement_block",
+            "program",
+            "for_statement",
+            "for_in_statement",
+            "catch_clause",
+        }:
+            scope = set(scope)
+            scope.update(bindings(node.child_by_field_name("parameter")))
+            for child in node.named_children:
+                declarations = (
+                    child.named_children
+                    if child.type in {"lexical_declaration", "variable_declaration"}
+                    else [child]
+                )
+                for declaration in declarations:
+                    if declaration.type in {
+                        "variable_declarator",
+                        "function_declaration",
+                        "class_declaration",
+                    }:
+                        scope.update(bindings(declaration.child_by_field_name("name")))
+        if node.type in {"identifier", "shorthand_property_identifier"}:
+            name = text(node)
+            parent = node.parent
+            # Declaration identifiers are not reads. Initializers still are.
+            if (
+                parent is not None
+                and parent.type
+                in {"variable_declarator", "function_declaration", "class_declaration"}
+                and parent.child_by_field_name("name") == node
             ):
+                return
+            if name not in scope and name not in _GLOBALS and name not in _KEYWORDS:
                 found.add(name)
-            i = end
-            continue
-        i += 1
+        for child in node.named_children:
+            if node.type in functions and child in {
+                node.child_by_field_name("parameters"),
+                node.child_by_field_name("parameter"),
+                node.child_by_field_name("name"),
+            }:
+                continue
+            visit(child, scope)
+
+    visit(tree.root_node, set(locals_))
     return sorted(found)
 
 
@@ -341,7 +447,8 @@ class _TemplateWalker(HTMLParser):
         self.components = components or {}
         self.out: list[str] = []
         self.origins: list[tuple[tuple[int, int], str] | None] = []
-        self._stack: list[tuple[str, bool]] = []
+        self._stack: list[tuple[str, bool, bool]] = []
+        self._branches: list[list[str]] = [[]]
         self._scopes: list[set[str]] = [set()]
 
     def _emit(self, line: str, origin: tuple[tuple[int, int], str] | None) -> None:
@@ -381,7 +488,7 @@ class _TemplateWalker(HTMLParser):
 
     def _open_loop(self, value: str, loc: tuple[int, int]) -> bool:
         match = re.match(
-            r"^\s*(?:\(([^)]*)\)|([\w$]+))\s+(?:in|of)\s+(.+)$", value, re.S
+            r"^\s*(?:\(([^)]*)\)|([\w$]+))\s+(?:in|of)\s+(.+)$", value, re.DOTALL
         )
         if not match:
             return False
@@ -404,17 +511,66 @@ class _TemplateWalker(HTMLParser):
         self._emit("});", None)
         self._scopes.pop()
 
+    def _open_condition(self, expr: str, loc: tuple[int, int]) -> None:
+        ids = free_identifiers(expr, self._locals())
+        pattern = "{ " + ", ".join(ids) + " }" if ids else "{}"
+        self._emit(f"(({pattern}: Ctx) => {{ if ({expr}) {{", (loc, expr))
+        self._scopes.append(set(ids))
+
+    def _close_condition(self) -> None:
+        self._emit("} })(__ctx);", None)
+        self._scopes.pop()
+
     def _start(
         self, tag: str, attrs: list[tuple[str, str | None]], self_closing: bool
     ) -> None:
         raw, (line, col) = self.get_starttag_text() or "", self.getpos()
         opened = False
-        for name, value in sorted(
-            attrs, key=lambda a: a[0] != "v-for"
-        ):  # v-for first: it opens a scope
+        conditional = False
+        values = dict(attrs)
+        chain = self._branches[-1]
+        condition = None
+        if "v-if" in values:
+            condition = values["v-if"]
+            self._branches[-1] = [condition] if condition else []
+        elif "v-else-if" in values and chain:
+            value = values["v-else-if"]
+            condition = f"!({' || '.join(f'({part})' for part in chain)}) && ({value})"
+            chain.append(value or "false")
+        elif "v-else" in values and chain:
+            condition = f"!({' || '.join(f'({part})' for part in chain)})"
+            self._branches[-1] = []
+        else:
+            self._branches[-1] = []
+        ordered = sorted(attrs, key=lambda a: 0 if a[0] == "v-for" else 1)
+        # A condition must enclose all bindings and descendants, not just be
+        # checked as an unrelated expression statement.
+        ordered = sorted(
+            ordered,
+            key=lambda a: (
+                0
+                if a[0] == "v-for"
+                else 1
+                if a[0] in {"v-if", "v-else-if", "v-else"}
+                else 2
+            ),
+        )
+        for name, value in ordered:
+            if name in {"v-if", "v-else-if", "v-else"} and condition:
+                found = re.search(
+                    re.escape(name) + r"\s*=\s*([\"'])", raw, re.IGNORECASE
+                )
+                loc = (
+                    self._position(line, col, raw, found.end())
+                    if found
+                    else (line, col)
+                )
+                self._open_condition(condition, loc)
+                conditional = True
+                continue
             if value is None:
                 continue
-            found = re.search(re.escape(name) + r"\s*=\s*([\"'])", raw, re.I)
+            found = re.search(re.escape(name) + r"\s*=\s*([\"'])", raw, re.IGNORECASE)
             loc = self._position(line, col, raw, found.end()) if found else (line, col)
             base = name.split(".", 1)[0]
             if name == "v-for":
@@ -433,10 +589,13 @@ class _TemplateWalker(HTMLParser):
         if tag in self.components:
             self._component_props(tag, attrs, raw, line, col)
         if self_closing or tag in _VOID:
+            if conditional:
+                self._close_condition()
             if opened:
                 self._close_loop()
         else:
-            self._stack.append((tag, opened))
+            self._stack.append((tag, opened, conditional))
+            self._branches.append([])
 
     def _component_props(
         self,
@@ -451,7 +610,7 @@ class _TemplateWalker(HTMLParser):
         passthrough = {"class", "style", "id", "key", "ref", "slot", "role", "tabindex"}
         for name, value in attrs:
             found = re.search(
-                r"(?<![\w:-])" + re.escape(name) + r"(?=\s|=|/?>)", raw, re.I
+                r"(?<![\w:-])" + re.escape(name) + r"(?=\s|=|/?>)", raw, re.IGNORECASE
             )
             loc = (
                 self._position(line, col, raw, found.start()) if found else (line, col)
@@ -502,15 +661,20 @@ class _TemplateWalker(HTMLParser):
 
     def handle_endtag(self, tag: str) -> None:
         while self._stack:
-            name, opened = self._stack.pop()
+            name, opened, conditional = self._stack.pop()
+            self._branches.pop()
+            if conditional:
+                self._close_condition()
             if opened:
                 self._close_loop()
             if name == tag:
                 break
 
     def handle_data(self, data: str) -> None:
+        if data.strip():
+            self._branches[-1] = []
         line, col = self.getpos()
-        for m in re.finditer(r"\{\{(.*?)\}\}", data, re.S):
+        for m in re.finditer(r"\{\{(.*?)\}\}", data, re.DOTALL):
             self._unit(m.group(1), self._position(line, col, data, m.start(1)))
 
 
@@ -578,6 +742,24 @@ class _Adapter:
                 for char in text[: script.start(2)]
             )
             padded = prefix + (wrapped if wrapped is not None else body)
+            from types import SimpleNamespace
+
+            from teloce.compiler.generator import Generator
+            from teloce.sfc.script import ScriptParser
+
+            parsed = ScriptParser().parse(body, filename=str(path))
+            imports = Generator(
+                {"shared_runtime_import": "teloce-signals"}
+            )._generate_signal_imports(SimpleNamespace(script=parsed))
+            declarations = []
+            for statement in imports:
+                for binding in statement.split("{", 1)[1].split("}", 1)[0].split(","):
+                    parts = binding.strip().split(" as ")
+                    imported, local = parts[0], parts[-1]
+                    declarations.append(
+                        f"declare const {local}: typeof __TeloceSignals.{imported};"
+                    )
+            padded += "\n" + "\n".join(declarations) + "\n"
             self.original_text[rel] = text
             self.script_origins[rel + ".ts"] = (
                 rel,
