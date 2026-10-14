@@ -51,16 +51,20 @@ Project-build signal helpers use the compiler's own auto-import decisions. `sign
 
 Host-generated globals, such as Flaxon's router or configured PWA controller, belong in your project's `.d.ts` declarations. Annotate nullable state and empty arrays explicitly, narrow caught errors, and check DOM event targets before accessing element-specific properties. Compilation alone is not a type-check pass.
 
-## Coverage boundaries
+## Coverage and runtime boundaries
 
-These regression tests establish coverage for the features above; they do not establish universal or 100% support. The following boundaries remain explicit:
+| Feature | Checking behavior |
+| --- | --- |
+| TypeScript and JavaScript SFC scripts | Native TS/JS checking, including JSDoc; diagnostics map to the original component. |
+| Script export forms | Direct options objects, local named options objects and single-call wrappers such as `defineComponent({...})` retain context. |
+| Imported children | Default/named imports, barrel exports and project aliases resolve through TypeScript and carry public prop contracts. |
+| Dynamic components | Registered string-name selectors carry required/type-checked props. Declare the finite union of possible names; unrestricted runtime strings cannot identify a contract. Props must satisfy every possible selected component. |
+| Default/named slots | Supplied slot names are validated against the child's declared `<slot>` outlets; parent content and child fallback expressions use their own contexts. |
+| Diagnostics | Script offsets, expression occurrences, UTF-16 columns and HTML attribute entities retain original positions. |
 
+Teloce's current runtime does not implement scoped slot-prop functions; the checker does not invent such a runtime feature. Unknown JavaScript/external component contracts and values explicitly typed `any` retain JavaScript/TypeScript's normal limits. Array-style props have no supplied value types; use object-style props for strict contracts. Dynamic component names must be a declared finite union to verify their props. Packages supplying only permissive declarations cannot be checked beyond those declarations. These are information/runtime boundaries, not a claim that arbitrary dynamic programs can be statically proven correct.
 
-* Only `lang="ts"` components are checked; plain `<script>` components are skipped.
-* Array-style `props` remain untyped (`any`). Object-style props infer String, Number, Boolean, Array, Object, Function, and class-constructor types within the component. Required/default props are defined; optional props may be undefined. Array items and plain Object members need further annotations; props passed to statically imported TypeScript children are checked against their public contract.
-* Slots, dynamic `<component :is>`, unknown tags, JavaScript children, and non-object default exports are not checked. Child checking currently follows relative default imports within the supplied UI roots; named/package/alias component imports are not resolved into child contracts. Object spreads are checked structurally, but additional keys hidden in a spread or values typed as `any` cannot be fully validated.
-* Template extraction uses a position-preserving scanner; it will move to the template AST once nodes carry exact source spans.
-* pytscheck bundles a preview build of the TypeScript compiler; pin the pytscheck version in CI.
+Static attributes are strings; constructor-array props infer unions. Custom prop validators execute at runtime and cannot generally be proved statically. Template HTML remains parsed separately from JavaScript expressions, so malformed/unsupported template syntax must also pass the compiler's build checks. Pin PyTSCheck in CI because its bundled native compiler is a preview build.
 
 ## Python integration
 
@@ -80,9 +84,9 @@ For multiple source folders, pass the application's root explicitly:
 result = check_project(["ui", "modules/shop/ui"], project_root=".", tsconfig="tsconfig.json")
 ```
 
-The `tsconfig` argument is optional. CLI equivalents are `--project-root .` and `--tsconfig tsconfig.json`. Relative configuration paths resolve against the project root. PyTSCheck checks project files selected by the config in addition to generated components, so findings may also reference files outside the UI folders. Installed npm declarations are resolved from the consuming project's `node_modules`; Python declaration packages may expose declarations in the project. No npm packages are installed automatically. The adapter only overrides emission settings and enables TypeScript extension imports for generated template imports; other configured compiler rules are retained.
+The `tsconfig` argument is optional. CLI equivalents are `--project-root .` and `--tsconfig tsconfig.json`. Relative configuration paths resolve against the project root. PyTSCheck checks project files selected by the config in addition to generated components, so findings may also reference files outside the UI folders. Installed npm declarations are resolved from the consuming project's `node_modules`; Python declaration packages may expose declarations in the project. No npm packages are installed automatically. The adapter enables JavaScript/JSDoc checking (`allowJs` and `checkJs`) and TypeScript extension imports for generated sources, in addition to disabling emission; other configured compiler rules are retained.
 
-Locations are 1-based; columns use UTF-16 coordinates. Template property/identifier errors point to the first matching identifier in the expression; other template diagnostics point to the expression start. Expression references use a TypeScript AST; template extraction and HTML entity/source-position mapping still have limits.
+Locations are 1-based; columns use UTF-16 coordinates. Template property errors use the generated expression occurrence when available; other template diagnostics point to the expression or attribute start. Expression references use a TypeScript AST; template extraction and HTML entity/source-position mapping still have limits.
 
 ## Typed object-style props
 
@@ -103,7 +107,7 @@ export default {
 
 ## Props passed between components
 
-Default-import a TypeScript child component from a relative `.html` or `.vel` path under the checked UI roots. The checker uses its prop declaration for template attributes and bindings:
+Import a TypeScript or JavaScript child component directly or through a named/barrel/alias import that resolves to a generated `.html` or `.vel` contract under the checked UI roots. The checker uses its prop declaration for template attributes and bindings:
 
 ```html
 <script lang="ts">

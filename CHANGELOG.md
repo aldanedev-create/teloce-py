@@ -1,5 +1,11 @@
 ## Parent-to-child prop type checking
 
+### Remaining component-checker integrations
+
+- Check JavaScript/JSDoc SFC scripts, preserve local/wrapped options exports, and resolve named/barrel/alias child contracts through TypeScript.
+- Validate registered dynamic component names/props and named/default slot outlets/content.
+- Map property diagnostics through actual expression occurrences, HTML attribute entities and UTF-16 source coordinates.
+
 ## Unreleased: component type-checking contracts
 
 - Model compiled lifecycle hooks, component event names, `$attrs`, data watcher types/context and constructor-union props.

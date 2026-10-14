@@ -11,6 +11,7 @@ Two kinds of virtual TypeScript are generated and checked by pytscheck:
 
 from __future__ import annotations
 
+import html
 import json
 import os
 import re
@@ -47,6 +48,7 @@ type PublicProps<P> = P extends readonly string[] ? ([P[number]] extends [never]
   keyof P extends never ? Record<string, never> :
   { [K in RequiredProps<P>]: DeclaredProp<P[K]> } & { [K in Exclude<keyof P, RequiredProps<P>>]?: DeclaredProp<P[K]> };
 declare function __checkProps<P>(props: P): void;
+declare function __checkSlot<C>(name: C extends { readonly __slots: readonly (infer N)[] } ? N : string): void;
 type RuntimeContext<E extends readonly string[]> = {
   $emit(name: E[number], detail?: unknown): void;
   readonly $attrs: Record<string, unknown>;
@@ -76,10 +78,10 @@ declare namespace __TeloceSignals {
   function toSignal<T>(value: T | Signal<T>): Signal<T>;
   function getValue<T>(value: T | Signal<T>): T;
 }
-declare function __define<const P extends readonly string[] | Record<string, unknown> = readonly [], D = {}, C extends Record<string, Fn> = {}, M extends Record<string, Fn> = {}, const E extends readonly string[] = readonly string[]>(
+declare function __define<const P extends readonly string[] | Record<string, unknown> = readonly [], D = {}, C extends Record<string, Fn> = {}, M extends Record<string, Fn> = {}, const E extends readonly string[] = readonly string[], const R extends Record<string, unknown> = {}, const S extends readonly string[] = readonly []>(
   options: {
     name?: string;
-    components?: Record<string, unknown>;
+    components?: R;
     emits?: E;
     watch?: { [K in keyof D]?: (value: D[K], previous: D[K]) => unknown } & ThisType<D & Computed<C> & M & Props<P> & RuntimeContext<E>>;
     beforeCreate?: () => unknown;
@@ -96,8 +98,12 @@ declare function __define<const P extends readonly string[] | Record<string, unk
     methods?: M;
     mounted?: () => unknown;
     unmounted?: () => unknown;
-  } & ThisType<D & Computed<C> & M & Props<P> & RuntimeContext<E>>
-): { readonly __ctx: D & Computed<C> & M & Props<P> & RuntimeContext<E>; readonly __props: PublicProps<P> };
+  } & ThisType<D & Computed<C> & M & Props<P> & RuntimeContext<E>>, slots?: S
+): { readonly __ctx: D & Computed<C> & M & Props<P> & RuntimeContext<E>; readonly __props: PublicProps<P>; readonly __components: R; readonly __slots: S };
+type ComponentProps<T> = T extends { readonly __props: infer P } ? P : Record<string, unknown>;
+type Intersection<U> = (U extends unknown ? (value: U) => void : never) extends (value: infer I) => void ? I : never;
+type DynamicProps<C, N extends string> = Intersection<{ [K in keyof C]: K extends string ? Lowercase<K> extends Lowercase<N> ? ComponentProps<C[K]> : never : never }[keyof C]>;
+declare function __dynamic<C>(): <N extends (keyof C & string) | Lowercase<keyof C & string>>(name: N, props: DynamicProps<C, NoInfer<N>>) => void;
 declare function __forEach<T>(source: readonly T[], cb: (item: T, index: number) => void): void;
 declare function __forEach(source: number, cb: (item: number, index: number) => void): void;
 declare function __forEach<T extends object>(source: T, cb: (value: T[keyof T], key: string, index: number) => void): void;
@@ -179,7 +185,7 @@ def _match_brace(text: str, i: int) -> int:
 
 
 _SCRIPT = re.compile(
-    r"(<script\b[^>]*\blang\s*=\s*[\"']ts[\"'][^>]*>)(.*?)(</script>)",
+    r"(<script\b[^>]*>)(.*?)(</script>)",
     re.DOTALL | re.IGNORECASE,
 )
 _TEMPLATE = re.compile(r"<template\b[^>]*>(.*)</template>", re.DOTALL | re.IGNORECASE)
@@ -195,6 +201,37 @@ def _export_object_span(body: str) -> tuple[int, int] | None:
         if not any(child.type == "default" for child in statement.children):
             continue
         value = statement.child_by_field_name("value")
+        if value is not None and value.type == "identifier":
+            encoded = body.encode("utf-8")
+            wanted = encoded[value.start_byte : value.end_byte]
+            for declaration in tree.root_node.named_children:
+                if declaration.type not in {
+                    "lexical_declaration",
+                    "variable_declaration",
+                }:
+                    continue
+                for item in declaration.named_children:
+                    name = item.child_by_field_name("name")
+                    if (
+                        name is not None
+                        and encoded[name.start_byte : name.end_byte] == wanted
+                    ):
+                        value = item.child_by_field_name("value")
+                        break
+        if value is not None and value.type == "call_expression":
+            arguments = value.child_by_field_name("arguments")
+            value = (
+                next(
+                    (
+                        item
+                        for item in arguments.named_children
+                        if item.type == "object"
+                    ),
+                    None,
+                )
+                if arguments
+                else None
+            )
         if value is not None and value.type == "object":
             encoded = body.encode("utf-8")
             return (
@@ -204,14 +241,22 @@ def _export_object_span(body: str) -> tuple[int, int] | None:
     return None
 
 
-def _component_imports(body: str, path: Path, generated: set[Path]) -> dict[str, str]:
-    """Identify default imports of local TypeScript components using the script AST."""
+def _component_imports(
+    body: str, path: Path, generated: set[Path]
+) -> dict[str, tuple[str, str]]:
+    """Let TypeScript resolve default/named component imports and project aliases."""
     from teloce.javascript.tree_sitter_backend import parse_tree
 
     encoded = body.encode("utf-8")
     imports = {}
+
+    def text(node):
+        return encoded[node.start_byte : node.end_byte].decode("utf-8")
+
     for statement in parse_tree(body, "ts").root_node.named_children:
-        if statement.type != "import_statement":
+        if statement.type != "import_statement" or any(
+            child.type == "type" for child in statement.children
+        ):
             continue
         source = statement.child_by_field_name("source")
         clause = next(
@@ -224,30 +269,96 @@ def _component_imports(body: str, path: Path, generated: set[Path]) -> dict[str,
         )
         if source is None or clause is None:
             continue
-        default = next(
-            (child for child in clause.named_children if child.type == "identifier"),
-            None,
-        )
-        if default is None:
-            continue
-        source_text = encoded[source.start_byte + 1 : source.end_byte - 1].decode(
-            "utf-8"
-        )
-        target = (path.parent / source_text).resolve()
-        if not source_text.startswith(".") or target not in generated:
-            continue
-        name = encoded[default.start_byte : default.end_byte].decode("utf-8")
-        imports[name.lower()] = source_text
-    return imports
+        module = text(source)[1:-1]
+        if module.endswith((".html", ".vel")):
+            module += ".ts"
+        for child in clause.named_children:
+            if child.type == "identifier":
+                imports[text(child).lower()] = (module, "default")
+            elif child.type == "namespace_import":
+                alias = next(
+                    (
+                        part
+                        for part in child.named_children
+                        if part.type == "identifier"
+                    ),
+                    None,
+                )
+                if alias is not None:
+                    imports[text(alias).lower() + ".*"] = (module, "*")
+            elif child.type == "named_imports":
+                for item in child.named_children:
+                    if any(part.type == "type" for part in item.children):
+                        continue
+                    name = item.child_by_field_name("name")
+                    alias = item.child_by_field_name("alias") or name
+                    if name is not None and alias is not None:
+                        imports[text(alias).lower()] = (module, text(name))
+    # Registered aliases, including namespace members, determine runtime tags.
+    span = _export_object_span(body)
+    if span is not None:
+        option_text = body[span[0] : span[1]]
+        options = parse_tree("(" + option_text + ")", "ts")
+        option_bytes = ("(" + option_text + ")").encode("utf-8")
+
+        def option_source(node):
+            return option_bytes[node.start_byte : node.end_byte].decode("utf-8")
+
+        def walk(node):
+            if node.type == "pair" and option_source(
+                node.child_by_field_name("key")
+            ) in {"components", '"components"', "'components'"}:
+                registry = node.child_by_field_name("value")
+                if registry is not None and registry.type == "object":
+                    for entry in registry.named_children:
+                        if entry.type == "shorthand_property_identifier":
+                            continue
+                        if entry.type != "pair":
+                            continue
+                        key, value = (
+                            entry.child_by_field_name("key"),
+                            entry.child_by_field_name("value"),
+                        )
+                        if key is None or value is None:
+                            continue
+                        name = option_source(key).strip("\"'").lower()
+                        binding = option_source(value).lower()
+                        if binding in imports:
+                            imports[name] = imports[binding]
+                        elif value.type == "member_expression":
+                            obj = value.child_by_field_name("object")
+                            member = value.child_by_field_name("property")
+                            namespace = (
+                                imports.get(option_source(obj).lower() + ".*")
+                                if obj is not None
+                                else None
+                            )
+                            if namespace and member is not None:
+                                imports[name] = (namespace[0], option_source(member))
+                return
+            for child in node.named_children:
+                walk(child)
+
+        walk(options.root_node)
+    return {
+        name: contract for name, contract in imports.items() if not name.endswith(".*")
+    }
 
 
-def rewrite_default_export(body: str) -> str | None:
+def rewrite_default_export(body: str, slots: list[str] | None = None) -> str | None:
     """Wrap the actual default object export, ignoring comments and string contents."""
     span = _export_object_span(body)
     if span is None:
         return None
     start, end = span
-    return body[:start] + "__define(" + body[start:end] + ")" + body[end:]
+    return (
+        body[:start]
+        + "__define("
+        + body[start:end]
+        + (", " + json.dumps(slots) if slots is not None else "")
+        + ")"
+        + body[end:]
+    )
 
 
 # --------------------------------------------------------------------------- template expressions
@@ -439,12 +550,46 @@ def free_identifiers(expr: str, locals_: Iterable[str] = ()) -> list[str]:
     return sorted(found)
 
 
+def _raw_prefix(source: str, decoded_length: int) -> str:
+    """Translate a decoded expression offset back through HTML entities."""
+    index = consumed = 0
+    while index < len(source) and consumed < decoded_length:
+        entity = re.match(
+            r"&(?:#[xX][0-9a-fA-F]+|#\d+|[A-Za-z][A-Za-z0-9]+);?", source[index:]
+        )
+        if entity and html.unescape(entity.group()) != entity.group():
+            value = html.unescape(entity.group())
+            if consumed + len(value) > decoded_length:
+                break
+            consumed += len(value)
+            index += len(entity.group())
+        else:
+            consumed += 1
+            index += 1
+    return source[:index]
+
+
+class _SlotNames(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.names = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "slot":
+            name = dict(attrs).get("name") or "default"
+            if name not in self.names:
+                self.names.append(name)
+
+    handle_startendtag = handle_starttag
+
+
 class _TemplateWalker(HTMLParser):
     """Emit one TypeScript statement per template expression, remembering where each came from."""
 
     def __init__(self, components: dict[str, str] | None = None) -> None:
         super().__init__(convert_charrefs=False)
         self.components = components or {}
+        self.source = ""
         self.out: list[str] = []
         self.origins: list[tuple[tuple[int, int], str] | None] = []
         self._stack: list[tuple[str, bool, bool]] = []
@@ -471,6 +616,15 @@ class _TemplateWalker(HTMLParser):
 
     def _unit(self, expr: str, loc: tuple[int, int], *, event: bool = False) -> None:
         lead = expr[: len(expr) - len(expr.lstrip())]
+        if self.source and lead:
+            offset = (
+                sum(
+                    len(row)
+                    for row in self.source.splitlines(keepends=True)[: loc[0] - 1]
+                )
+                + loc[1]
+            )
+            lead = _raw_prefix(self.source[offset:], len(lead))
         if "\n" in lead:
             loc = (loc[0] + lead.count("\n"), len(lead) - lead.rfind("\n") - 1)
         else:
@@ -525,6 +679,12 @@ class _TemplateWalker(HTMLParser):
         self, tag: str, attrs: list[tuple[str, str | None]], self_closing: bool
     ) -> None:
         raw, (line, col) = self.get_starttag_text() or "", self.getpos()
+        if self._stack and self._stack[-1][0] in self.components:
+            name = dict(attrs).get("slot") or "default"
+            self._emit(
+                f"__checkSlot<typeof {self.components[self._stack[-1][0]]}>({json.dumps(name)});",
+                ((line, col), raw),
+            )
         opened = False
         conditional = False
         values = dict(attrs)
@@ -588,6 +748,10 @@ class _TemplateWalker(HTMLParser):
                 self._unit(value, loc, event=True)
         if tag in self.components:
             self._component_props(tag, attrs, raw, line, col)
+        elif tag == "component":
+            selector = values.get(":is") or values.get("v-bind:is")
+            if selector:
+                self._component_props(tag, attrs, raw, line, col, selector=selector)
         if self_closing or tag in _VOID:
             if conditional:
                 self._close_condition()
@@ -604,11 +768,14 @@ class _TemplateWalker(HTMLParser):
         raw: str,
         line: int,
         col: int,
+        selector: str | None = None,
     ) -> None:
         # Keep the validation in the v-for scope opened by _start.
-        fields, expressions = [], []
+        fields, expressions = [], [selector] if selector else []
         passthrough = {"class", "style", "id", "key", "ref", "slot", "role", "tabindex"}
         for name, value in attrs:
+            if selector and name in {":is", "v-bind:is", "is"}:
+                continue
             found = re.search(
                 r"(?<![\w:-])" + re.escape(name) + r"(?=\s|=|/?>)", raw, re.IGNORECASE
             )
@@ -645,7 +812,9 @@ class _TemplateWalker(HTMLParser):
         pattern = "{ " + ", ".join(ids) + " }" if ids else "{}"
         self._emit(f"(({pattern}: Ctx) => {{", ((line, col), raw))
         self._emit(
-            f"__checkProps<typeof {self.components[tag]}.__props>({{",
+            f"__dynamic<typeof __component.__components>()({selector}, {{"
+            if selector
+            else f"__checkProps<typeof {self.components[tag]} extends {{ readonly __props: infer P }} ? P : Record<string, unknown>>({{",
             ((line, col), raw),
         )
         for prop_field, origin in fields:
@@ -673,6 +842,11 @@ class _TemplateWalker(HTMLParser):
     def handle_data(self, data: str) -> None:
         if data.strip():
             self._branches[-1] = []
+            if self._stack and self._stack[-1][0] in self.components:
+                self._emit(
+                    f'__checkSlot<typeof {self.components[self._stack[-1][0]]}>("default");',
+                    (self.getpos(), data),
+                )
         line, col = self.getpos()
         for m in re.finditer(r"\{\{(.*?)\}\}", data, re.DOTALL):
             self._unit(m.group(1), self._position(line, col, data, m.start(1)))
@@ -693,6 +867,8 @@ class _Adapter:
             str, tuple[str, str, str, int, int, tuple[int, int] | None]
         ] = {}
         self.original_text: dict[str, str] = {}
+        self.template_text: dict[str, str] = {}
+        self.script_suffix: dict[str, int] = {}
 
     context: Any = None
 
@@ -736,7 +912,19 @@ class _Adapter:
             if not script:
                 continue
             body = script.group(2)
-            wrapped = rewrite_default_export(body)
+            is_js = (
+                re.search(
+                    r"\blang\s*=\s*[\"'](?:ts|typescript)[\"']",
+                    script.group(1),
+                    re.IGNORECASE,
+                )
+                is None
+            )
+            slot_parser = _SlotNames()
+            template_match = _TEMPLATE.search(text)
+            if template_match:
+                slot_parser.feed(template_match.group(1))
+            wrapped = rewrite_default_export(body, slot_parser.names)
             prefix = "".join(
                 "\n" if char == "\n" else " " * (len(char.encode("utf-16-le")) // 2)
                 for char in text[: script.start(2)]
@@ -757,11 +945,17 @@ class _Adapter:
                     parts = binding.strip().split(" as ")
                     imported, local = parts[0], parts[-1]
                     declarations.append(
-                        f"declare const {local}: typeof __TeloceSignals.{imported};"
+                        f"/** @type {{typeof __TeloceSignals.{imported}}} */ const {local} = /** @type {{any}} */ (null);"
+                        if is_js
+                        else f"declare const {local}: typeof __TeloceSignals.{imported};"
                     )
             padded += "\n" + "\n".join(declarations) + "\n"
             self.original_text[rel] = text
-            self.script_origins[rel + ".ts"] = (
+            script_path = rel + (".__script.js" if is_js else ".ts")
+            self.script_suffix[script_path] = (
+                (len(wrapped) - len(body) - 9) if wrapped is not None else 0
+            )
+            self.script_origins[script_path] = (
                 rel,
                 text,
                 padded,
@@ -769,7 +963,14 @@ class _Adapter:
                 script.start(2),
                 _export_object_span(body),
             )
-            sources.append(SourceFile(path=rel + ".ts", text=padded, origin_path=rel))
+            sources.append(SourceFile(path=script_path, text=padded, origin_path=rel))
+            if is_js:
+                sources.append(
+                    SourceFile(
+                        path=rel + ".ts",
+                        text=f'export {{ default }} from "./{path.name}.__script.js";\nexport * from "./{path.name}.__script.js";\n',
+                    )
+                )
             template = _TEMPLATE.search(text)
             if self.templates and wrapped is not None and template:
                 sources.append(
@@ -789,7 +990,7 @@ class _Adapter:
         filename: str,
         text: str,
         template: re.Match[str],
-        components: dict[str, str],
+        components: dict[str, tuple[str, str]],
     ) -> Any:
         from pytscheck import SourceFile
 
@@ -798,6 +999,7 @@ class _Adapter:
         first_col = template.start(1) - (text.rfind("\n", 0, template.start(1)) + 1)
         names = {tag: f"__child_{index}" for index, tag in enumerate(components)}
         walker = _TemplateWalker(names)
+        walker.source = inner
         walker.feed(inner)
         walker.close()
         header = [
@@ -807,8 +1009,8 @@ class _Adapter:
             "function __template() {",
         ]
         header[1:1] = [
-            f"import {names[tag]} from {json.dumps(source + '.ts')};"
-            for tag, source in components.items()
+            f"import {{ {exported} as {names[tag]} }} from {json.dumps(source)};"
+            for tag, (source, exported) in components.items()
         ]
         mapped: list[tuple[tuple[int, int], str] | None] = [None] * len(header)
         for origin in walker.origins:
@@ -822,6 +1024,7 @@ class _Adapter:
         mapped.append(None)
         path = rel + ".tpl.ts"
         self.origins[path] = mapped
+        self.template_text[path] = "\n".join(header + walker.out + ["}"]) + "\n"
         self.template_origin[path] = rel
         return SourceFile(path=path, text="\n".join(header + walker.out + ["}"]) + "\n")
 
@@ -854,8 +1057,11 @@ class _Adapter:
                 )
                 if span is not None:
                     start, end = span
-                    if offset >= end + 9 + 1:
-                        offset -= 10
+                    suffix = self.script_suffix.get(
+                        getattr(error, "origin_file", None) or error.file, 1
+                    )
+                    if offset >= end + 9 + suffix:
+                        offset -= 9 + suffix
                     elif offset >= start + 9:
                         offset -= 9
                     elif offset >= start:
@@ -884,11 +1090,33 @@ class _Adapter:
             (line, col), expr = hit
             named = re.search(r"Property '([\w$]+)'", error.message)
             if named:
+                generated_rows = self.template_text.get(error.file, "").splitlines()
+                generated_row = (
+                    generated_rows[error.line - 1]
+                    if error.line <= len(generated_rows)
+                    else ""
+                )
+                generated_column = len(
+                    generated_row.encode("utf-16-le")[: (error.column - 1) * 2].decode(
+                        "utf-16-le", errors="ignore"
+                    )
+                )
+                start = generated_row.find(expr)
+                exact = generated_column - start if start >= 0 else -1
                 inside = re.search(
                     r"(?<![\w$])" + re.escape(named.group(1)) + r"(?![\w$])", expr
                 )
                 if inside:
-                    before = expr[: inside.start()]
+                    before = expr[: exact if 0 <= exact < len(expr) else inside.start()]
+                    original = self.original_text[rel]
+                    source_offset = (
+                        sum(
+                            len(row)
+                            for row in original.splitlines(keepends=True)[: line - 1]
+                        )
+                        + col
+                    )
+                    before = _raw_prefix(original[source_offset:], len(before))
                     if "\n" in before:
                         line += before.count("\n")
                         col = len(before.rsplit("\n", 1)[1])
@@ -963,7 +1191,11 @@ def check_project(
     ):
         raise TypecheckUnavailable("UI directories must be inside the project root.")
     inherited = config is not None or (root / "tsconfig.json").is_file()
-    settings: dict[str, object] = {"allowImportingTsExtensions": True}
+    settings: dict[str, object] = {
+        "allowImportingTsExtensions": True,
+        "allowJs": True,
+        "checkJs": True,
+    }
     if not inherited:
         settings.update(
             {

@@ -157,9 +157,9 @@ def test_templates_can_be_skipped(tmp_path):
 
 
 @pytest.mark.usefixtures("installed_pytscheck")
-def test_components_without_typescript_are_skipped(tmp_path):
+def test_javascript_components_are_checked(tmp_path):
     source = "<template><p>{{ nope }}</p></template>\n<script>export default { data() { return {}; } };</script>\n"
-    assert check_project([_project(tmp_path, source)]).ok
+    assert not check_project([_project(tmp_path, source)]).ok
 
 
 @pytest.mark.usefixtures("installed_pytscheck")
@@ -501,12 +501,12 @@ def test_multiline_child_prop_finding_points_to_attribute_line(tmp_path):
 
 
 @pytest.mark.usefixtures("installed_pytscheck")
-def test_non_object_child_export_is_not_mistaken_for_typed_contract(tmp_path):
+def test_named_object_child_export_has_a_typed_contract(tmp_path):
     ui, _ = child_project(tmp_path, '<Counter :unknown="amount" />')
     (ui / "Child.html").write_text(
         '<script lang="ts">const component = {}; export default component;</script>'
     )
-    assert check_project([ui]).ok
+    assert not check_project([ui]).ok
 
 
 @pytest.mark.usefixtures("installed_pytscheck")
