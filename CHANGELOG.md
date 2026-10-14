@@ -1,5 +1,12 @@
 ## Parent-to-child prop type checking
 
+## Unreleased: component type-checking contracts
+
+- Model compiled lifecycle hooks, component event names, `$attrs`, data watcher types/context and constructor-union props.
+- Type automatically imported signal helpers using the compiler's import decisions without leaking implicit names into ordinary TypeScript.
+- Preserve conditional template narrowing across loops and adjacent branches; resolve expression references using lexical AST scopes.
+- Add positive and negative compiler-backed regressions. Coverage boundaries remain documented; no universal-support claim is made.
+
 - Validate bindings, static attributes, required props, and unknown names for relative default-imported TypeScript child components; map findings to parent template locations.
 
 ## Type checking with pytscheck

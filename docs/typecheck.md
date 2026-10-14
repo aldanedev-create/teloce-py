@@ -41,7 +41,20 @@ data() {
 Computed properties that read other computed properties need an explicit return type
 (`total(): number { ... }`), as in other TypeScript component systems.
 
-## Limits
+## Runtime features covered by regression tests
+
+The adapter models all ten compiled lifecycle hooks (`beforeCreate`, `created`, `beforeMount`, `mounted`, `beforeUpdate`, `updated`, `activated`, `deactivated`, `beforeUnmount`, `unmounted`), component methods/computed state, `$attrs`, declared event names through `$emit`, and watchers for data properties. Watchers receive their data property's type and the component's `this` context.
+
+Project-build signal helpers use the compiler's own auto-import decisions. `signal`/`createSignal`, `computed`/`createComputed`/`createMemo`, `effect`/`createEffect`, `batch`, `untracked`, `isSignal`, `isComputed`, `toSignal`, and `getValue` receive their runtime contracts. Signal reads, writes, updates and subscriptions retain the value type. Explicit imports and local declarations take precedence, and implicit helpers do not leak into ordinary TypeScript modules.
+
+`v-if`, adjacent `v-else-if` and `v-else` preserve TypeScript narrowing for their bindings and descendant expressions, including loop scopes and void elements. Expression identifiers are resolved using the TypeScript AST, including arrow/function scopes, destructuring, comments, regular expressions and parameter defaults.
+
+Host-generated globals, such as Flaxon's router or configured PWA controller, belong in your project's `.d.ts` declarations. Annotate nullable state and empty arrays explicitly, narrow caught errors, and check DOM event targets before accessing element-specific properties. Compilation alone is not a type-check pass.
+
+## Coverage boundaries
+
+These regression tests establish coverage for the features above; they do not establish universal or 100% support. The following boundaries remain explicit:
+
 
 * Only `lang="ts"` components are checked; plain `<script>` components are skipped.
 * Array-style `props` remain untyped (`any`). Object-style props infer String, Number, Boolean, Array, Object, Function, and class-constructor types within the component. Required/default props are defined; optional props may be undefined. Array items and plain Object members need further annotations; props passed to statically imported TypeScript children are checked against their public contract.
@@ -69,7 +82,7 @@ result = check_project(["ui", "modules/shop/ui"], project_root=".", tsconfig="ts
 
 The `tsconfig` argument is optional. CLI equivalents are `--project-root .` and `--tsconfig tsconfig.json`. Relative configuration paths resolve against the project root. PyTSCheck checks project files selected by the config in addition to generated components, so findings may also reference files outside the UI folders. Installed npm declarations are resolved from the consuming project's `node_modules`; Python declaration packages may expose declarations in the project. No npm packages are installed automatically. The adapter only overrides emission settings and enables TypeScript extension imports for generated template imports; other configured compiler rules are retained.
 
-Locations are 1-based; columns use UTF-16 coordinates. Template property/identifier errors point to the first matching identifier in the expression; other template diagnostics point to the expression start. The expression scanner is a prototype and does not model every JavaScript lexical scope, regular expression, or HTML entity mapping.
+Locations are 1-based; columns use UTF-16 coordinates. Template property/identifier errors point to the first matching identifier in the expression; other template diagnostics point to the expression start. Expression references use a TypeScript AST; template extraction and HTML entity/source-position mapping still have limits.
 
 ## Typed object-style props
 
