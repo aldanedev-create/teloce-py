@@ -6,7 +6,7 @@
 - Validate registered dynamic component names/props and named/default slot outlets/content.
 - Map property diagnostics through actual expression occurrences, HTML attribute entities and UTF-16 source coordinates.
 
-## Unreleased: component type-checking contracts
+## 3.1: component type-checking contracts
 
 - Model compiled lifecycle hooks, component event names, `$attrs`, data watcher types/context and constructor-union props.
 - Type automatically imported signal helpers using the compiler's import decisions without leaking implicit names into ordinary TypeScript.
