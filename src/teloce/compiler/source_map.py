@@ -54,7 +54,7 @@ def script_line_hints(generated_code: str, source_content: Optional[str]) -> Dic
     # The alignment above covers lines that are identical or that the compiler
     # left intact; the script body, however, may be emitted more than once
     # (module level and again inside the generated ``methods`` block) and
-    # ``<script setup lang="ts">`` lines lose their generic arguments when
+    # ``<script lang="ts">`` lines lose their generic arguments when
     # emitted to JavaScript. Two more passes rescue those lines: first by
     # matching their full stripped text against a unique source line, then by
     # matching the *type-stripped* form so ``signal<number>(0)`` in the source
@@ -96,7 +96,7 @@ def _build_unique_map(lines: List[str]) -> tuple[Dict[str, int], set]:
 def _strip_inline_generics(line: str) -> str:
     """Return ``line`` with every balanced ``<...>`` annotation collapsed to blanks.
 
-    ``<script setup lang="ts">`` declarations like ``signal<number>(1)`` and
+    ``<script lang="ts">`` declarations like ``signal<number>(1)`` and
     ``computed<Map<string, Task[]>>(items)`` are emitted to JavaScript without
     the angle-bracket annotation, but the compiler keeps the same column
     count, so the generated line has the same number of characters as the

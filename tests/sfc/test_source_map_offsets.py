@@ -127,29 +127,29 @@ export default {
 </script>
 """
 
-# A real-world `<script setup lang="ts">` block: the compiler strips the
-# generic arguments when emitting the JavaScript, so a plain alignment would
-# not be able to match `const count = signal<number>(1);` against the
-# generated `const count = signal        (1);`.
+# A real-world `<script lang="ts">` block: the compiler strips the generic
+# arguments when emitting the JavaScript, so a plain alignment would not be
+# able to match `const count = signal<number>(1);` against the generated
+# `const count = signal        (1);`.
 
 
-TYPESCRIPT_SETUP_APP = """<template>
+TYPESCRIPT_APP = """<template>
   <h1>{label}</h1>
   <p>Open the project page to see a mapped dynamic route.</p>
 </template>
 
-<script setup lang="ts">
+<script lang="ts">
 const count = signal<number>(1);
 const label = computed<string>(() => `Count is ${count()}`);
 missingHelper();
 </script>
 """
 
-TYPESCRIPT_SETUP_PAGE = """<template>
+TYPESCRIPT_PAGE = """<template>
   <h1>{title}</h1>
 </template>
 
-<script setup lang="ts">
+<script lang="ts">
 const title = signal<string>('Project');
 const items = signal<Record<string, number[]>>({});
 const total = computed<number>(() => Object.keys(items()).length);
@@ -182,23 +182,23 @@ def test_every_generated_line_stays_inside_the_source_file():
         assert mapped_source_line(compiled["map"], generated_line) <= source_lines
 
 
-def test_typescript_setup_keeps_the_real_source_line_for_stripped_generics():
-    """`<script setup lang="ts">` lines lose their generic arguments when emitted.
+def test_typescript_keeps_the_real_source_line_for_stripped_generics():
+    """`<script lang="ts">` lines lose their generic arguments when emitted.
 
     The compiler rewrites ``signal<number>(1)`` to ``signal        (1)`` and
     ``computed<string>(...)`` to ``computed        (...)``, so the verbatim
     alignment can no longer recover the origin; the type-stripped pass must.
     """
-    compiled = compile(TYPESCRIPT_SETUP_APP, filename="app.html", dev=True, source_maps=True)
+    compiled = compile(TYPESCRIPT_APP, filename="app.html", dev=True, source_maps=True)
     assert compiled["map"] is not None
     assert resolve(compiled, "const count = signal        (1);") == 7
     assert resolve(compiled, "const label = computed        (() => `Count is ${count()}`);") == 8
     assert resolve(compiled, "missingHelper();") == 9
 
 
-def test_typescript_setup_dynamic_page_maps_every_helper_call():
+def test_typescript_dynamic_page_maps_every_helper_call():
     """The dynamic page uses nested generics and ``effect<T>``."""
-    compiled = compile(TYPESCRIPT_SETUP_PAGE, filename="[id].html", dev=True, source_maps=True)
+    compiled = compile(TYPESCRIPT_PAGE, filename="[id].html", dev=True, source_maps=True)
     assert compiled["map"] is not None
     assert resolve(compiled, "const title = signal        ('Project');") == 6
     assert resolve(compiled, "const items = signal                          ({});") == 7

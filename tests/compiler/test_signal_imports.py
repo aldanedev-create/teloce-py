@@ -4,9 +4,10 @@
 opening parenthesis to follow the name directly, so the import was skipped and
 the page threw ``ReferenceError: signal is not defined``.
 
-Generic type arguments are written in a ``lang="ts"`` script; a plain
-``<script>`` block is parsed as JavaScript, where nested generics such as
-``Record<string, Task[]>`` are not valid syntax at all.
+Teloce components have a single ``<script>`` block, optionally marked
+``lang="ts"``. Generic type arguments are written in a ``lang="ts"`` script;
+a plain ``<script>`` block is parsed as JavaScript, where nested generics such
+as ``Record<string, Task[]>`` are not valid syntax at all.
 """
 
 import pytest
@@ -16,9 +17,9 @@ from teloce.compiler.compiler import compile
 RUNTIME = "./signals.js"
 
 
-def imports_of(body, *, lang="ts", setup=True):
+def imports_of(body, *, typescript=True):
     """Compile one component and return its runtime helper import lines."""
-    script_open = '<script setup lang="ts">' if setup else "<script>"
+    script_open = '<script lang="ts">' if typescript else "<script>"
     source = f"<template><p>{{n}}</p></template>\n{script_open}\n{body}\n</script>\n"
     compiled = compile(source, filename="Widget.html", dev=True, shared_runtime_import=RUNTIME)
     assert compiled["success"], compiled["diagnostics"]["errors"]
@@ -47,7 +48,7 @@ def test_signal_calls_import_the_runtime_helper(expression):
 def test_the_same_works_in_a_plain_script_block():
     """`signal<number>(0)` also parses as JavaScript, where it is written most often."""
     body = "export default { setup() { const n = signal<number>(0); return { n }; } };"
-    assert any("createSignal as signal" in line for line in imports_of(body, setup=False))
+    assert any("createSignal as signal" in line for line in imports_of(body, typescript=False))
 
 
 def test_computed_and_effect_generics_are_detected():
@@ -77,7 +78,7 @@ def test_a_locally_declared_name_is_never_imported():
         "function signal(value) { return () => value; }\n"
         "export default { setup() { const n = signal<number>(0); return { n }; } };"
     )
-    assert imports_of(body, setup=False) == []
+    assert imports_of(body, typescript=False) == []
 
 
 def test_an_explicit_import_is_never_duplicated():
@@ -85,7 +86,7 @@ def test_an_explicit_import_is_never_duplicated():
         "import { signal } from './other.js';\n"
         "export default { setup() { const n = signal<number>(0); return { n }; } };"
     )
-    assert imports_of(body, setup=False) == []
+    assert imports_of(body, typescript=False) == []
 
 
 def test_explicit_create_names_still_import():
