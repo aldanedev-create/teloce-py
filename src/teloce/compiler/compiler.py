@@ -18,7 +18,7 @@ from teloce.compiler.transformer import Transformer
 from teloce.compiler.optimizer import Optimizer
 from teloce.compiler.generator import Generator
 from teloce.compiler.diagnostics import Diagnostics, DiagnosticLevel
-from teloce.compiler.source_map import SourceMapGenerator
+from teloce.compiler.source_map import SourceMapGenerator, script_line_hints
 from teloce.sfc.parser import SFCParser
 from teloce.sfc.component import Component
 
@@ -259,7 +259,10 @@ class Compiler:
         source_map = None
         if self.source_map_enabled:
             source_map_generator = SourceMapGenerator()
-            line_hints = {}
+            # The generated module is not a line-for-line copy of the component:
+            # align the two texts first so ordinary script lines point at the
+            # source line they really came from.
+            line_hints = script_line_hints(js_code, source)
             for record in optimizer.direct_plan.get("bindings", []):
                 marker = f"teloce-text:{record.get('id')}"
                 if marker not in js_code:
