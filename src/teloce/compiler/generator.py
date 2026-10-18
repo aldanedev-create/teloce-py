@@ -20,6 +20,56 @@ from teloce.ast.nodes import ASTNode, ElementNode, TextNode, InterpolationNode, 
 from teloce.sfc.component import Component
 
 
+#: How far a generic argument list may stretch before it is treated as a typo.
+GENERIC_SCAN_LIMIT = 512
+
+
+def _skip_generic_arguments(source: str, start: int, limit: int = GENERIC_SCAN_LIMIT) -> int:
+    """Return the index just past the generic argument list opening at `start`.
+
+    ``source[start]`` must be ``<``. Angle brackets are counted, so nested
+    generics such as ``<Record<string, Task[]>>`` close at the matching ``>``.
+    Returns -1 when the list never closes within `limit`, which stops a stray
+    ``<`` from swallowing the rest of the file.
+    """
+    depth = 0
+    index = start
+    end = min(len(source), start + limit)
+    while index < end:
+        char = source[index]
+        if char == "<":
+            depth += 1
+        elif char == ">":
+            depth -= 1
+            if depth == 0:
+                return index + 1
+        index += 1
+    return -1
+
+
+def is_called(source: str, name: str) -> bool:
+    """Whether `name` is invoked in `source`, allowing generic type arguments.
+
+    Accepts ``signal(0)``, ``signal<number>(0)`` and nested generics such as
+    ``signal<Record<string, Task[]>>({})``. A type argument list must start
+    directly after the name, so a comparison like ``signal < 3`` is never
+    mistaken for a call (a space before ``<`` means "less than" in practice).
+    Member access (``store.signal(0)``) and longer names that merely contain the
+    word (``mySignal(0)``, ``signalFoo(0)``) are not matches either.
+    """
+    for match in re.finditer(rf"(?<![.\w$]){re.escape(name)}", source):
+        index = match.end()
+        if source.startswith("<", index):
+            index = _skip_generic_arguments(source, index)
+            if index < 0:
+                continue
+        while index < len(source) and source[index].isspace():
+            index += 1
+        if source.startswith("(", index):
+            return True
+    return False
+
+
 SAFE_EXPRESSION_RUNTIME = r'''
 const __tokenize = source => {
   const tokens = []; let index = 0; const text = String(source || "");
@@ -713,7 +763,7 @@ class Generator:
         for local, imported in candidates:
             if local in imported_locals or local in declared_locals:
                 continue
-            if re.search(rf"(?<![.\w$]){re.escape(local)}\s*\(", source):
+            if is_called(source, local):
                 needed.append(imported if local == imported else f"{imported} as {local}")
         if not needed:
             return []
