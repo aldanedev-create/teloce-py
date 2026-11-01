@@ -1,0 +1,30 @@
+<template>
+  <main class="page">
+    <p class="eyebrow">Teloce Python SSR</p>
+    <h1>{{ title }}</h1>
+    <p>{{ description }}</p>
+    <label>
+      Your name
+      <input v-model="name" autocomplete="name">
+    </label>
+    <p v-if="name">Hello, {{ name }}.</p>
+    <ul>
+      <li v-for="(item, index) in items" :key="item.id">{{ index + 1 }}. {{ item.label }}</li>
+    </ul>
+  </main>
+</template>
+
+<script>
+export default {
+  data() {
+    return { title: "Server-rendered Python UI", description: "HTML is rendered before the browser loads JavaScript.", name: "", items: [] };
+  }
+};
+</script>
+
+<style scoped>
+.page { max-width: 42rem; margin: 4rem auto; padding: 0 1.5rem; font-family: system-ui, sans-serif; }
+.eyebrow { color: #176b87; font-size: .8rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+label { display: grid; gap: .4rem; margin: 2rem 0 1rem; font-weight: 600; }
+input { border: 1px solid #9db5bd; border-radius: .35rem; font: inherit; padding: .65rem .75rem; }
+</style>

@@ -34,13 +34,47 @@ result = renderer.render("ui/App.html", {"title": "Projects"})
 
 Load the renderer once per build. Replace it after rebuilding. Entry names must exist in the manifest; the renderer does not import arbitrary component paths.
 
+## Framework-neutral request data
+
+The renderer does not require a Flask, Django, FastAPI, or other framework
+adapter. Hosts can pass normalized request metadata to the server-only scope
+and resolve request data asynchronously before hydration:
+
+```python
+from teloce.server import Renderer, SSRRequest
+
+renderer = Renderer("dist")
+
+async def load_data(request):
+  return {"title": await load_project(request["path"])}
+
+result = await renderer.render_async(
+  "ui/App.html",
+  request=SSRRequest(path="/projects", headers={"accept": "text/html"}),
+  server_data=load_data,
+)
+```
+
+`request` is available only while the Python SSR program renders. It is not
+included in `props_json` and is never sent to the browser. `server_data` may be
+a mapping or a synchronous/asynchronous callable that returns a plain JSON
+object. Its result becomes the public hydration snapshot. The host framework
+owns the HTTP response, cookies, headers, compression, and cache policy.
+
+For ASGI or other streaming hosts, `render_stream()` returns an async iterator
+of bounded HTML chunks. Data loading and SSR instruction evaluation complete
+before the first chunk so output limits and diagnostics remain deterministic.
+`RenderResult.csp_nonce` exposes a host-supplied nonce without placing it in
+the public hydration snapshot. Teloce never emits executable script tags from
+SSR templates.
+
 ## Supported template expressions
 
 The server compiler consumes Teloce's canonical template AST and expression AST. It emits validated JSON instructions rather than translating JavaScript with regular expressions or evaluating application Python objects.
 
-Supported constructs include text interpolation, `v-if`/`v-else`, indexed `v-for`, keyed rows, `:attribute`, `v-text`, `v-show`/`v-hide`, imported child components, and default/named slots. Slots use the parent's public scope. Scoped CSS uses the same scope identifier as the browser compiler.
+Supported constructs include text interpolation, `v-if`/`v-else`, indexed `v-for`, keyed rows, `:attribute`, `v-text`, `v-show`/`v-hide`, initial `v-model` values, imported child components, allow-listed dynamic components, and default/named slots. Slots use the parent's public scope. Scoped CSS uses the same scope identifier as the browser compiler. SSR iframes are restricted to HTTPS `www.youtube-nocookie.com/embed/...` URLs.
 
-Expressions support public identifiers, plain arrays/objects, property and computed access, ternaries, arithmetic, comparisons, equality, `typeof`, `!`, `&&`, `||`, and `??`. Empty arrays and objects are truthy; booleans remain distinct from numbers under `===`. Optional property access is supported, but mixed optional/nonoptional chains are rejected: use explicit conditionals instead. Template literals, arbitrary calls, assignments, spreads, dynamic components, virtual lists and raw `v-html` are outside the initial SSR subset. `v-model` remains browser-only in this release.
+Expressions support public identifiers, the server-only `request` scope, plain arrays/objects, property and computed access, ternaries, arithmetic, comparisons, equality, `typeof`, `!`, `&&`, `||`, and `??`. Empty arrays and objects are truthy; booleans remain distinct from numbers under `===`. Optional property access is supported, but mixed optional/nonoptional chains are rejected: use explicit conditionals instead. Template literals, arbitrary calls, assignments, spreads, virtual lists and raw `v-html` remain outside the SSR subset.
 
 String methods are `toUpperCase()`, `toLowerCase()`, `trim()`, `includes(value)`, `startsWith(value)` and `endsWith(value)`. Arrays support `includes(value)` and `join(separator)`. These methods accept only the documented arguments; position arguments and optional method calls are not supported. Expressions with unsupported syntax fail during the build with an original component location. Public values missing at request time raise `SSRRenderError` with the affected template location.
 
@@ -64,7 +98,7 @@ Then import `hydrate` from the manifest's client entry and call `hydrate("#app",
 
 Signals remain signals. If client `data()` returns `count: signal(0)`, seed it with `{"count": {"value": 4}}`; hydration writes its value and subscribes to subsequent changes. Signal helpers are provided by the compiler's runtime imports; no manual import is needed in the normal component workflow.
 
-Matching input nodes preserve the value, selection and focus present before startup. Replaced nodes cannot preserve their identity. Because `v-model` is not in the SSR subset, restored input values do not automatically become application state; bind your input handler deliberately or keep that form client-only.
+Matching input nodes preserve the value, selection and focus present before startup. Initial `v-model` values are emitted for text inputs and checkboxes; browser event wiring still belongs to hydration. Replaced nodes cannot preserve their identity.
 
 Structural/version mismatches emit a `hydration` diagnostic and reconcile the affected component. Browser-only lifecycle hooks still run. Avoid fetching the same data again in `mounted()` when the public snapshot already contains it. `unmount()` removes event handlers, signal subscriptions and child instances. SPA routers can continue using ordinary client mounts for later navigation.
 

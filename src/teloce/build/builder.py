@@ -362,6 +362,20 @@ class Builder:
             self._compile_ts_modules(ts_files, ts_reusable, precompiled, results)
 
         results['components'] = self._component_manifest(vel_files, results)
+        registered_styles = {
+            str(item.get('output', '')) for item in results['files']
+            if str(item.get('output', '')).endswith('.css')
+        }
+        for stylesheet in sorted(self.out_dir.rglob('*.css')):
+            relative = stylesheet.relative_to(self.out_dir).as_posix()
+            if relative in registered_styles:
+                continue
+            results['files'].append({
+                'input': '<generated-css>',
+                'output': relative,
+                'size': stylesheet.stat().st_size,
+            })
+            registered_styles.add(relative)
         self._write_css_bundle(results)
         
         # Copy assets

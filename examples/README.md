@@ -5,7 +5,9 @@ Every example is intended to be copied into a new project. From the repository r
 | Example | Demonstrates | Start |
 | --- | --- | --- |
 | `basic` | Flask task board, imported `.vel` component | `python app.py` |
+| `ssr-python` | Framework-neutral Python SSR with the standard-library HTTP server; no Node.js required | `python app.py` |
 | `flask` | Flask host and health API | `python app.py` |
+| `flask-youtube-ssr` | Flask YouTube library with validated privacy iframes and Teloce SSR hydration | `python app.py` |
 | `flask-chat` | Flask JSON chat API and reactive UI | `python app.py` |
 | `config-driven-flask` | Flask app built from `teloce.config.json` and a custom component source folder | `python app.py` |
 | `teloce-gallery` | Multi-file `.vel` gallery, keyed cards, filtering, and Flask API | `python app.py` |

@@ -126,16 +126,19 @@ def compile_program(source, filename="<input>", *, components=None):
                     "name": attributes.get("name", "default"),
                     "children": children(node.children),
                 }
-            if tag == "component":
-                raise SSRCompileError(
-                    "Dynamic components are not supported in SSR",
-                    filename=filename,
-                    **location,
-                )
             bindings = {
                 binding.name: expression(binding.value, binding)
                 for binding in getattr(node, "bindings", [])
             }
+            dynamic_component = None
+            if tag == "component":
+                dynamic_component = bindings.pop("is", None)
+                if dynamic_component is None:
+                    raise SSRCompileError(
+                        "Dynamic components require an :is expression",
+                        filename=filename,
+                        **location,
+                    )
             for name, value in list(attributes.items()):
                 if name.startswith(":"):
                     bindings[name[1:]] = expression(value, node)
@@ -148,15 +151,28 @@ def compile_program(source, filename="<input>", *, components=None):
                         filename=filename,
                         **location,
                     )
-            if any(
-                name in {"html", "model", "bind", "is"} or name.startswith("on")
-                for name in bindings
-            ):
+            if "model" in bindings:
+                model = bindings.pop("model")
+                if attributes.get("type", "").lower() == "checkbox":
+                    bindings["checked"] = model
+                else:
+                    bindings["value"] = model
+            if any(name in {"html", "bind", "is"} or name.startswith("on") for name in bindings):
                 raise SSRCompileError(
-                    "Raw HTML, model directives, spreads and dynamic components are not supported in SSR",
+                    "Raw HTML and spreads are not supported in SSR",
                     filename=filename,
                     **location,
                 )
+            if dynamic_component is not None:
+                return {
+                    **record,
+                    "op": "dynamic_component",
+                    "tag": "component",
+                    "component": dynamic_component,
+                    "attributes": attributes,
+                    "bindings": bindings,
+                    "children": children(node.children),
+                }
             if tag in imports:
                 return {
                     **record,
@@ -173,7 +189,7 @@ def compile_program(source, filename="<input>", *, components=None):
                     filename=filename,
                     **location,
                 )
-            if tag.lower() in {"script", "iframe", "object", "embed"}:
+            if tag.lower() in {"script", "object", "embed"}:
                 raise SSRCompileError(
                     f"Unsafe SSR element: {tag}", filename=filename, **location
                 )

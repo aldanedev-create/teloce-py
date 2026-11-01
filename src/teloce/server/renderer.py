@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import html
+import asyncio
+import inspect
 import json
 import math
+import time
 from dataclasses import dataclass
 from collections import OrderedDict
+from collections.abc import Mapping
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -20,6 +24,43 @@ class RenderResult:
     props_json: str
     assets: tuple[str, ...] = ()
     diagnostics: tuple[dict, ...] = ()
+    head: tuple[str, ...] = ()
+    csp_nonce: str | None = None
+
+
+@dataclass(frozen=True)
+class SSRRequest:
+    """Framework-neutral request metadata available only during server render."""
+
+    method: str = "GET"
+    scheme: str = "http"
+    host: str = "localhost"
+    path: str = "/"
+    query: Mapping[str, object] = None
+    headers: Mapping[str, object] = None
+    cookies: Mapping[str, object] = None
+    csp_nonce: str | None = None
+
+    def scope(self):
+        return public_data({
+            "method": self.method,
+            "scheme": self.scheme,
+            "host": self.host,
+            "path": self.path,
+            "query": dict(self.query or {}),
+            "headers": dict(self.headers or {}),
+            "cookies": dict(self.cookies or {}),
+        })
+
+
+def _request_scope(request):
+    if request is None:
+        return None
+    if isinstance(request, SSRRequest):
+        return request.scope()
+    if type(request) is dict:
+        return public_data(request)
+    raise ValueError("SSR request context must be an SSRRequest or plain JSON object")
 
 
 class SSRRenderError(ValueError):
@@ -112,7 +153,13 @@ class Renderer:
     """Load manifest-linked render programs once and render explicit public snapshots."""
 
     def __init__(
-        self, build_dir, *, max_output=2_000_000, max_iterations=10000, cache_size=0
+        self,
+        build_dir,
+        *,
+        max_output=2_000_000,
+        max_iterations=10000,
+        cache_size=0,
+        cache_ttl=0,
     ):
         self.root = Path(build_dir).resolve()
         self.manifest = json.loads((self.root / "manifest.json").read_text())
@@ -122,7 +169,9 @@ class Renderer:
         self.entries = ssr["entries"]
         self.programs = {}
         self.cache_size = max(0, min(int(cache_size), 256))
+        self.cache_ttl = max(0.0, float(cache_ttl))
         self._cache = OrderedDict()
+        self._cache_times = {}
         self._cache_bytes = 0
         self.max_output = max_output
         self.max_iterations = max_iterations
@@ -137,18 +186,31 @@ class Renderer:
                 raise ValueError("Unsupported SSR artifact version")
             self.programs[entry] = program
 
-    def render(self, entry, context=None):
+    def render(self, entry, context=None, *, request=None):
         if context is not None and type(context) is not dict:
             raise ValueError("SSR public props must be a plain JSON object")
         data = public_data({} if context is None else context)
+        request_data = _request_scope(request)
         payload = props_json(data)
         if len(payload.encode()) > self.max_output:
             raise ValueError("Public state exceeds output limit")
-        cache_key = (entry, payload)
+        request_payload = props_json(request_data) if request_data is not None else ""
+        if isinstance(request, SSRRequest) and request.csp_nonce:
+            request_payload += "\0" + request.csp_nonce
+        cache_key = (entry, payload, request_payload)
         if cache_key in self._cache:
-            self._cache.move_to_end(cache_key)
-            return self._cache[cache_key]
+            if self.cache_ttl and time.monotonic() - self._cache_times[cache_key] >= self.cache_ttl:
+                expired = self._cache.pop(cache_key)
+                self._cache_times.pop(cache_key, None)
+                self._cache_bytes -= len(expired.html.encode()) + len(
+                    expired.props_json.encode()
+                )
+            else:
+                self._cache.move_to_end(cache_key)
+                return self._cache[cache_key]
         parts = []
+        head_parts = []
+        active_parts = parts
         size = 0
         steps = 0
 
@@ -157,10 +219,10 @@ class Renderer:
             size += len(value.encode())
             if size > self.max_output:
                 raise ValueError("SSR output limit exceeded")
-            parts.append(value)
+            active_parts.append(value)
 
         def render_nodes(nodes, scope, program, stack, slots=None):
-            nonlocal steps
+            nonlocal active_parts, steps
             if len(stack) > 64:
                 raise ValueError("SSR component nesting limit exceeded")
             for node in nodes:
@@ -217,8 +279,16 @@ class Renderer:
                             render_nodes(*selected)
                         else:
                             render_nodes(node["children"], scope, program, stack, slots)
-                    elif op == "component":
-                        child_entry = node["entry"]
+                    elif op in {"component", "dynamic_component"}:
+                        child_entry = (
+                            node["entry"]
+                            if op == "component"
+                            else program["imports"].get(
+                                string(evaluate(node["component"], scope)), ""
+                            )
+                        )
+                        if child_entry not in self.programs:
+                            raise ValueError("Unknown SSR dynamic component")
                         if child_entry in stack:
                             raise ValueError("Recursive SSR component import")
                         child = self.programs[child_entry]
@@ -248,7 +318,14 @@ class Renderer:
                         }
                         render_nodes(
                             child["nodes"],
-                            props,
+                            {
+                                **props,
+                                **(
+                                    {"request": request_data}
+                                    if request_data is not None
+                                    else {}
+                                ),
+                            },
                             child,
                             (*stack, child_entry),
                             child_slots,
@@ -270,23 +347,42 @@ class Renderer:
                                     attributes["hidden"] = True
                             elif name != "key":
                                 attributes[name] = value
-                        write(
-                            "<"
-                            + node["tag"]
-                            + "".join(
-                                attribute(name, value)
-                                for name, value in attributes.items()
-                            )
-                            + ">"
-                        )
-                        if node["tag"].lower() not in VOID_ELEMENTS:
-                            if text is not None:
-                                write(html.escape(text))
-                            else:
-                                render_nodes(
-                                    node["children"], scope, program, stack, slots
+                        if node["tag"].lower() == "iframe":
+                            iframe_url = urlsplit(string(attributes.get("src", "")))
+                            if (
+                                iframe_url.scheme != "https"
+                                or iframe_url.hostname != "www.youtube-nocookie.com"
+                                or not iframe_url.path.startswith("/embed/")
+                            ):
+                                raise ValueError(
+                                    "SSR iframes must use YouTube privacy embed URLs"
                                 )
-                            write("</" + node["tag"] + ">")
+                        is_head = node["tag"].lower() in {"title", "meta", "link"}
+                        previous_parts = active_parts
+                        if is_head:
+                            active_parts = []
+                        try:
+                            write(
+                                "<"
+                                + node["tag"]
+                                + "".join(
+                                    attribute(name, value)
+                                    for name, value in attributes.items()
+                                )
+                                + ">"
+                            )
+                            if node["tag"].lower() not in VOID_ELEMENTS:
+                                if text is not None:
+                                    write(html.escape(text))
+                                else:
+                                    render_nodes(
+                                        node["children"], scope, program, stack, slots
+                                    )
+                                write("</" + node["tag"] + ">")
+                        finally:
+                            if is_head:
+                                head_parts.append("".join(active_parts))
+                            active_parts = previous_parts
                     else:
                         raise ValueError("Unknown SSR instruction")
                 except SSRRenderError:
@@ -305,7 +401,11 @@ class Renderer:
                     ) from error
 
         program = self.programs[entry]
-        render_nodes(program["nodes"], data, program, (entry,))
+        scope = {
+            **data,
+            **({"request": request_data} if request_data is not None else {}),
+        }
+        render_nodes(program["nodes"], scope, program, (entry,))
         assets = []
         visited = set()
 
@@ -318,13 +418,98 @@ class Renderer:
                 collect_assets(child)
 
         collect_assets(entry)
-        result = RenderResult("".join(parts), payload, tuple(dict.fromkeys(assets)))
+        result = RenderResult(
+            "".join(parts),
+            payload,
+            tuple(dict.fromkeys(assets)),
+            head=tuple(head_parts),
+            csp_nonce=request.csp_nonce if isinstance(request, SSRRequest) else None,
+        )
         if self.cache_size:
             self._cache[cache_key] = result
+            self._cache_times[cache_key] = time.monotonic()
             self._cache_bytes += len(result.html.encode()) + len(payload.encode())
             while len(self._cache) > self.cache_size or self._cache_bytes > 8_000_000:
-                removed = self._cache.popitem(last=False)[1]
+                removed_key, removed = self._cache.popitem(last=False)
+                self._cache_times.pop(removed_key, None)
                 self._cache_bytes -= len(removed.html.encode()) + len(
                     removed.props_json.encode()
                 )
         return result
+
+    def clear_cache(self, entry=None):
+        """Invalidate all cached renders, or only renders for one entry."""
+        if entry is None:
+            self._cache.clear()
+            self._cache_times.clear()
+            self._cache_bytes = 0
+            return
+        for key in list(self._cache):
+            if key[0] == entry:
+                result = self._cache.pop(key)
+                self._cache_times.pop(key, None)
+                self._cache_bytes -= len(result.html.encode()) + len(
+                    result.props_json.encode()
+                )
+
+    async def render_async(
+        self, entry, context=None, *, request=None, server_data=None, timeout=None
+    ):
+        """Resolve host data asynchronously, then render a hydration-safe result.
+
+        ``server_data`` may be a mapping or a callable receiving the normalized
+        request scope. Its result is merged over ``context`` and is serialized
+        into ``props_json``; request metadata itself is never serialized.
+        """
+        request_data = _request_scope(request)
+        resolved = server_data
+        if callable(server_data):
+            resolved = server_data(request_data or {})
+        if inspect.isawaitable(resolved):
+            if timeout is None:
+                resolved = await resolved
+            else:
+                resolved = await asyncio.wait_for(resolved, float(timeout))
+        if resolved is None:
+            resolved = {}
+        if type(resolved) is not dict:
+            raise SSRRenderError(
+                "Server data must resolve to a plain JSON object", component=entry
+            )
+        initial = {} if context is None else context
+        if type(initial) is not dict:
+            raise ValueError("SSR public props must be a plain JSON object")
+        return self.render(
+            entry,
+            {**initial, **resolved},
+            request=request,
+        )
+
+    async def render_stream(
+        self,
+        entry,
+        context=None,
+        *,
+        request=None,
+        server_data=None,
+        chunk_size=65536,
+        timeout=None,
+    ):
+        """Yield rendered HTML in bounded chunks for ASGI/streaming hosts.
+
+        Data resolution and instruction evaluation complete before the first
+        chunk. This provides a portable async response interface while keeping
+        the renderer's output and security limits deterministic.
+        """
+        if int(chunk_size) <= 0:
+            raise ValueError("SSR stream chunk_size must be positive")
+        result = await self.render_async(
+            entry,
+            context,
+            request=request,
+            server_data=server_data,
+            timeout=timeout,
+        )
+        size = int(chunk_size)
+        for offset in range(0, len(result.html), size):
+            yield result.html[offset : offset + size]
