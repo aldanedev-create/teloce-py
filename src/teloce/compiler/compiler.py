@@ -24,6 +24,48 @@ from teloce.sfc.parser import SFCParser
 from teloce.sfc.component import Component
 
 
+
+_TEXT_MARKER = "teloce-text:"
+_ATTR_MARKER = 'data-teloce-direct-bindings=\\"'
+_MARKER_RUN_RE = re.compile(r"[\w.:\-]*")
+
+
+class _MarkerIndex:
+    """Index of ``prefix + id`` markers in generated JS, built in one pass.
+
+    ``find(id)`` returns exactly ``js_code.find(prefix + id)`` (the first
+    occurrence, including occurrences that are only a prefix of a longer id),
+    without rescanning the whole module for every binding.
+    """
+
+    __slots__ = ("js_code", "prefix", "_first", "_built")
+
+    def __init__(self, js_code: str, prefix: str):
+        self.js_code = js_code
+        self.prefix = prefix
+        self._first = None
+
+    def _build(self) -> dict:
+        first: dict = {}
+        prefix = self.prefix
+        width = len(prefix)
+        match_run = _MARKER_RUN_RE.match
+        code = self.js_code
+        position = code.find(prefix)
+        while position >= 0:
+            run = match_run(code, position + width).group()
+            for length in range(len(run) + 1):
+                first.setdefault(run[:length], position)
+            position = code.find(prefix, position + 1)
+        return first
+
+    def find(self, identifier: str) -> int:
+        if _MARKER_RUN_RE.fullmatch(identifier) is None:
+            return self.js_code.find(self.prefix + identifier)
+        if self._first is None:
+            self._first = self._build()
+        return self._first.get(identifier, -1)
+
 class Compiler:
     """
     Main compiler class that orchestrates the compilation pipeline.
@@ -269,12 +311,13 @@ class Compiler:
             for _line in js_code.splitlines(keepends=True):
                 _line_starts.append(_offset)
                 _offset += len(_line)
+            text_markers = _MarkerIndex(js_code, _TEXT_MARKER)
+            attr_markers = _MarkerIndex(js_code, _ATTR_MARKER)
             for record in optimizer.direct_plan.get("bindings", []):
-                marker = f"teloce-text:{record.get('id')}"
-                found = js_code.find(marker)
+                record_id = f"{record.get('id')}"
+                found = text_markers.find(record_id)
                 if found < 0:
-                    marker = f"data-teloce-direct-bindings=\\\"{record.get('id')}"
-                    found = js_code.find(marker)
+                    found = attr_markers.find(record_id)
                 # first line containing the marker == line of its first occurrence
                 generated_line = bisect_right(_line_starts, found) - 1 if found >= 0 else None
                 if generated_line is not None and record.get("line"):

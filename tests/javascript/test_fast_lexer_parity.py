@@ -95,3 +95,42 @@ def test_balanced_pair_matches_legacy_when_legacy_succeeds():
                 except JavaScriptSyntaxError:
                     continue  # legacy rejects the whole remainder; early stop may be more lenient
                 assert find_balanced_end(source, opening, open_char, close_char) == expected, (source, opening)
+
+
+def test_parent_token_reuse_matches_direct_tokenization(monkeypatch):
+    """Blocks sliced out of an already tokenized parent must equal a fresh lex."""
+    from teloce.javascript import parser as jp
+
+    monkeypatch.setattr(jp, "_PARENT_MIN_CHARS", 0)
+    rng = random.Random(77)
+    reused = 0
+    for _ in range(3000):
+        jp._tokenize_cached.cache_clear()
+        jp._RECENT_PARENTS.clear()
+        parent = "".join(rng.choice(_PIECES) + rng.choice(["", " ", "\n", "\n  "]) for _ in range(rng.randint(3, 30)))
+        try:
+            parent_tokens = jp.tokenize_javascript(parent)
+        except JavaScriptSyntaxError:
+            continue
+        real = [t for t in parent_tokens if t.kind != "eof"]
+        if len(real) < 2:
+            continue
+        for _ in range(8):
+            i = rng.randrange(len(real))
+            j = rng.randrange(i, len(real))
+            if rng.random() < 0.2:  # also try slices that are NOT token aligned
+                start, end = real[i].start + rng.randint(0, 1), real[j].end - rng.randint(0, 1)
+                if start >= end:
+                    continue
+            else:
+                start, end = real[i].start, real[j].end
+            sub = parent[start:end]
+            expected = _lex(LegacyJavaScriptLexer, sub)
+            try:
+                got = ("ok", jp.tokenize_javascript(sub))
+            except JavaScriptSyntaxError as exc:
+                got = ("err", str(exc), exc.token)
+            assert got == expected, (parent, sub)
+            if jp._tokens_from_parent(sub) is not None:
+                reused += 1
+    assert reused > 1000  # the reuse path is actually exercised

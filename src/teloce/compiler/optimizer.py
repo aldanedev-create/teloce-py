@@ -5,12 +5,19 @@ Applies optimization passes to the AST for better performance.
 """
 
 from typing import List, Optional, Any, Set
+from functools import lru_cache
 import re
 
 from teloce.ast.nodes import (
     ASTNode, ElementNode, TextNode, InterpolationNode, ForNode, IfNode,
     ComponentNode, SlotNode, FragmentNode,
 )
+
+
+
+@lru_cache(maxsize=8192)
+def _dependencies_memo(owner, expression: str) -> tuple[str, ...]:
+    return owner._dependencies_uncached(expression)
 
 
 class Optimizer:
@@ -83,51 +90,71 @@ class Optimizer:
         binding to update, while a false negative could leave stale DOM. The
         JavaScript parser validates the authored script; this pass only builds
         a safe dependency index for template expressions.
+
+        The analysis is a pure function of the expression text and templates
+        repeat the same expressions constantly, so results are memoized. Callers
+        append to the returned list, so each call gets its own copy.
         """
-        raw_source = str(expression or "")
+        return list(_dependencies_memo(cls, str(expression or "")))
+
+    _STRING_LITERAL_RE = re.compile(r"'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"")
+    _THIS_PATTERNS = (
+        (re.compile(r"\bthis\.([A-Za-z_$][\w$]*)"), False),
+        (re.compile(r"\bthis\?\.([A-Za-z_$][\w$]*)"), False),
+        (re.compile(r"\bthis\s*\[\s*['\"]([A-Za-z_$][\w$]*)['\"]\s*\]"), True),
+    )
+
+    @classmethod
+    def _dependencies_uncached(cls, raw_source: str) -> tuple[str, ...]:
         source = raw_source
         # Identifiers inside string literals are values, not state reads. Keep
         # the character positions stable so diagnostics still use the same
         # source offsets when this analysis is extended.
-        source = re.sub(
-            r"'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"",
-            lambda match: " " * len(match.group(0)),
-            source,
-        )
+        if "'" in source or '"' in source:
+            source = cls._STRING_LITERAL_RE.sub(lambda match: " " * len(match.group(0)), source)
         names: list[str] = []
         # The normal identifier expression intentionally ignores member names
         # after a dot. Handle the component state form separately so
         # `this.firstName` contributes the root `firstName` dependency.
-        for pattern, search_source in (
-            (r"\bthis\.([A-Za-z_$][\w$]*)", source),
-            (r"\bthis\?\.([A-Za-z_$][\w$]*)", source),
-            (r"\bthis\s*\[\s*['\"]([A-Za-z_$][\w$]*)['\"]\s*\]", raw_source),
-        ):
-            for match in re.finditer(pattern, search_source):
-                name = match.group(1)
-                if name not in names:
-                    names.append(name)
+        if "this" in raw_source:
+            for pattern, use_raw in cls._THIS_PATTERNS:
+                for match in pattern.finditer(raw_source if use_raw else source):
+                    name = match.group(1)
+                    if name not in names:
+                        names.append(name)
+        length = len(source)
+        non_state = cls._NON_STATE_NAMES
         for match in cls._IDENTIFIER_RE.finditer(source):
             name = match.group(1)
-            if name in cls._NON_STATE_NAMES or name in names:
+            if name in non_state or name in names:
                 continue
-            before = source[:match.start()].rstrip()
-            if before.endswith("?"):
+            # Index arithmetic instead of slicing: ``source[:i].rstrip()`` copied
+            # the whole prefix for every identifier.
+            before_end = match.start()
+            while before_end > 0 and source[before_end - 1].isspace():
+                before_end -= 1
+            last = source[before_end - 1] if before_end else ""
+            if last == "?":
                 continue
-            if before.endswith("."):
+            if last == ".":
                 # `this.user.name` is a state read rooted at `user`; ordinary
                 # member names such as `name` are not separate dependencies.
-                if before[:-1].rstrip().endswith("this"):
+                root_end = before_end - 1
+                while root_end > 0 and source[root_end - 1].isspace():
+                    root_end -= 1
+                if source.endswith("this", 0, root_end):
                     names.append(name)
                 continue
             # Object-literal keys and arrow parameters are not state reads.
-            after = source[match.end():].lstrip()
-            if after.startswith(":") and not before.endswith("?"):
+            after = match.end()
+            while after < length and source[after].isspace():
+                after += 1
+            if after < length and source[after] == ":":
                 continue
-            if before.endswith("=>"):
+            if source.endswith("=>", 0, before_end):
                 continue
             names.append(name)
-        return names
+        return tuple(names)
 
     def _collect_direct_plan(self, nodes: List[ASTNode]) -> None:
         """Collect direct-update metadata in the same order as generation."""

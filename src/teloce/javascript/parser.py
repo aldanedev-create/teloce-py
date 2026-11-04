@@ -9,6 +9,7 @@ executes JavaScript or attempts to be a formatter.
 
 from __future__ import annotations
 
+from bisect import bisect_left
 from functools import lru_cache
 
 import re
@@ -816,22 +817,69 @@ def _iter_fast(source: str, pos: int = 0):
 
 
 def _fast_tokenize(source: str) -> list[JSToken]:
+    """Tokenize ``source`` with the master regex in a single flat loop.
+
+    Mirrors ``_iter_fast`` (kept for early-exit scanning) but builds the
+    JSToken objects directly, avoiding a generator frame and a tuple per token.
+    """
+    n = len(source)
+    if source.startswith("#!"):
+        raise _FastLexFallback
     tokens: list[JSToken] = []
     append = tokens.append
     count = source.count
     rfind = source.rfind
+    match = _MASTER_RE.match
+    kind_by_group = _KIND_BY_GROUP
     line = 1
     line_start = 0
     scanned = 0
-    for kind, value, start, end in _iter_fast(source):
-        if start > scanned:
-            newlines = count("\n", scanned, start)
+    prev_kind = None
+    prev_value = ""
+    pos = 0
+    while pos < n:
+        m = match(source, pos)
+        if m is None:
+            raise _FastLexFallback
+        group = m.lastgroup
+        end = m.end()
+        if group == "ws" or group == "lc" or group == "bc":
+            pos = end
+            continue
+        value = m.group()
+        if value[0] == "/" and (group == "op" or group == "op1"):
+            if source.startswith("/*", pos):  # unterminated block comment
+                raise _FastLexFallback
+            if prev_kind is None or (
+                prev_kind == "operator" and prev_value not in ("++", "--")
+            ) or (
+                prev_kind != "operator"
+                and (prev_value in _REGEX_PRECEDING_VALUES or prev_value in _REGEX_PRECEDING_KEYWORDS)
+            ):
+                rm = _REGEX_LITERAL_RE.match(source, pos)
+                if rm is None:
+                    raise _FastLexFallback
+                end = rm.end()
+                if end < n and source[end] > "\x7f":
+                    raise _FastLexFallback
+                kind = "regex"
+                value = rm.group()
+            else:
+                kind = "operator"
+        elif group == "str":
+            kind = "template" if value[0] == "`" else "string"
+        else:
+            kind = kind_by_group[group]
+        if pos > scanned:
+            newlines = count("\n", scanned, pos)
             if newlines:
                 line += newlines
-                line_start = rfind("\n", scanned, start) + 1
-            scanned = start
-        append(JSToken(kind, value, start, end, line, start - line_start + 1))
-    n = len(source)
+                line_start = rfind("\n", scanned, pos) + 1
+            scanned = pos
+        append(JSToken(kind, value, pos, end, line, pos - line_start + 1))
+        prev_kind = kind
+        prev_value = value
+        pos = end
     newlines = count("\n", scanned, n)
     if newlines:
         line += newlines
@@ -886,9 +934,79 @@ def find_balanced_end(source: str, opening: int, open_char: str, close_char: str
 
 
 
+# A component's script is tokenized as a whole object and then again for
+# blocks contained in it (methods, computed, watch, data).  When a block is a
+# token-aligned slice of a recently tokenized larger source, its tokens are the
+# parent's tokens re-based to the block, so lexing it again is unnecessary.
+_PARENT_MIN_CHARS = 1500
+_PARENT_LIMIT = 4
+_RECENT_PARENTS: list = []  # [(source, tokens, starts)], most recent last
+
+
+def _tokens_from_parent(source: str):
+    """Return the tokens of ``source`` taken from a parent tokenization, or None."""
+    if len(source) < 2 or source[0] == "/" or source.startswith("#!"):
+        return None
+    length = len(source)
+    for parent_source, parent_tokens, starts in reversed(_RECENT_PARENTS):
+        if len(parent_source) <= length:
+            continue
+        offset = parent_source.find(source)
+        attempts = 0
+        while offset != -1 and attempts < 4:
+            tokens = _slice_parent_tokens(parent_tokens, starts, offset, offset + length)
+            if tokens is not None:
+                return tokens
+            offset = parent_source.find(source, offset + 1)
+            attempts += 1
+    return None
+
+
+def _slice_parent_tokens(parent_tokens, starts, offset: int, limit: int):
+    first = bisect_left(starts, offset)
+    if first >= len(starts) or starts[first] != offset:
+        return None  # the occurrence does not begin on a token boundary
+    stop = bisect_left(starts, limit)  # first token starting at/after the end
+    if stop <= first:
+        return None
+    last = parent_tokens[stop - 1]
+    if last.end != limit or last.kind == "eof":
+        return None  # the occurrence does not end on a token boundary
+    head = parent_tokens[first]
+    first_line, first_column = head.line, head.column
+    out = []
+    append = out.append
+    for token in parent_tokens[first:stop]:
+        if token.line == first_line:
+            append(JSToken(token.kind, token.value, token.start - offset, token.end - offset,
+                           1, token.column - first_column + 1))
+        else:
+            append(JSToken(token.kind, token.value, token.start - offset, token.end - offset,
+                           token.line - first_line + 1, token.column))
+    tail = out[-1]
+    newlines = tail.value.count("\n")
+    if newlines:
+        eof_line = tail.line + newlines
+        eof_column = len(tail.value) - tail.value.rfind("\n")
+    else:
+        eof_line = tail.line
+        eof_column = tail.column + len(tail.value)
+    end = limit - offset
+    append(JSToken("eof", "", end, end, eof_line, eof_column))
+    return tuple(out)
+
+
 @lru_cache(maxsize=1024)
 def _tokenize_cached(source: str) -> tuple[JSToken, ...]:
-    return tuple(JavaScriptLexer(source).tokenize())
+    reused = _tokens_from_parent(source)
+    if reused is not None:
+        return reused
+    tokens = tuple(JavaScriptLexer(source).tokenize())
+    if len(source) >= _PARENT_MIN_CHARS:
+        _RECENT_PARENTS.append((source, tokens, [token.start for token in tokens]))
+        if len(_RECENT_PARENTS) > _PARENT_LIMIT:
+            del _RECENT_PARENTS[0]
+    return tokens
 
 
 def tokenize_javascript(source: str) -> list[JSToken]:
