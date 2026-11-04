@@ -1148,8 +1148,8 @@ class Builder:
         )
 
     def _resolve_jobs(self, pending: int) -> int:
-        """Worker-process count: 1 (default), an integer, or 0/'auto' for all cores."""
-        raw = self.options.get('jobs', 1)
+        """Worker-process count: 'auto' (default, all cores; small builds stay sequential), an integer, or 0/'auto' for all cores."""
+        raw = self.options.get('jobs', 'auto')
         if raw is None or raw is False or raw == '':
             return 1
         if isinstance(raw, str) and raw.strip().lower() == 'auto':

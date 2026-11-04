@@ -6,11 +6,17 @@ support including ES modules, exports, imports, and component options.
 """
 
 import ast
+from functools import lru_cache
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from teloce.javascript.parser import parse_javascript, tokenize_javascript
+from teloce.javascript.parser import (
+    find_balanced_end,
+    parse_javascript,
+    parse_javascript_top_level,
+    tokenize_javascript,
+)
 from teloce.javascript.ts_transpile import transpile as transpile_ts
 from teloce.javascript.tree_sitter_backend import (
     TreeSitterUnavailable,
@@ -19,6 +25,23 @@ from teloce.javascript.tree_sitter_backend import (
 from teloce.project.extensions import normalize_source_extensions, source_extension_pattern
 from teloce.sfc.component import ComponentScript
 
+
+
+@lru_cache(maxsize=256)
+def _property_scanner(name: str):
+    """Regex that yields strings/comments (to skip) or the ``name:`` property."""
+    return re.compile(
+        "|".join(
+            (
+                r"(?P<skip>//[^\n]*)",
+                r"(?P<skip2>/\*[\s\S]*?(?:\*/|\Z))",
+                r"(?P<skip3>'[^'\\]*(?:\\[\s\S][^'\\]*)*(?:'|\\?\Z))",
+                r'(?P<skip4>"[^"\\]*(?:\\[\s\S][^"\\]*)*(?:"|\\?\Z))',
+                r"(?P<skip5>`[^`\\]*(?:\\[\s\S][^`\\]*)*(?:`|\\?\Z))",
+                r"(?<=[^\w$])(?P<prop>" + re.escape(name) + r")(?![\w$])\s*:",
+            )
+        )
+    )
 
 def _read_ts_balanced(source: str, opening: int, open_char: str = '{', close_char: str = '}') -> int:
     """Return the index after a balanced TS declaration block."""
@@ -274,9 +297,9 @@ class ScriptParser:
             # generated JavaScript is validated separately below. Tree-sitter
             # provides structural syntax errors while the original source is
             # still available for accurate diagnostics.
-            parse_javascript(original_source, language=script_language)
+            parse_javascript_top_level(original_source, language=script_language)
             if is_typescript:
-                parse_javascript(source, language="js")
+                parse_javascript_top_level(source, language="js")
             # Parse imports
             self._parse_imports(source)
             script.imports = list(self.imports)
@@ -322,7 +345,7 @@ class ScriptParser:
         code = source
         default_span = None
         try:
-            for node in parse_javascript(code).body:
+            for node in parse_javascript_top_level(code).body:
                 if node.kind != "ExportDeclaration":
                     continue
                 if re.match(r"export\s+default\b", node.source.strip()):
@@ -549,7 +572,7 @@ class ScriptParser:
     
     def _parse_imports(self, source: str):
         """Parse imports from source-preserving AST nodes."""
-        for node in parse_javascript(source).body:
+        for node in parse_javascript_top_level(source).body:
             if node.kind != "ImportDeclaration":
                 continue
             statement = node.source.strip().rstrip(";").strip()
@@ -593,7 +616,7 @@ class ScriptParser:
     
     def _parse_exports(self, source: str):
         """Parse top-level export statements from the structural AST."""
-        for node in parse_javascript(source).body:
+        for node in parse_javascript_top_level(source).body:
             if node.kind != "ExportDeclaration":
                 continue
             statement = node.source.strip().rstrip(";").strip()
@@ -759,15 +782,10 @@ class ScriptParser:
         """Read a balanced JS pair from source-located lexical tokens."""
         if opening < 0 or opening >= len(source) or source[opening] != open_char:
             return None
-        depth = 0
-        for token in tokenize_javascript(source[opening:]):
-            if token.value == open_char:
-                depth += 1
-            elif token.value == close_char:
-                depth -= 1
-                if depth == 0:
-                    return source[opening:opening + token.end]
-        return None
+        end = find_balanced_end(source, opening, open_char, close_char)
+        if end is None:
+            return None
+        return source[opening:end]
     
     def _extract_computed(self, source: str) -> Dict[str, str]:
         """Extract computed properties from the script."""
@@ -1174,37 +1192,20 @@ class ScriptParser:
         documentation strings such as ``"computed: { fake: true }"`` become
         component options. This scanner only identifies the property; the
         existing balanced readers still parse its value.
+
+        Strings and comments are skipped as whole units by one precompiled
+        regex (C speed) instead of a character-by-character Python loop.
         """
-        quote = None
-        escaped = False
-        line_comment = block_comment = False
-        index = 0
-        while index < len(source):
-            char = source[index]
-            nxt = source[index + 1] if index + 1 < len(source) else ""
-            if line_comment:
-                if char == "\n": line_comment = False
-            elif block_comment:
-                if char == "*" and nxt == "/": block_comment = False; index += 1
-            elif quote:
-                if escaped: escaped = False
-                elif char == "\\": escaped = True
-                elif char == quote: quote = None
-            elif char in "'\"`": quote = char
-            elif char == "/" and nxt == "/": line_comment = True; index += 1
-            elif char == "/" and nxt == "*": block_comment = True; index += 1
-            elif source.startswith(name, index):
-                before = source[index - 1] if index else ""
-                after_index = index + len(name)
-                if (not (before.isalnum() or before in "_$") and
-                        (after_index == len(source) or not (source[after_index].isalnum() or source[after_index] in "_$"))):
-                    cursor = after_index
-                    while cursor < len(source) and source[cursor].isspace(): cursor += 1
-                    if cursor < len(source) and source[cursor] == ":":
-                        return cursor + 1
-            index += 1
-        return None
-    
+        match = _property_scanner(name).search
+        pos = 0
+        while True:
+            m = match(source, pos)
+            if m is None:
+                return None
+            if m.lastgroup == "prop":
+                return m.end()
+            pos = m.end()
+
     def _extract_object_block(self, source: str, start: int) -> Optional[str]:
         """Extract an object block from the source."""
         return self._read_balanced_pair(source, start, '{', '}')

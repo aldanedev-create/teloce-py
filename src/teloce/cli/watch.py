@@ -55,7 +55,7 @@ def watch_command(args: Any) -> int:
     build_config = config.get_build_config()
     builder = Builder({
         'dev': True,
-        'jobs': build_config.get('jobs', 1),
+        'jobs': build_config.get('jobs', 'auto'),
         'persistent_workers': build_config.get('persistent_workers', False),
         'direct_dom_updates': build_config.get('direct_dom_updates', True),
         'source_maps': True,

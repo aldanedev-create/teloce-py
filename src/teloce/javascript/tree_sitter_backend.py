@@ -11,7 +11,9 @@ from __future__ import annotations
 from collections.abc import Iterator
 from collections import OrderedDict
 from dataclasses import dataclass
+from bisect import bisect_right
 from functools import lru_cache
+import re
 from threading import local
 from typing import Any
 
@@ -200,19 +202,95 @@ def parse_tree(source: str, language: str = "js") -> TreeSitterProgram:
     return TreeSitterProgram(str(source), canonical, tree)
 
 
+class _OffsetTable:
+    """Byte-offset and line tables for one source text, built once.
+
+    Tree-sitter reports UTF-8 byte offsets.  Re-encoding the whole source for
+    every node made conversion quadratic; for ASCII text (the common case)
+    byte offsets already equal character offsets.
+    """
+
+    __slots__ = ("ascii", "cum", "line_bytes", "line_chars")
+
+    def __init__(self, source: str):
+        self.ascii = source.isascii()
+        self.cum = None
+        self.line_bytes = None
+        self.line_chars = None
+        if not self.ascii:
+            cum = [0]
+            total = 0
+            for ch in source:
+                total += len(ch.encode("utf-8"))
+                cum.append(total)
+            self.cum = cum
+            lines = source.splitlines(keepends=True)
+            self.line_chars = lines
+            self.line_bytes = [line.encode("utf-8") for line in lines]
+
+
+@lru_cache(maxsize=8)
+def _offset_table(source: str) -> _OffsetTable:
+    return _OffsetTable(source)
+
+
 def _byte_to_char(source: str, byte_offset: int) -> int:
     """Convert Tree-sitter's UTF-8 byte offset to a Python string offset."""
 
-    encoded = source.encode("utf-8")
-    return len(encoded[:byte_offset].decode("utf-8", errors="ignore"))
+    table = _offset_table(source)
+    if table.ascii:
+        return max(0, min(byte_offset, len(source)))
+    # number of complete characters that end at or before byte_offset
+    return bisect_right(table.cum, max(0, byte_offset)) - 1
 
 
 def _point_to_line_column(source: str, point: tuple[int, int]) -> tuple[int, int]:
     row, byte_column = point
-    lines = source.splitlines(keepends=True)
-    line = lines[row] if 0 <= row < len(lines) else ""
-    column = len(line.encode("utf-8")[:byte_column].decode("utf-8", errors="ignore"))
+    table = _offset_table(source)
+    if table.ascii:
+        # splitlines() may break on more separators than \n, but tree-sitter
+        # rows are counted on \n only, so keep the historical lookup for the
+        # rare ASCII separators (\r, \v, \f, \x1c-\x1e) to stay identical.
+        if _SIMPLE_LINES(source):
+            return row + 1, min(byte_column, _line_length(source, row)) + 1
+        lines = source.splitlines(keepends=True)
+        line = lines[row] if 0 <= row < len(lines) else ""
+        return row + 1, min(byte_column, len(line)) + 1
+    lines = table.line_chars
+    if 0 <= row < len(lines):
+        column = len(table.line_bytes[row][:byte_column].decode("utf-8", errors="ignore"))
+    else:
+        column = 0
     return row + 1, column + 1
+
+
+_EXOTIC_LINE_BREAKS = re.compile("[\r\x0b\x0c\x1c-\x1e\x85\u2028\u2029]")
+
+
+@lru_cache(maxsize=8)
+def _SIMPLE_LINES(source: str) -> bool:
+    return _EXOTIC_LINE_BREAKS.search(source) is None
+
+
+@lru_cache(maxsize=8)
+def _line_starts(source: str) -> tuple[int, ...]:
+    starts = [0]
+    find = source.find
+    index = find("\n")
+    while index != -1:
+        starts.append(index + 1)
+        index = find("\n", index + 1)
+    return tuple(starts)
+
+
+def _line_length(source: str, row: int) -> int:
+    """Length of line ``row`` including its trailing newline (like splitlines(True))."""
+
+    starts = _line_starts(source)
+    if not 0 <= row < len(starts):
+        return 0
+    end = starts[row + 1] if row + 1 < len(starts) else len(source)
+    return end - starts[row]
 
 
 def _walk(node: Any) -> Iterator[Any]:
@@ -320,7 +398,7 @@ def _node_name(node: Any, source: str) -> str | None:
     return None
 
 
-def _convert_node(node: Any, source: str) -> JSNode:
+def _convert_node(node: Any, source: str, deep: bool = True) -> JSNode:
     start = _byte_to_char(source, node.start_byte)
     end = _byte_to_char(source, node.end_byte)
     line, column = _point_to_line_column(source, node.start_point)
@@ -336,7 +414,10 @@ def _convert_node(node: Any, source: str) -> JSNode:
     elif node.type in {"function_declaration", "generator_function_declaration", "function"}:
         body_node = node.child_by_field_name("body")
         named_children = [body_node] if body_node is not None else []
-    children = tuple(_convert_node(child, source) for child in named_children if child is not None)
+    if deep:
+        children = tuple(_convert_node(child, source) for child in named_children if child is not None)
+    else:
+        children = ()
     return JSNode(kind, source[start:end], start, end, line, column, children, _node_name(node, source))
 
 
@@ -349,6 +430,29 @@ def to_teloce_program(program: TreeSitterProgram) -> JSProgram:
         if node.type not in _IGNORED_TOP_LEVEL
     )
     return JSProgram(program.source, body)
+
+
+def to_shallow_program(program: TreeSitterProgram) -> JSProgram:
+    """Like :func:`to_teloce_program` but converts only top-level statements.
+
+    Callers that look at statement kind, source span and position (import and
+    export scanning, module-code extraction) do not need every nested node
+    converted to a Python object.  Top-level fields are identical to the deep
+    conversion; ``children`` is left empty.
+    """
+
+    body = tuple(
+        _convert_node(node, program.source, deep=False)
+        for node in program.root_node.named_children
+        if node.type not in _IGNORED_TOP_LEVEL
+    )
+    return JSProgram(program.source, body)
+
+
+def parse_shallow_teloce_program(source: str, language: str = "js") -> JSProgram:
+    """Parse with Tree-sitter and return only the top-level statements."""
+
+    return to_shallow_program(parse_valid_tree(source, language))
 
 
 def parse_as_teloce_program(source: str, language: str = "js") -> JSProgram:

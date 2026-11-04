@@ -530,8 +530,8 @@ class JavaScriptLanguageParser:
         return self.tokens[0]
 
 
-class JavaScriptLexer:
-    """Tokenize JavaScript without interpreting or executing it."""
+class LegacyJavaScriptLexer:
+    """Reference character-by-character lexer (kept for exotic input and parity tests)."""
 
     _PUNCTUATION = set("{}[]();,.:?")
     _OPERATORS = (
@@ -705,6 +705,187 @@ class JavaScriptLexer:
         self._advance("*/")
 
 
+# ---------------------------------------------------------------------------
+# Fast regex lexer
+#
+# One precompiled master pattern replaces the per-character Python loop.  It
+# produces exactly the same tokens as LegacyJavaScriptLexer for every input
+# the pattern fully understands; for anything else (a shebang, an identifier
+# that starts with a non-ASCII letter, an unterminated literal, ...) it raises
+# _FastLexFallback and the legacy lexer re-lexes the source, so behaviour and
+# error messages are unchanged.
+# ---------------------------------------------------------------------------
+
+class _FastLexFallback(Exception):
+    pass
+
+
+_NUMBER_PATTERN = (
+    r"(?:0[bB][01](?:_?[01])*|0[oO][0-7](?:_?[0-7])*|0[xX][0-9A-Fa-f](?:_?[0-9A-Fa-f])*"
+    r"|(?:\d(?:_?\d)*)?(?:\.(?:\d(?:_?\d)*)?)?(?:[eE][+-]?\d(?:_?\d)*)?)(?:n)?"
+)
+
+_MASTER_RE = re.compile(
+    "|".join(
+        (
+            r"(?P<ws>\s+)",
+            r"(?P<lc>//[^\n]*)",
+            r"(?P<bc>/\*[\s\S]*?\*/)",
+            r"(?P<str>'[^'\\]*(?:\\[\s\S][^'\\]*)*'"
+            r'|"[^"\\]*(?:\\[\s\S][^"\\]*)*"'
+            r"|`[^`\\]*(?:\\[\s\S][^`\\]*)*`)",
+            r"(?P<ident>[A-Za-z_$][\w$]*)",
+            r"(?P<num>(?=[0-9]|\.[0-9])" + _NUMBER_PATTERN + ")",
+            "(?P<op>" + "|".join(re.escape(op) for op in LegacyJavaScriptLexer._OPERATORS) + ")",
+            r"(?P<punct>[{}\[\]();,.:?])",
+            r"(?P<op1>[+\-*/%=!<>|&~^])",
+        )
+    )
+)
+
+_REGEX_LITERAL_RE = re.compile(
+    r"/(?:[^/\\\[\r\n]|\\[^\r\n]|\[(?:[^\]\\\r\n]|\\[^\r\n])*\])*/[A-Za-z]*"
+)
+
+_REGEX_PRECEDING_VALUES = frozenset({"(", "[", "{", ",", ";", ":", "?", "="})
+_REGEX_PRECEDING_KEYWORDS = frozenset({
+    "return", "throw", "case", "delete", "void", "typeof", "new",
+    "in", "of", "else", "do", "yield", "await",
+})
+
+_KIND_BY_GROUP = {
+    "str": None,  # decided below (template vs string)
+    "ident": "identifier",
+    "num": "number",
+    "op": "operator",
+    "punct": "punctuation",
+    "op1": "operator",
+}
+
+
+def _iter_fast(source: str, pos: int = 0):
+    """Yield (kind, value, start, end) tuples scanning ``source`` from ``pos``.
+
+    Raises _FastLexFallback when the legacy lexer must take over.
+    """
+    n = len(source)
+    if pos == 0 and source.startswith("#!"):
+        raise _FastLexFallback
+    match = _MASTER_RE.match
+    prev_kind = None
+    prev_value = ""
+    while pos < n:
+        m = match(source, pos)
+        if m is None:
+            raise _FastLexFallback
+        group = m.lastgroup
+        end = m.end()
+        if group == "ws" or group == "lc" or group == "bc":
+            pos = end
+            continue
+        value = m.group()
+        first = value[0]
+        if first == "/" and group in ("op", "op1"):
+            if source.startswith("/*", pos):  # unterminated block comment
+                raise _FastLexFallback
+            if prev_kind is None or (
+                prev_kind == "operator"
+                and prev_value not in ("++", "--")
+            ) or (
+                prev_kind != "operator"
+                and (prev_value in _REGEX_PRECEDING_VALUES or prev_value in _REGEX_PRECEDING_KEYWORDS)
+            ):
+                rm = _REGEX_LITERAL_RE.match(source, pos)
+                if rm is None:
+                    raise _FastLexFallback
+                end = rm.end()
+                if end < n and source[end] > "\x7f":
+                    raise _FastLexFallback
+                kind, value = "regex", rm.group()
+                yield kind, value, pos, end
+                prev_kind, prev_value = kind, value
+                pos = end
+                continue
+        if group == "str":
+            kind = "template" if first == "`" else "string"
+        else:
+            kind = _KIND_BY_GROUP[group]
+        yield kind, value, pos, end
+        prev_kind, prev_value = kind, value
+        pos = end
+
+
+def _fast_tokenize(source: str) -> list[JSToken]:
+    tokens: list[JSToken] = []
+    append = tokens.append
+    count = source.count
+    rfind = source.rfind
+    line = 1
+    line_start = 0
+    scanned = 0
+    for kind, value, start, end in _iter_fast(source):
+        if start > scanned:
+            newlines = count("\n", scanned, start)
+            if newlines:
+                line += newlines
+                line_start = rfind("\n", scanned, start) + 1
+            scanned = start
+        append(JSToken(kind, value, start, end, line, start - line_start + 1))
+    n = len(source)
+    newlines = count("\n", scanned, n)
+    if newlines:
+        line += newlines
+        line_start = rfind("\n", scanned, n) + 1
+    append(JSToken("eof", "", n, n, line, n - line_start + 1))
+    return tokens
+
+
+class JavaScriptLexer(LegacyJavaScriptLexer):
+    """Tokenize JavaScript without interpreting or executing it.
+
+    Uses the regex lexer and transparently falls back to the legacy lexer.
+    """
+
+    def tokenize(self) -> list[JSToken]:
+        if self.index == 0 and self.line == 1 and self.column == 1:
+            try:
+                return _fast_tokenize(self.source)
+            except _FastLexFallback:
+                pass
+        return LegacyJavaScriptLexer.tokenize(self)
+
+
+def find_balanced_end(source: str, opening: int, open_char: str, close_char: str) -> Optional[int]:
+    """Return the index just past the ``close_char`` matching the opener at ``opening``.
+
+    Scans lexically (strings, comments and regex literals are opaque) and
+    stops as soon as the pair balances instead of tokenizing the rest of the
+    source.  Returns None when the pair never balances.
+    """
+    try:
+        depth = 0
+        for kind, value, start, end in _iter_fast(source, opening):
+            if kind == "punctuation":
+                if value == open_char:
+                    depth += 1
+                elif value == close_char:
+                    depth -= 1
+                    if depth == 0:
+                        return end
+        return None
+    except _FastLexFallback:
+        depth = 0
+        for token in LegacyJavaScriptLexer(source[opening:]).tokenize():
+            if token.value == open_char:
+                depth += 1
+            elif token.value == close_char:
+                depth -= 1
+                if depth == 0:
+                    return opening + token.end
+        return None
+
+
+
 @lru_cache(maxsize=1024)
 def _tokenize_cached(source: str) -> tuple[JSToken, ...]:
     return tuple(JavaScriptLexer(source).tokenize())
@@ -735,6 +916,37 @@ def parse_javascript(
     if backend not in {"auto", "tree-sitter", "legacy"}:
         raise ValueError("backend must be 'auto', 'tree-sitter', or 'legacy'")
     return _parse_javascript_cached(source, language, backend)
+
+
+def parse_javascript_top_level(
+    source: str,
+    *,
+    language: str = "js",
+    backend: str = "auto",
+) -> JSProgram:
+    """Like :func:`parse_javascript` but only top-level statements are converted.
+
+    Kind, source, offsets and line/column of each top-level node match the full
+    parse; ``children`` is empty.  Validation behaviour (syntax errors) is the
+    same, and the work is proportional to the number of statements instead of
+    the number of syntax nodes.
+    """
+    if backend not in {"auto", "tree-sitter", "legacy"}:
+        raise ValueError("backend must be 'auto', 'tree-sitter', or 'legacy'")
+    return _parse_top_level_cached(source, language, backend)
+
+
+@lru_cache(maxsize=1024)
+def _parse_top_level_cached(source: str, language: str, backend: str) -> JSProgram:
+    if backend != "legacy":
+        try:
+            from .tree_sitter_backend import parse_shallow_teloce_program
+
+            return parse_shallow_teloce_program(source, language)
+        except ImportError:
+            if backend == "tree-sitter":
+                raise
+    return JavaScriptParser(source).parse()
 
 
 @lru_cache(maxsize=1024)

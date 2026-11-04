@@ -11,6 +11,7 @@ This module coordinates the entire compilation pipeline:
 
 from pathlib import Path
 from typing import Optional, Dict, Any
+from bisect import bisect_right
 import re
 import inspect
 
@@ -263,14 +264,19 @@ class Compiler:
             # align the two texts first so ordinary script lines point at the
             # source line they really came from.
             line_hints = script_line_hints(js_code, source)
+            _line_starts = []
+            _offset = 0
+            for _line in js_code.splitlines(keepends=True):
+                _line_starts.append(_offset)
+                _offset += len(_line)
             for record in optimizer.direct_plan.get("bindings", []):
                 marker = f"teloce-text:{record.get('id')}"
-                if marker not in js_code:
+                found = js_code.find(marker)
+                if found < 0:
                     marker = f"data-teloce-direct-bindings=\\\"{record.get('id')}"
-                generated_line = next(
-                    (index for index, line in enumerate(js_code.splitlines()) if marker in line),
-                    None,
-                )
+                    found = js_code.find(marker)
+                # first line containing the marker == line of its first occurrence
+                generated_line = bisect_right(_line_starts, found) - 1 if found >= 0 else None
                 if generated_line is not None and record.get("line"):
                     line_hints[generated_line] = (
                         max(0, int(record["line"]) - 1),

@@ -6,6 +6,8 @@ Generates source maps to map generated JavaScript back to the original source.
 
 from difflib import SequenceMatcher
 from typing import List, Optional, Dict, Any
+from functools import lru_cache
+import re
 import json
 
 
@@ -93,6 +95,11 @@ def _build_unique_map(lines: List[str]) -> tuple[Dict[str, int], set]:
     return unique, ambiguous
 
 
+_GENERIC_OPEN_RE = re.compile(r"(?<=[A-Za-z0-9_$])<")
+_ANGLE_RE = re.compile(r"[<>]")
+
+
+@lru_cache(maxsize=131072)
 def _strip_inline_generics(line: str) -> str:
     """Return ``line`` with every balanced ``<...>`` annotation collapsed to blanks.
 
@@ -106,38 +113,46 @@ def _strip_inline_generics(line: str) -> str:
     function does not mistake HTML / JSX tags (``<template>``, ``<h1>``) for
     type arguments. Unbalanced ``<`` or ``>`` are preserved verbatim.
     """
-    result: List[str] = []
-    i = 0
-    length = len(line)
-    identifier_after = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_$")
-    while i < length:
-        ch = line[i]
-        if ch != "<" or i == 0 or line[i - 1] not in identifier_after:
-            result.append(ch)
-            i += 1
-            continue
+    # An annotation can only start at a "<" that directly follows an identifier
+    # character; scan only those candidates with regexes instead of looping
+    # over every character.
+    search = _GENERIC_OPEN_RE.search
+    m = search(line)
+    if m is None:
+        return line
+    pieces: List[str] = []
+    copied = 0
+    pos = 0
+    next_angle = _ANGLE_RE.search
+    while m is not None:
+        i = m.end() - 1
         depth = 1
         j = i + 1
-        closed = False
-        while j < length:
-            current = line[j]
-            if current == "<":
+        end = -1
+        while True:
+            a = next_angle(line, j)
+            if a is None:
+                break
+            if a.group() == "<":
                 depth += 1
-            elif current == ">":
+            else:
                 depth -= 1
                 if depth == 0:
-                    closed = True
-                    j += 1
+                    end = a.end()
                     break
-            j += 1
-        if closed:
-            result.append(" " * (j - i))
-            i = j
+            j = a.end()
+        if end != -1:
+            pieces.append(line[copied:i])
+            pieces.append(" " * (end - i))
+            copied = end
+            pos = end
         else:
-            result.append(line[i])
-            i += 1
-    return "".join(result)
-
+            pos = i + 1
+        m = search(line, pos)
+    if not pieces:
+        return line
+    pieces.append(line[copied:])
+    return "".join(pieces)
 
 class SourceMapGenerator:
     """
