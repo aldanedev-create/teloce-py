@@ -9,6 +9,9 @@ from typing import List, Optional
 from teloce.css.parser import CSSParser, CSSAtRule, CSSDeclaration
 
 
+_SCOPE_CACHE: dict = {}
+
+
 class CSSScoper:
     """
     Scopes CSS selectors with a unique component ID.
@@ -33,13 +36,28 @@ class CSSScoper:
         if not css or not css.strip():
             return ""
         
+        result, errors = self._scope_memoized(css, scope_id)
+        self.errors.extend(errors)
+        return result
+
+    def _scope_memoized(self, css: str, scope_id: str):
+        key = (css, scope_id)
+        hit = _SCOPE_CACHE.get(key)
+        if hit is None:
+            hit = self._scope_uncached(css, scope_id)
+            if len(_SCOPE_CACHE) >= 512:
+                _SCOPE_CACHE.pop(next(iter(_SCOPE_CACHE)))
+            _SCOPE_CACHE[key] = hit
+        return hit
+
+    def _scope_uncached(self, css: str, scope_id: str):
+        """Scope ``css``; returns (scoped_css, errors). Pure in (css, scope_id)."""
         # Parse the CSS
         parser = CSSParser()
         stylesheet = parser.parse(css)
         
         if parser.errors:
-            self.errors.extend(parser.errors)
-            return css
+            return css, tuple(parser.errors)
         
         # Scope the rules
         scoped_rules = []
@@ -55,7 +73,7 @@ class CSSScoper:
             if scoped_at_rule:
                 scoped_rules.append(scoped_at_rule)
         
-        return '\n'.join(scoped_rules)
+        return '\n'.join(scoped_rules), ()
     
     def _scope_selector(self, selector: str, scope_id: str) -> str:
         """Scope a single CSS selector."""

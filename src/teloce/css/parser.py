@@ -4,6 +4,7 @@ CSS Parser - parses CSS stylesheets.
 Converts CSS source into an AST representation.
 """
 
+from functools import lru_cache
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -57,6 +58,14 @@ class CSSStylesheet:
     comments: List[str] = field(default_factory=list)
 
 
+
+@lru_cache(maxsize=512)
+def _parse_css_cached(source: str):
+    parser = CSSParser()
+    stylesheet = parser._parse_uncached(source)
+    return stylesheet, tuple(parser.errors)
+
+
 class CSSParser:
     """
     Parses CSS stylesheets into an AST.
@@ -70,6 +79,21 @@ class CSSParser:
         self.errors: List[str] = []
     
     def parse(self, source: str) -> CSSStylesheet:
+        """
+        Parse a CSS stylesheet.
+
+        Results are memoized by source text: a component's CSS is parsed
+        several times during one compile (style validation, generation, and
+        scoping) and the resulting tree is treated as read-only everywhere.
+        ``self.errors`` is populated exactly as an uncached parse would.
+        """
+        stylesheet, errors = _parse_css_cached(source)
+        self.source = source
+        self.position = len(source)
+        self.errors = list(errors)
+        return stylesheet
+
+    def _parse_uncached(self, source: str) -> CSSStylesheet:
         """
         Parse a CSS stylesheet.
         

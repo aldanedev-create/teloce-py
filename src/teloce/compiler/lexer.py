@@ -4,6 +4,7 @@ Lexical analyzer for Teloce templates.
 Converts template source code into tokens.
 """
 
+import re
 from enum import Enum, auto
 from typing import List, Optional, Any
 
@@ -114,6 +115,14 @@ class Token:
     
     def __repr__(self) -> str:
         return f"Token({self.type}, '{self.value}', {self.line}:{self.column})"
+
+
+_IDENT_RE = re.compile(r"[\w-]*")
+_EVENT_RE = re.compile(r"[\w.-]*")
+_ACTION_RE = re.compile(r"[\w.:$-]*")
+_NON_SPACE_RE = re.compile(r"\S*")
+_SPACE_RE = re.compile(r"\s*")
+_TEXT_STOP_RE = re.compile(r"<|\{\{|\}\}")
 
 
 class Lexer:
@@ -332,10 +341,7 @@ class Lexer:
                 modifiers = ""
                 if self.current_char() == '.':
                     modifier_start = self.position
-                    while self.position < len(self.source) and (
-                        self.current_char().isalnum() or self.current_char() in '-_.'
-                    ):
-                        self.advance()
+                    self._advance_to(_EVENT_RE.match(self.source, self.position).end())
                     modifiers = self.source[modifier_start:self.position]
                 self.tokens.append(Token(TokenType.MODEL, f'model{modifiers}', self.line, start))
                 if self.current_char() == '=':
@@ -349,10 +355,7 @@ class Lexer:
                 start = self.position
                 for _ in range(4):
                     self.advance()
-                while self.position < len(self.source) and (
-                    self.current_char().isalnum() or self.current_char() in '-_.:$'
-                ):
-                    self.advance()
+                self._advance_to(_ACTION_RE.match(self.source, self.position).end())
                 self.tokens.append(Token(
                     TokenType.ATTRIBUTE_NAME,
                     self.source[start:self.position],
@@ -384,10 +387,7 @@ class Lexer:
             # attributes and the directive receives an empty expression.
             if self.source.startswith('v-', self.position):
                 start = self.position
-                while self.position < len(self.source) and (
-                    self.current_char().isalnum() or self.current_char() in '-_.'
-                ):
-                    self.advance()
+                self._advance_to(_EVENT_RE.match(self.source, self.position).end())
                 self.tokens.append(Token(
                     TokenType.ATTRIBUTE_NAME,
                     self.source[start:self.position],
@@ -438,8 +438,7 @@ class Lexer:
         self.advance()  # Skip '{'
         
         # Skip whitespace
-        while self.position < len(self.source) and self.current_char().isspace():
-            self.advance()
+        self._advance_to(_SPACE_RE.match(self.source, self.position).end())
         
         expression = self._read_until('}}')
         
@@ -465,21 +464,11 @@ class Lexer:
         """Tokenize plain text."""
         start_line = self.line
         start_col = self.column
-        text = ""
-        
-        while self.position < len(self.source):
-            char = self.current_char()
-            
-            # Stop at tag or interpolation
-            if char == '<':
-                break
-            if char == '{' and self.peek(1) == '{':
-                break
-            if char == '}' and self.peek(1) == '}':
-                break
-            
-            text += char
-            self.advance()
+        # Plain text runs until a tag or an interpolation delimiter.
+        match = _TEXT_STOP_RE.search(self.source, self.position)
+        stop = match.start() if match else len(self.source)
+        text = self.source[self.position:stop]
+        self._advance_to(stop)
         
         if text:
             self.tokens.append(Token(TokenType.TEXT, text, start_line, start_col))
@@ -494,16 +483,13 @@ class Lexer:
         self.advance()  # Skip '-'
         self.advance()  # Skip '-'
         
-        comment = ""
-        while self.position < len(self.source):
-            char = self.current_char()
-            if char == '-' and self.peek(1) == '-' and self.peek(2) == '>':
-                self.advance()
-                self.advance()
-                self.advance()
-                break
-            comment += char
-            self.advance()
+        end = self.source.find('-->', self.position)
+        if end < 0:
+            comment = self.source[self.position:]
+            self._advance_to(len(self.source))
+        else:
+            comment = self.source[self.position:end]
+            self._advance_to(end + 3)
         
         self.tokens.append(Token(TokenType.COMMENT, comment, start_line, start_col))
 
@@ -532,12 +518,27 @@ class Lexer:
     
     def advance(self):
         """Advance to the next character."""
-        if self.current_char() == '\n':
+        position = self.position
+        if position < len(self.source) and self.source[position] == '\n':
             self.line += 1
             self.column = 1
         else:
             self.column += 1
-        self.position += 1
+        self.position = position + 1
+
+    def _advance_to(self, end: int):
+        """Advance to ``end`` in one step, keeping line/column exact."""
+        position = self.position
+        if end <= position:
+            return
+        segment = self.source[position:end]
+        newlines = segment.count('\n')
+        if newlines:
+            self.line += newlines
+            self.column = len(segment) - segment.rfind('\n')
+        else:
+            self.column += len(segment)
+        self.position = end
     
     _TRANSITION_PREFIXES = ('transition', 'in', 'out', 'animate')
 
@@ -556,41 +557,32 @@ class Lexer:
     def _read_identifier(self) -> str:
         """Read an identifier (tag name, attribute name, etc.)."""
         start = self.position
-        while self.position < len(self.source) and (self.current_char().isalnum() or self.current_char() in '-_'):
-            self.advance()
+        self._advance_to(_IDENT_RE.match(self.source, start).end())
         return self.source[start:self.position]
 
     def _read_event_name(self) -> str:
         """Read an event name including dot-separated modifiers."""
         start = self.position
-        while self.position < len(self.source) and (self.current_char().isalnum() or self.current_char() in '-_.'):
-            self.advance()
+        self._advance_to(_EVENT_RE.match(self.source, start).end())
         return self.source[start:self.position]
     
     def _read_until(self, delimiter: str) -> str:
         """Read characters until a delimiter is found."""
         start = self.position
-        while self.position < len(self.source):
-            char = self.current_char()
-            if char == delimiter[0] and self.source.startswith(delimiter, self.position):
-                break
-            self.advance()
+        found = self.source.find(delimiter, start)
+        self._advance_to(len(self.source) if found < 0 else found)
         return self.source[start:self.position]
     
     def _read_until_whitespace(self) -> str:
         """Read characters until whitespace is found."""
         start = self.position
-        while self.position < len(self.source) and not self.current_char().isspace():
-            self.advance()
+        self._advance_to(_NON_SPACE_RE.match(self.source, start).end())
         return self.source[start:self.position]
     
     def _skip_until(self, delimiter: str):
         """Skip characters until a delimiter is found."""
-        while self.position < len(self.source):
-            char = self.current_char()
-            if char == delimiter[0] and self.source.startswith(delimiter, self.position):
-                break
-            self.advance()
+        found = self.source.find(delimiter, self.position)
+        self._advance_to(len(self.source) if found < 0 else found)
     
     @property
     def has_errors(self) -> bool:
