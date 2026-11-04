@@ -11,6 +11,7 @@ from teloce.server import (
     compile_program,
     SSRCompileError,
     SSRRenderError,
+    SSRRequest,
     public_data,
 )
 from teloce.server.expressions import compile_expression, evaluate, string
@@ -88,12 +89,120 @@ def test_render_rejects_unsafe_url_and_missing_public_value(tmp_path):
         render.render("App.html", {"url": "/"})
 
 
+def test_request_context_is_server_only(tmp_path):
+    render = renderer(
+        tmp_path,
+        '<template><p>{{ request.path }}</p><p>{{ title }}</p></template>',
+    )
+    result = render.render(
+        "App.html",
+        {"title": "Public"},
+        request=SSRRequest(path="/projects", headers={"x-test": "yes"}),
+    )
+    assert "/projects" in result.html
+    assert "Public" in result.html
+    assert "request" not in result.props_json
+
+
+def test_v_model_renders_initial_form_value(tmp_path):
+    render = renderer(
+        tmp_path,
+        '<template><input v-model="name"><input type="checkbox" v-model="enabled"></template>',
+    )
+    result = render.render("App.html", {"name": "Ada", "enabled": True})
+    assert 'value="Ada"' in result.html
+    assert "checked" in result.html
+
+
+def test_head_is_separate_from_body_and_cache_can_be_invalidated(tmp_path):
+    render = renderer(
+        tmp_path,
+        '<template><title>{{ title }}</title><meta name="description" content="Teloce"><main>{{ title }}</main></template>',
+    )
+    first = render.render("App.html", {"title": "First"})
+    assert first.html == "<main>First</main>"
+    assert first.head == (
+        "<title>First</title>",
+        '<meta name="description" content="Teloce">',
+    )
+    render.clear_cache()
+    second = render.render("App.html", {"title": "Second"})
+    assert "Second" in second.html
+
+
+def test_async_server_data_is_serialized_without_request_metadata(tmp_path):
+    render = renderer(tmp_path, '<template><h1>{{ title }}</h1></template>')
+
+    async def load_data(request):
+        assert request["path"] == "/projects"
+        return {"title": "Loaded"}
+
+    import asyncio
+
+    result = asyncio.run(
+        render.render_async(
+            "App.html",
+            request=SSRRequest(path="/projects"),
+            server_data=load_data,
+        )
+    )
+    assert result.html == "<h1>Loaded</h1>"
+    assert '"title": "Loaded"' in result.props_json
+    assert "projects" not in result.props_json
+
+
+def test_async_server_data_timeout_and_csp_nonce(tmp_path):
+    render = renderer(tmp_path, "<template><p>{{ title }}</p></template>")
+
+    async def never_finishes(_request):
+        import asyncio
+
+        await asyncio.sleep(10)
+        return {"title": "late"}
+
+    import asyncio
+
+    async def run():
+        with pytest.raises(asyncio.TimeoutError):
+            await render.render_async(
+                "App.html",
+                request=SSRRequest(path="/", csp_nonce="nonce-1"),
+                server_data=never_finishes,
+                timeout=0.001,
+            )
+        return render.render(
+            "App.html",
+            {"title": "Ready"},
+            request=SSRRequest(path="/", csp_nonce="nonce-2"),
+        )
+
+    result = asyncio.run(run())
+    assert result.csp_nonce == "nonce-2"
+
+
+def test_render_stream_yields_bounded_html_chunks(tmp_path):
+    render = renderer(tmp_path, "<template><main>{{ content }}</main></template>")
+
+    async def collect():
+        return [
+            chunk
+            async for chunk in render.render_stream(
+                "App.html", {"content": "x" * 20}, chunk_size=8
+            )
+        ]
+
+    import asyncio
+
+    chunks = asyncio.run(collect())
+    assert all(0 < len(chunk) <= 8 for chunk in chunks)
+    assert "".join(chunks) == '<main>' + "x" * 20 + "</main>"
+
+
 @pytest.mark.parametrize(
     "source",
     [
         "<p>{{ run() }}</p>",
         '<p v-html="html"></p>',
-        '<component :is="name"/>',
         "<p>{{ value = 1 }}</p>",
     ],
 )
@@ -102,6 +211,32 @@ def test_unsupported_syntax_has_diagnostics(source):
         compile_program("<template>" + source + "</template>", "Unsafe.html")
     assert failure.value.diagnostic["component"] == "Unsafe.html"
     assert failure.value.diagnostic["line"] >= 1
+
+
+def test_dynamic_component_uses_only_manifest_imports(tmp_path):
+    child = compile_program(
+        "<template><article>{{ title }}</article></template>", "Card.html"
+    )
+    parent = compile_program(
+        '<template><component :is="kind" :title="title" /></template>',
+        "App.html",
+        components={"Card": "Card.ssr.json"},
+    )
+    (tmp_path / "Card.ssr.json").write_text(json.dumps(child))
+    (tmp_path / "App.ssr.json").write_text(json.dumps(parent))
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({
+            "ssr": {
+                "version": 1,
+                "entries": {
+                    "App.html": {"artifact": "App.ssr.json"},
+                    "Card.ssr.json": {"artifact": "Card.ssr.json"},
+                },
+            }
+        })
+    )
+    result = Renderer(tmp_path).render("App.html", {"kind": "Card", "title": "Hello"})
+    assert "Hello" in result.html
 
 
 def test_plain_data_and_limits(tmp_path):

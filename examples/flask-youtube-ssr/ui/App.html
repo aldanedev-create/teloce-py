@@ -1,0 +1,127 @@
+<template>
+  <main class="library-shell">
+    <header class="masthead">
+      <a class="brand" href="/" aria-label="Library home">
+        <span class="brand-mark">YT</span>
+        <span>quiet<span class="brand-accent">reel</span></span>
+      </a>
+      <span class="runtime-pill"><span class="pulse"></span> SSR ready</span>
+    </header>
+
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">A small library for good watching</p>
+        <h1>Keep the videos<br><em>worth returning to.</em></h1>
+        <p class="intro">A focused shelf for links, talks, and ideas. The first view arrives from Flask and Teloce SSR, then becomes interactive.</p>
+      </div>
+      <div class="hero-note">
+        <span class="note-number">{{ videos.length }}</span>
+        <span>videos<br>on the shelf</span>
+      </div>
+    </section>
+
+    <section class="add-panel" aria-labelledby="add-heading">
+      <div>
+        <p class="section-kicker">Add to the shelf</p>
+        <h2 id="add-heading">Save a link for later.</h2>
+      </div>
+      <form method="post" action="/add" class="add-form">
+        <label>
+          <span>YouTube link</span>
+          <input name="url" type="url" placeholder="https://youtu.be/..." required>
+        </label>
+        <label>
+          <span>Title</span>
+          <input name="title" type="text" placeholder="A useful title" required>
+        </label>
+        <button type="submit">Add video <span aria-hidden="true">+</span></button>
+      </form>
+    </section>
+
+    <section class="shelf" aria-labelledby="shelf-heading">
+      <div class="shelf-heading">
+        <div>
+          <p class="section-kicker">Your collection</p>
+          <h2 id="shelf-heading">Recently saved</h2>
+        </div>
+        <span class="count">{{ videos.length }} saved</span>
+      </div>
+      <div class="videos" aria-label="Saved videos">
+        <article class="video" v-for="video in videos" :key="video.id">
+          <div class="video-frame">
+            <iframe
+              :src="video.embed_url"
+              :title="video.title"
+              loading="lazy"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowfullscreen></iframe>
+            <span class="video-tag">YouTube</span>
+          </div>
+          <div class="video-info">
+            <span class="video-index">01 / saved video</span>
+            <h3>{{ video.title }}</h3>
+            <a :href="video.embed_url" target="_blank" rel="noreferrer">Open on YouTube <span aria-hidden="true">&#8599;</span></a>
+          </div>
+        </article>
+      </div>
+    </section>
+  </main>
+</template>
+
+<script>
+export default { data() { return { videos: [] }; } };
+</script>
+
+<style scoped>
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+body { background: #f5f7f4; color: #17343a; margin: 0; }
+.library-shell { margin: 0 auto; max-width: 74rem; padding: 0 2rem 5rem; }
+.masthead { align-items: center; border-bottom: 1px solid #dce5df; display: flex; justify-content: space-between; padding: 1.35rem 0; }
+.brand { align-items: center; color: #17343a; display: inline-flex; font-size: 1.1rem; font-weight: 800; gap: .6rem; letter-spacing: -.03em; text-decoration: none; }
+.brand-mark { align-items: center; background: #e85d3f; border-radius: .55rem; color: #fffaf3; display: inline-flex; font-size: .7rem; height: 2rem; justify-content: center; letter-spacing: .04em; width: 2rem; }
+.brand-accent { color: #e85d3f; }
+.runtime-pill { align-items: center; background: #e6f1e8; border: 1px solid #cce2d0; border-radius: 2rem; color: #36734a; display: inline-flex; font-size: .72rem; font-weight: 750; gap: .45rem; padding: .42rem .75rem; }
+.pulse { background: #4b9b64; border-radius: 50%; height: .42rem; width: .42rem; }
+.hero { align-items: end; display: flex; justify-content: space-between; min-height: 23rem; padding: 5.5rem 0 4.5rem; }
+.hero-copy { max-width: 43rem; }
+.eyebrow, .section-kicker { color: #e85d3f; font-size: .72rem; font-weight: 800; letter-spacing: .13em; margin: 0 0 .85rem; text-transform: uppercase; }
+h1, h2, h3, p { margin-top: 0; }
+h1 { color: #17343a; font-size: clamp(2.9rem, 7vw, 5.9rem); letter-spacing: -.075em; line-height: .94; margin-bottom: 1.5rem; }
+h1 em { color: #e85d3f; font-family: Georgia, serif; font-weight: 400; }
+.intro { color: #597177; font-size: 1.05rem; line-height: 1.65; max-width: 35rem; }
+.hero-note { align-items: center; border-left: 1px solid #c9d8d1; color: #597177; display: flex; font-size: .75rem; gap: .8rem; line-height: 1.35; padding: .5rem 0 .5rem 1.2rem; text-transform: uppercase; }
+.note-number { color: #17343a; font-family: Georgia, serif; font-size: 3.2rem; line-height: 1; }
+.add-panel { align-items: end; background: #17343a; border-radius: .7rem; color: #f5f7f4; display: grid; gap: 2rem; grid-template-columns: minmax(11rem, .45fr) 1fr; padding: 1.7rem 2rem 2rem; }
+.add-panel .section-kicker { color: #f2ad68; }
+.add-panel h2 { font-size: 1.35rem; letter-spacing: -.04em; margin: 0; }
+.add-form { align-items: end; display: grid; gap: .75rem; grid-template-columns: 1fr 1fr auto; }
+label { display: grid; gap: .4rem; font-size: .72rem; font-weight: 750; }
+input { background: #f5f7f4; border: 1px solid transparent; border-radius: .35rem; color: #17343a; font: inherit; min-width: 0; padding: .72rem .8rem; }
+input:focus { border-color: #f2ad68; outline: 2px solid #f2ad68; outline-offset: 1px; }
+button { background: #e85d3f; border: 0; border-radius: .35rem; color: #fffaf3; cursor: pointer; font: inherit; font-weight: 750; padding: .74rem 1rem; white-space: nowrap; }
+button:hover { background: #f0744f; }
+.shelf { padding-top: 4.5rem; }
+.shelf-heading { align-items: end; border-bottom: 1px solid #dce5df; display: flex; justify-content: space-between; margin-bottom: 1.5rem; padding-bottom: 1rem; }
+.shelf-heading h2 { font-size: 2rem; letter-spacing: -.06em; margin: 0; }
+.count { color: #597177; font-size: .8rem; font-weight: 750; }
+.videos { display: grid; gap: 1.4rem; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); }
+.video { background: #fff; border: 1px solid #dce5df; border-radius: .6rem; box-shadow: 0 1rem 2.5rem rgba(23, 52, 58, .06); overflow: hidden; }
+.video-frame { background: #dce5df; position: relative; }
+iframe { aspect-ratio: 16 / 9; border: 0; display: block; width: 100%; }
+.video-tag { background: #f2ad68; border-radius: .25rem; bottom: .7rem; color: #17343a; font-size: .65rem; font-weight: 800; left: .7rem; letter-spacing: .08em; padding: .3rem .45rem; position: absolute; text-transform: uppercase; }
+.video-info { padding: 1.1rem 1.2rem 1.25rem; }
+.video-index { color: #e85d3f; font-size: .66rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.video-info h3 { font-size: 1.2rem; letter-spacing: -.035em; line-height: 1.2; margin: .55rem 0 1rem; }
+.video-info a { color: #36734a; font-size: .8rem; font-weight: 750; text-decoration: none; }
+.video-info a:hover { text-decoration: underline; }
+@media (max-width: 760px) {
+  .library-shell { padding: 0 1.1rem 3rem; }
+  .hero { align-items: start; flex-direction: column; gap: 2rem; min-height: 0; padding: 4rem 0 3rem; }
+  h1 { font-size: 3.4rem; }
+  .hero-note { border-left: 0; border-top: 1px solid #c9d8d1; padding: 1rem 0 0; }
+  .add-panel { grid-template-columns: 1fr; padding: 1.4rem; }
+  .add-form { grid-template-columns: 1fr; }
+  button { width: 100%; }
+}
+</style>

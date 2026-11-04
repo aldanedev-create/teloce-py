@@ -51,6 +51,7 @@ This learning path teaches the complete workflow: write a `.vel` Single File Com
 45. [Polling and live data](45-live-data.md)
 46. [DOM actions with use:](46-use-actions.md)
 47. [Static components, SSR, and embed builds](47-static-and-embed.md)
+48. [Build a Flask YouTube library with SSR](48-flask-youtube-ssr.md)
 
 ## What you can build
 

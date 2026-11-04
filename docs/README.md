@@ -67,6 +67,8 @@ Then open the URL printed by the server. You do not need to manually run a separ
 - [Polling and live data](lessons/45-live-data.md)
 - [DOM actions](lessons/46-use-actions.md)
 - [Static components and embed builds](lessons/47-static-and-embed.md)
+- [Flask YouTube library with SSR](lessons/48-flask-youtube-ssr.md)
+- [Flask YouTube SSR example](../examples/flask-youtube-ssr/README.md)
 
 ## Reference pages
 

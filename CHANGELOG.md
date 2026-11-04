@@ -1,3 +1,20 @@
+## Unreleased
+
+### Added
+
+- Add Lesson 48, a copy-and-paste Flask YouTube library using framework-neutral Teloce SSR.
+- Add the `examples/flask-youtube-ssr` application with safe YouTube URL normalization, privacy-enhanced iframes, SSR hydration, and Windows-safe paths.
+- Add a Python-only SSR example using the standard-library HTTP server.
+
+### Changed
+
+- Production builds now register extracted CSS files in `manifest.json`, so Flask and other hosts can discover hashed stylesheets reliably.
+- The YouTube SSR example uses the native MinifyJS/esbuild bundle path with tree shaking, code splitting, hashing, and a bundle report.
+
+### Security
+
+- SSR iframes are restricted to HTTPS `www.youtube-nocookie.com/embed/...` URLs.
+
 ## Parent-to-child prop type checking
 
 ### Remaining component-checker integrations
