@@ -1,0 +1,1003 @@
+diff --git a/src/teloce/build/builder.py b/src/teloce/build/builder.py
+index c2705ce..4bc2531 100644
+--- a/src/teloce/build/builder.py
++++ b/src/teloce/build/builder.py
+@@ -1148,8 +1148,8 @@ class Builder:
+         )
+ 
+     def _resolve_jobs(self, pending: int) -> int:
+-        """Worker-process count: 1 (default), an integer, or 0/'auto' for all cores."""
+-        raw = self.options.get('jobs', 1)
++        """Worker-process count: 'auto' (default, all cores; small builds stay sequential), an integer, or 0/'auto' for all cores."""
++        raw = self.options.get('jobs', 'auto')
+         if raw is None or raw is False or raw == '':
+             return 1
+         if isinstance(raw, str) and raw.strip().lower() == 'auto':
+diff --git a/src/teloce/cli/build.py b/src/teloce/cli/build.py
+index 2ad516c..f288e64 100644
+--- a/src/teloce/cli/build.py
++++ b/src/teloce/cli/build.py
+@@ -76,7 +76,7 @@ def build_command(args: Any) -> int:
+         'clean': clean,
+         'static_dir': build_config.get('static_dir', 'static'),
+         'html_mode': build_config.get('html_mode', False),
+-        'jobs': (args.jobs if getattr(args, 'jobs', None) is not None else build_config.get('jobs', 1)),
++        'jobs': (args.jobs if getattr(args, 'jobs', None) is not None else build_config.get('jobs', 'auto')),
+         'source_extensions': build_config.get('source_extensions'),
+         'source_roots': build_config.get('source_roots'),
+         'hash_assets': (not getattr(args, 'no_hash_assets', False)
+diff --git a/src/teloce/cli/dev.py b/src/teloce/cli/dev.py
+index 27977dc..b5e5a88 100644
+--- a/src/teloce/cli/dev.py
++++ b/src/teloce/cli/dev.py
+@@ -56,7 +56,7 @@ def dev_command(args: Any) -> int:
+     print("📦 Building project...")
+     builder = Builder({
+         'dev': True,
+-        'jobs': build_config.get('jobs', 1),
++        'jobs': build_config.get('jobs', 'auto'),
+         'persistent_workers': build_config.get('persistent_workers', False),
+         'direct_dom_updates': build_config.get('direct_dom_updates', True),
+         'source_maps': True,
+diff --git a/src/teloce/cli/watch.py b/src/teloce/cli/watch.py
+index 2b3d576..96e46b8 100644
+--- a/src/teloce/cli/watch.py
++++ b/src/teloce/cli/watch.py
+@@ -55,7 +55,7 @@ def watch_command(args: Any) -> int:
+     build_config = config.get_build_config()
+     builder = Builder({
+         'dev': True,
+-        'jobs': build_config.get('jobs', 1),
++        'jobs': build_config.get('jobs', 'auto'),
+         'persistent_workers': build_config.get('persistent_workers', False),
+         'direct_dom_updates': build_config.get('direct_dom_updates', True),
+         'source_maps': True,
+diff --git a/src/teloce/compiler/compiler.py b/src/teloce/compiler/compiler.py
+index 5a7d7f1..289b0a2 100644
+--- a/src/teloce/compiler/compiler.py
++++ b/src/teloce/compiler/compiler.py
+@@ -11,6 +11,7 @@ This module coordinates the entire compilation pipeline:
+ 
+ from pathlib import Path
+ from typing import Optional, Dict, Any
++from bisect import bisect_right
+ import re
+ import inspect
+ 
+@@ -263,14 +264,19 @@ class Compiler:
+             # align the two texts first so ordinary script lines point at the
+             # source line they really came from.
+             line_hints = script_line_hints(js_code, source)
++            _line_starts = []
++            _offset = 0
++            for _line in js_code.splitlines(keepends=True):
++                _line_starts.append(_offset)
++                _offset += len(_line)
+             for record in optimizer.direct_plan.get("bindings", []):
+                 marker = f"teloce-text:{record.get('id')}"
+-                if marker not in js_code:
++                found = js_code.find(marker)
++                if found < 0:
+                     marker = f"data-teloce-direct-bindings=\\\"{record.get('id')}"
+-                generated_line = next(
+-                    (index for index, line in enumerate(js_code.splitlines()) if marker in line),
+-                    None,
+-                )
++                    found = js_code.find(marker)
++                # first line containing the marker == line of its first occurrence
++                generated_line = bisect_right(_line_starts, found) - 1 if found >= 0 else None
+                 if generated_line is not None and record.get("line"):
+                     line_hints[generated_line] = (
+                         max(0, int(record["line"]) - 1),
+diff --git a/src/teloce/compiler/source_map.py b/src/teloce/compiler/source_map.py
+index 38e0fda..0d58c03 100644
+--- a/src/teloce/compiler/source_map.py
++++ b/src/teloce/compiler/source_map.py
+@@ -6,6 +6,8 @@ Generates source maps to map generated JavaScript back to the original source.
+ 
+ from difflib import SequenceMatcher
+ from typing import List, Optional, Dict, Any
++from functools import lru_cache
++import re
+ import json
+ 
+ 
+@@ -93,6 +95,11 @@ def _build_unique_map(lines: List[str]) -> tuple[Dict[str, int], set]:
+     return unique, ambiguous
+ 
+ 
++_GENERIC_OPEN_RE = re.compile(r"(?<=[A-Za-z0-9_$])<")
++_ANGLE_RE = re.compile(r"[<>]")
++
++
++@lru_cache(maxsize=131072)
+ def _strip_inline_generics(line: str) -> str:
+     """Return ``line`` with every balanced ``<...>`` annotation collapsed to blanks.
+ 
+@@ -106,38 +113,46 @@ def _strip_inline_generics(line: str) -> str:
+     function does not mistake HTML / JSX tags (``<template>``, ``<h1>``) for
+     type arguments. Unbalanced ``<`` or ``>`` are preserved verbatim.
+     """
+-    result: List[str] = []
+-    i = 0
+-    length = len(line)
+-    identifier_after = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_$")
+-    while i < length:
+-        ch = line[i]
+-        if ch != "<" or i == 0 or line[i - 1] not in identifier_after:
+-            result.append(ch)
+-            i += 1
+-            continue
++    # An annotation can only start at a "<" that directly follows an identifier
++    # character; scan only those candidates with regexes instead of looping
++    # over every character.
++    search = _GENERIC_OPEN_RE.search
++    m = search(line)
++    if m is None:
++        return line
++    pieces: List[str] = []
++    copied = 0
++    pos = 0
++    next_angle = _ANGLE_RE.search
++    while m is not None:
++        i = m.end() - 1
+         depth = 1
+         j = i + 1
+-        closed = False
+-        while j < length:
+-            current = line[j]
+-            if current == "<":
++        end = -1
++        while True:
++            a = next_angle(line, j)
++            if a is None:
++                break
++            if a.group() == "<":
+                 depth += 1
+-            elif current == ">":
++            else:
+                 depth -= 1
+                 if depth == 0:
+-                    closed = True
+-                    j += 1
++                    end = a.end()
+                     break
+-            j += 1
+-        if closed:
+-            result.append(" " * (j - i))
+-            i = j
++            j = a.end()
++        if end != -1:
++            pieces.append(line[copied:i])
++            pieces.append(" " * (end - i))
++            copied = end
++            pos = end
+         else:
+-            result.append(line[i])
+-            i += 1
+-    return "".join(result)
+-
++            pos = i + 1
++        m = search(line, pos)
++    if not pieces:
++        return line
++    pieces.append(line[copied:])
++    return "".join(pieces)
+ 
+ class SourceMapGenerator:
+     """
+diff --git a/src/teloce/javascript/parser.py b/src/teloce/javascript/parser.py
+index ab126c9..25d5f9a 100644
+--- a/src/teloce/javascript/parser.py
++++ b/src/teloce/javascript/parser.py
+@@ -530,8 +530,8 @@ class JavaScriptLanguageParser:
+         return self.tokens[0]
+ 
+ 
+-class JavaScriptLexer:
+-    """Tokenize JavaScript without interpreting or executing it."""
++class LegacyJavaScriptLexer:
++    """Reference character-by-character lexer (kept for exotic input and parity tests)."""
+ 
+     _PUNCTUATION = set("{}[]();,.:?")
+     _OPERATORS = (
+@@ -705,6 +705,187 @@ class JavaScriptLexer:
+         self._advance("*/")
+ 
+ 
++# ---------------------------------------------------------------------------
++# Fast regex lexer
++#
++# One precompiled master pattern replaces the per-character Python loop.  It
++# produces exactly the same tokens as LegacyJavaScriptLexer for every input
++# the pattern fully understands; for anything else (a shebang, an identifier
++# that starts with a non-ASCII letter, an unterminated literal, ...) it raises
++# _FastLexFallback and the legacy lexer re-lexes the source, so behaviour and
++# error messages are unchanged.
++# ---------------------------------------------------------------------------
++
++class _FastLexFallback(Exception):
++    pass
++
++
++_NUMBER_PATTERN = (
++    r"(?:0[bB][01](?:_?[01])*|0[oO][0-7](?:_?[0-7])*|0[xX][0-9A-Fa-f](?:_?[0-9A-Fa-f])*"
++    r"|(?:\d(?:_?\d)*)?(?:\.(?:\d(?:_?\d)*)?)?(?:[eE][+-]?\d(?:_?\d)*)?)(?:n)?"
++)
++
++_MASTER_RE = re.compile(
++    "|".join(
++        (
++            r"(?P<ws>\s+)",
++            r"(?P<lc>//[^\n]*)",
++            r"(?P<bc>/\*[\s\S]*?\*/)",
++            r"(?P<str>'[^'\\]*(?:\\[\s\S][^'\\]*)*'"
++            r'|"[^"\\]*(?:\\[\s\S][^"\\]*)*"'
++            r"|`[^`\\]*(?:\\[\s\S][^`\\]*)*`)",
++            r"(?P<ident>[A-Za-z_$][\w$]*)",
++            r"(?P<num>(?=[0-9]|\.[0-9])" + _NUMBER_PATTERN + ")",
++            "(?P<op>" + "|".join(re.escape(op) for op in LegacyJavaScriptLexer._OPERATORS) + ")",
++            r"(?P<punct>[{}\[\]();,.:?])",
++            r"(?P<op1>[+\-*/%=!<>|&~^])",
++        )
++    )
++)
++
++_REGEX_LITERAL_RE = re.compile(
++    r"/(?:[^/\\\[\r\n]|\\[^\r\n]|\[(?:[^\]\\\r\n]|\\[^\r\n])*\])*/[A-Za-z]*"
++)
++
++_REGEX_PRECEDING_VALUES = frozenset({"(", "[", "{", ",", ";", ":", "?", "="})
++_REGEX_PRECEDING_KEYWORDS = frozenset({
++    "return", "throw", "case", "delete", "void", "typeof", "new",
++    "in", "of", "else", "do", "yield", "await",
++})
++
++_KIND_BY_GROUP = {
++    "str": None,  # decided below (template vs string)
++    "ident": "identifier",
++    "num": "number",
++    "op": "operator",
++    "punct": "punctuation",
++    "op1": "operator",
++}
++
++
++def _iter_fast(source: str, pos: int = 0):
++    """Yield (kind, value, start, end) tuples scanning ``source`` from ``pos``.
++
++    Raises _FastLexFallback when the legacy lexer must take over.
++    """
++    n = len(source)
++    if pos == 0 and source.startswith("#!"):
++        raise _FastLexFallback
++    match = _MASTER_RE.match
++    prev_kind = None
++    prev_value = ""
++    while pos < n:
++        m = match(source, pos)
++        if m is None:
++            raise _FastLexFallback
++        group = m.lastgroup
++        end = m.end()
++        if group == "ws" or group == "lc" or group == "bc":
++            pos = end
++            continue
++        value = m.group()
++        first = value[0]
++        if first == "/" and group in ("op", "op1"):
++            if source.startswith("/*", pos):  # unterminated block comment
++                raise _FastLexFallback
++            if prev_kind is None or (
++                prev_kind == "operator"
++                and prev_value not in ("++", "--")
++            ) or (
++                prev_kind != "operator"
++                and (prev_value in _REGEX_PRECEDING_VALUES or prev_value in _REGEX_PRECEDING_KEYWORDS)
++            ):
++                rm = _REGEX_LITERAL_RE.match(source, pos)
++                if rm is None:
++                    raise _FastLexFallback
++                end = rm.end()
++                if end < n and source[end] > "\x7f":
++                    raise _FastLexFallback
++                kind, value = "regex", rm.group()
++                yield kind, value, pos, end
++                prev_kind, prev_value = kind, value
++                pos = end
++                continue
++        if group == "str":
++            kind = "template" if first == "`" else "string"
++        else:
++            kind = _KIND_BY_GROUP[group]
++        yield kind, value, pos, end
++        prev_kind, prev_value = kind, value
++        pos = end
++
++
++def _fast_tokenize(source: str) -> list[JSToken]:
++    tokens: list[JSToken] = []
++    append = tokens.append
++    count = source.count
++    rfind = source.rfind
++    line = 1
++    line_start = 0
++    scanned = 0
++    for kind, value, start, end in _iter_fast(source):
++        if start > scanned:
++            newlines = count("\n", scanned, start)
++            if newlines:
++                line += newlines
++                line_start = rfind("\n", scanned, start) + 1
++            scanned = start
++        append(JSToken(kind, value, start, end, line, start - line_start + 1))
++    n = len(source)
++    newlines = count("\n", scanned, n)
++    if newlines:
++        line += newlines
++        line_start = rfind("\n", scanned, n) + 1
++    append(JSToken("eof", "", n, n, line, n - line_start + 1))
++    return tokens
++
++
++class JavaScriptLexer(LegacyJavaScriptLexer):
++    """Tokenize JavaScript without interpreting or executing it.
++
++    Uses the regex lexer and transparently falls back to the legacy lexer.
++    """
++
++    def tokenize(self) -> list[JSToken]:
++        if self.index == 0 and self.line == 1 and self.column == 1:
++            try:
++                return _fast_tokenize(self.source)
++            except _FastLexFallback:
++                pass
++        return LegacyJavaScriptLexer.tokenize(self)
++
++
++def find_balanced_end(source: str, opening: int, open_char: str, close_char: str) -> Optional[int]:
++    """Return the index just past the ``close_char`` matching the opener at ``opening``.
++
++    Scans lexically (strings, comments and regex literals are opaque) and
++    stops as soon as the pair balances instead of tokenizing the rest of the
++    source.  Returns None when the pair never balances.
++    """
++    try:
++        depth = 0
++        for kind, value, start, end in _iter_fast(source, opening):
++            if kind == "punctuation":
++                if value == open_char:
++                    depth += 1
++                elif value == close_char:
++                    depth -= 1
++                    if depth == 0:
++                        return end
++        return None
++    except _FastLexFallback:
++        depth = 0
++        for token in LegacyJavaScriptLexer(source[opening:]).tokenize():
++            if token.value == open_char:
++                depth += 1
++            elif token.value == close_char:
++                depth -= 1
++                if depth == 0:
++                    return opening + token.end
++        return None
++
++
++
+ @lru_cache(maxsize=1024)
+ def _tokenize_cached(source: str) -> tuple[JSToken, ...]:
+     return tuple(JavaScriptLexer(source).tokenize())
+@@ -737,6 +918,37 @@ def parse_javascript(
+     return _parse_javascript_cached(source, language, backend)
+ 
+ 
++def parse_javascript_top_level(
++    source: str,
++    *,
++    language: str = "js",
++    backend: str = "auto",
++) -> JSProgram:
++    """Like :func:`parse_javascript` but only top-level statements are converted.
++
++    Kind, source, offsets and line/column of each top-level node match the full
++    parse; ``children`` is empty.  Validation behaviour (syntax errors) is the
++    same, and the work is proportional to the number of statements instead of
++    the number of syntax nodes.
++    """
++    if backend not in {"auto", "tree-sitter", "legacy"}:
++        raise ValueError("backend must be 'auto', 'tree-sitter', or 'legacy'")
++    return _parse_top_level_cached(source, language, backend)
++
++
++@lru_cache(maxsize=1024)
++def _parse_top_level_cached(source: str, language: str, backend: str) -> JSProgram:
++    if backend != "legacy":
++        try:
++            from .tree_sitter_backend import parse_shallow_teloce_program
++
++            return parse_shallow_teloce_program(source, language)
++        except ImportError:
++            if backend == "tree-sitter":
++                raise
++    return JavaScriptParser(source).parse()
++
++
+ @lru_cache(maxsize=1024)
+ def _parse_javascript_cached(source: str, language: str, backend: str) -> JSProgram:
+     return _parse_javascript_uncached(source, language=language, backend=backend)
+diff --git a/src/teloce/javascript/tree_sitter_backend.py b/src/teloce/javascript/tree_sitter_backend.py
+index 25e8b50..ce92b59 100644
+--- a/src/teloce/javascript/tree_sitter_backend.py
++++ b/src/teloce/javascript/tree_sitter_backend.py
+@@ -11,7 +11,9 @@ from __future__ import annotations
+ from collections.abc import Iterator
+ from collections import OrderedDict
+ from dataclasses import dataclass
++from bisect import bisect_right
+ from functools import lru_cache
++import re
+ from threading import local
+ from typing import Any
+ 
+@@ -200,21 +202,97 @@ def parse_tree(source: str, language: str = "js") -> TreeSitterProgram:
+     return TreeSitterProgram(str(source), canonical, tree)
+ 
+ 
++class _OffsetTable:
++    """Byte-offset and line tables for one source text, built once.
++
++    Tree-sitter reports UTF-8 byte offsets.  Re-encoding the whole source for
++    every node made conversion quadratic; for ASCII text (the common case)
++    byte offsets already equal character offsets.
++    """
++
++    __slots__ = ("ascii", "cum", "line_bytes", "line_chars")
++
++    def __init__(self, source: str):
++        self.ascii = source.isascii()
++        self.cum = None
++        self.line_bytes = None
++        self.line_chars = None
++        if not self.ascii:
++            cum = [0]
++            total = 0
++            for ch in source:
++                total += len(ch.encode("utf-8"))
++                cum.append(total)
++            self.cum = cum
++            lines = source.splitlines(keepends=True)
++            self.line_chars = lines
++            self.line_bytes = [line.encode("utf-8") for line in lines]
++
++
++@lru_cache(maxsize=8)
++def _offset_table(source: str) -> _OffsetTable:
++    return _OffsetTable(source)
++
++
+ def _byte_to_char(source: str, byte_offset: int) -> int:
+     """Convert Tree-sitter's UTF-8 byte offset to a Python string offset."""
+ 
+-    encoded = source.encode("utf-8")
+-    return len(encoded[:byte_offset].decode("utf-8", errors="ignore"))
++    table = _offset_table(source)
++    if table.ascii:
++        return max(0, min(byte_offset, len(source)))
++    # number of complete characters that end at or before byte_offset
++    return bisect_right(table.cum, max(0, byte_offset)) - 1
+ 
+ 
+ def _point_to_line_column(source: str, point: tuple[int, int]) -> tuple[int, int]:
+     row, byte_column = point
+-    lines = source.splitlines(keepends=True)
+-    line = lines[row] if 0 <= row < len(lines) else ""
+-    column = len(line.encode("utf-8")[:byte_column].decode("utf-8", errors="ignore"))
++    table = _offset_table(source)
++    if table.ascii:
++        # splitlines() may break on more separators than \n, but tree-sitter
++        # rows are counted on \n only, so keep the historical lookup for the
++        # rare ASCII separators (\r, \v, \f, \x1c-\x1e) to stay identical.
++        if _SIMPLE_LINES(source):
++            return row + 1, min(byte_column, _line_length(source, row)) + 1
++        lines = source.splitlines(keepends=True)
++        line = lines[row] if 0 <= row < len(lines) else ""
++        return row + 1, min(byte_column, len(line)) + 1
++    lines = table.line_chars
++    if 0 <= row < len(lines):
++        column = len(table.line_bytes[row][:byte_column].decode("utf-8", errors="ignore"))
++    else:
++        column = 0
+     return row + 1, column + 1
+ 
+ 
++_EXOTIC_LINE_BREAKS = re.compile("[\r\x0b\x0c\x1c-\x1e\x85\u2028\u2029]")
++
++
++@lru_cache(maxsize=8)
++def _SIMPLE_LINES(source: str) -> bool:
++    return _EXOTIC_LINE_BREAKS.search(source) is None
++
++
++@lru_cache(maxsize=8)
++def _line_starts(source: str) -> tuple[int, ...]:
++    starts = [0]
++    find = source.find
++    index = find("\n")
++    while index != -1:
++        starts.append(index + 1)
++        index = find("\n", index + 1)
++    return tuple(starts)
++
++
++def _line_length(source: str, row: int) -> int:
++    """Length of line ``row`` including its trailing newline (like splitlines(True))."""
++
++    starts = _line_starts(source)
++    if not 0 <= row < len(starts):
++        return 0
++    end = starts[row + 1] if row + 1 < len(starts) else len(source)
++    return end - starts[row]
++
++
+ def _walk(node: Any) -> Iterator[Any]:
+     yield node
+     for child in node.children:
+@@ -320,7 +398,7 @@ def _node_name(node: Any, source: str) -> str | None:
+     return None
+ 
+ 
+-def _convert_node(node: Any, source: str) -> JSNode:
++def _convert_node(node: Any, source: str, deep: bool = True) -> JSNode:
+     start = _byte_to_char(source, node.start_byte)
+     end = _byte_to_char(source, node.end_byte)
+     line, column = _point_to_line_column(source, node.start_point)
+@@ -336,7 +414,10 @@ def _convert_node(node: Any, source: str) -> JSNode:
+     elif node.type in {"function_declaration", "generator_function_declaration", "function"}:
+         body_node = node.child_by_field_name("body")
+         named_children = [body_node] if body_node is not None else []
+-    children = tuple(_convert_node(child, source) for child in named_children if child is not None)
++    if deep:
++        children = tuple(_convert_node(child, source) for child in named_children if child is not None)
++    else:
++        children = ()
+     return JSNode(kind, source[start:end], start, end, line, column, children, _node_name(node, source))
+ 
+ 
+@@ -351,6 +432,29 @@ def to_teloce_program(program: TreeSitterProgram) -> JSProgram:
+     return JSProgram(program.source, body)
+ 
+ 
++def to_shallow_program(program: TreeSitterProgram) -> JSProgram:
++    """Like :func:`to_teloce_program` but converts only top-level statements.
++
++    Callers that look at statement kind, source span and position (import and
++    export scanning, module-code extraction) do not need every nested node
++    converted to a Python object.  Top-level fields are identical to the deep
++    conversion; ``children`` is left empty.
++    """
++
++    body = tuple(
++        _convert_node(node, program.source, deep=False)
++        for node in program.root_node.named_children
++        if node.type not in _IGNORED_TOP_LEVEL
++    )
++    return JSProgram(program.source, body)
++
++
++def parse_shallow_teloce_program(source: str, language: str = "js") -> JSProgram:
++    """Parse with Tree-sitter and return only the top-level statements."""
++
++    return to_shallow_program(parse_valid_tree(source, language))
++
++
+ def parse_as_teloce_program(source: str, language: str = "js") -> JSProgram:
+     """Parse source with Tree-sitter and return Teloce's source AST."""
+ 
+diff --git a/src/teloce/sfc/script.py b/src/teloce/sfc/script.py
+index 00b630c..1332536 100644
+--- a/src/teloce/sfc/script.py
++++ b/src/teloce/sfc/script.py
+@@ -6,11 +6,17 @@ support including ES modules, exports, imports, and component options.
+ """
+ 
+ import ast
++from functools import lru_cache
+ import re
+ from dataclasses import dataclass
+ from typing import Any, Dict, List, Optional, Set, Tuple
+ 
+-from teloce.javascript.parser import parse_javascript, tokenize_javascript
++from teloce.javascript.parser import (
++    find_balanced_end,
++    parse_javascript,
++    parse_javascript_top_level,
++    tokenize_javascript,
++)
+ from teloce.javascript.ts_transpile import transpile as transpile_ts
+ from teloce.javascript.tree_sitter_backend import (
+     TreeSitterUnavailable,
+@@ -20,6 +26,23 @@ from teloce.project.extensions import normalize_source_extensions, source_extens
+ from teloce.sfc.component import ComponentScript
+ 
+ 
++
++@lru_cache(maxsize=256)
++def _property_scanner(name: str):
++    """Regex that yields strings/comments (to skip) or the ``name:`` property."""
++    return re.compile(
++        "|".join(
++            (
++                r"(?P<skip>//[^\n]*)",
++                r"(?P<skip2>/\*[\s\S]*?(?:\*/|\Z))",
++                r"(?P<skip3>'[^'\\]*(?:\\[\s\S][^'\\]*)*(?:'|\\?\Z))",
++                r'(?P<skip4>"[^"\\]*(?:\\[\s\S][^"\\]*)*(?:"|\\?\Z))',
++                r"(?P<skip5>`[^`\\]*(?:\\[\s\S][^`\\]*)*(?:`|\\?\Z))",
++                r"(?<=[^\w$])(?P<prop>" + re.escape(name) + r")(?![\w$])\s*:",
++            )
++        )
++    )
++
+ def _read_ts_balanced(source: str, opening: int, open_char: str = '{', close_char: str = '}') -> int:
+     """Return the index after a balanced TS declaration block."""
+     depth = 0
+@@ -274,9 +297,9 @@ class ScriptParser:
+             # generated JavaScript is validated separately below. Tree-sitter
+             # provides structural syntax errors while the original source is
+             # still available for accurate diagnostics.
+-            parse_javascript(original_source, language=script_language)
++            parse_javascript_top_level(original_source, language=script_language)
+             if is_typescript:
+-                parse_javascript(source, language="js")
++                parse_javascript_top_level(source, language="js")
+             # Parse imports
+             self._parse_imports(source)
+             script.imports = list(self.imports)
+@@ -322,7 +345,7 @@ class ScriptParser:
+         code = source
+         default_span = None
+         try:
+-            for node in parse_javascript(code).body:
++            for node in parse_javascript_top_level(code).body:
+                 if node.kind != "ExportDeclaration":
+                     continue
+                 if re.match(r"export\s+default\b", node.source.strip()):
+@@ -549,7 +572,7 @@ class ScriptParser:
+     
+     def _parse_imports(self, source: str):
+         """Parse imports from source-preserving AST nodes."""
+-        for node in parse_javascript(source).body:
++        for node in parse_javascript_top_level(source).body:
+             if node.kind != "ImportDeclaration":
+                 continue
+             statement = node.source.strip().rstrip(";").strip()
+@@ -593,7 +616,7 @@ class ScriptParser:
+     
+     def _parse_exports(self, source: str):
+         """Parse top-level export statements from the structural AST."""
+-        for node in parse_javascript(source).body:
++        for node in parse_javascript_top_level(source).body:
+             if node.kind != "ExportDeclaration":
+                 continue
+             statement = node.source.strip().rstrip(";").strip()
+@@ -759,15 +782,10 @@ class ScriptParser:
+         """Read a balanced JS pair from source-located lexical tokens."""
+         if opening < 0 or opening >= len(source) or source[opening] != open_char:
+             return None
+-        depth = 0
+-        for token in tokenize_javascript(source[opening:]):
+-            if token.value == open_char:
+-                depth += 1
+-            elif token.value == close_char:
+-                depth -= 1
+-                if depth == 0:
+-                    return source[opening:opening + token.end]
+-        return None
++        end = find_balanced_end(source, opening, open_char, close_char)
++        if end is None:
++            return None
++        return source[opening:end]
+     
+     def _extract_computed(self, source: str) -> Dict[str, str]:
+         """Extract computed properties from the script."""
+@@ -1174,37 +1192,20 @@ class ScriptParser:
+         documentation strings such as ``"computed: { fake: true }"`` become
+         component options. This scanner only identifies the property; the
+         existing balanced readers still parse its value.
++
++        Strings and comments are skipped as whole units by one precompiled
++        regex (C speed) instead of a character-by-character Python loop.
+         """
+-        quote = None
+-        escaped = False
+-        line_comment = block_comment = False
+-        index = 0
+-        while index < len(source):
+-            char = source[index]
+-            nxt = source[index + 1] if index + 1 < len(source) else ""
+-            if line_comment:
+-                if char == "\n": line_comment = False
+-            elif block_comment:
+-                if char == "*" and nxt == "/": block_comment = False; index += 1
+-            elif quote:
+-                if escaped: escaped = False
+-                elif char == "\\": escaped = True
+-                elif char == quote: quote = None
+-            elif char in "'\"`": quote = char
+-            elif char == "/" and nxt == "/": line_comment = True; index += 1
+-            elif char == "/" and nxt == "*": block_comment = True; index += 1
+-            elif source.startswith(name, index):
+-                before = source[index - 1] if index else ""
+-                after_index = index + len(name)
+-                if (not (before.isalnum() or before in "_$") and
+-                        (after_index == len(source) or not (source[after_index].isalnum() or source[after_index] in "_$"))):
+-                    cursor = after_index
+-                    while cursor < len(source) and source[cursor].isspace(): cursor += 1
+-                    if cursor < len(source) and source[cursor] == ":":
+-                        return cursor + 1
+-            index += 1
+-        return None
+-    
++        match = _property_scanner(name).search
++        pos = 0
++        while True:
++            m = match(source, pos)
++            if m is None:
++                return None
++            if m.lastgroup == "prop":
++                return m.end()
++            pos = m.end()
++
+     def _extract_object_block(self, source: str, start: int) -> Optional[str]:
+         """Extract an object block from the source."""
+         return self._read_balanced_pair(source, start, '{', '}')
+diff --git a/tests/javascript/test_fast_lexer_parity.py b/tests/javascript/test_fast_lexer_parity.py
+new file mode 100644
+index 0000000..a788640
+--- /dev/null
++++ b/tests/javascript/test_fast_lexer_parity.py
+@@ -0,0 +1,97 @@
++"""The regex lexer must be indistinguishable from the legacy lexer."""
++import random
++import re
++from pathlib import Path
++
++import pytest
++
++from teloce.javascript.parser import (
++    JavaScriptLexer,
++    JavaScriptSyntaxError,
++    LegacyJavaScriptLexer,
++    find_balanced_end,
++)
++
++ROOT = Path(__file__).resolve().parents[2]
++
++
++def _lex(cls, source):
++    try:
++        return ("ok", cls(source).tokenize())
++    except JavaScriptSyntaxError as exc:
++        return ("err", str(exc), exc.token)
++
++
++def _assert_same(source):
++    assert _lex(JavaScriptLexer, source) == _lex(LegacyJavaScriptLexer, source), repr(source)
++
++
++def _corpus():
++    files = [p for p in ROOT.rglob("*") if p.suffix in {".vel", ".js", ".mjs", ".ts"}
++             and "node_modules" not in p.parts and ".git" not in p.parts
++             and p.stat().st_size < 400_000]
++    for path in files:
++        text = path.read_text(encoding="utf-8", errors="replace")
++        yield text
++        for m in re.finditer(r"<script[^>]*>([\s\S]*?)</script>", text):
++            yield m.group(1)
++
++
++def test_repo_corpus_matches():
++    count = 0
++    for text in _corpus():
++        _assert_same(text)
++        count += 1
++    assert count > 10
++
++
++_PIECES = [
++    "a", "foo", "_x", "$y", "return", "typeof", "in", "of", "x1", "é", "日本", "𝒳",
++    "0", "12", "3.14", ".5", "1e+5", "0x1F", "0b101", "1_000", "10n", "1..toString", "²",
++    "+", "-", "*", "/", "%", "=", "==", "===", "!==", "!=", "<", ">", "<=", ">=", ">>", ">>>", ">>>=",
++    "&&", "||", "??", "?.", "?", ":", ";", ",", ".", "...", "=>", "++", "--", "**", "**=", "/=", "+=",
++    "(", ")", "[", "]", "{", "}",
++    "'s'", '"d"', "`t`", "'a\\'b'", '"a\\"b"', "`a${b}c`", "'unterminated", '"x\\', "`open",
++    "// line comment", "/* block */", "/* open", "/re/g", "/[/]/", "/a\\/b/i", "/(x/", "/", "//",
++    "\n", "\r\n", "\t", " ", "  ", "\u00a0", "\u2028", "#!shebang", "#", "@", "\\", "~", "^", "&", "|",
++]
++
++
++def test_fuzz_matches():
++    rng = random.Random(1234)
++    for _ in range(40000):
++        source = "".join(rng.choice(_PIECES) + rng.choice(["", " ", "\n"]) for _ in range(rng.randint(1, 12)))
++        _assert_same(source)
++
++
++def test_fuzz_random_characters():
++    rng = random.Random(99)
++    pool = list("abcXYZ019_$ \n\r\t'\"`/\\*+-=<>!?&|.,;:(){}[]#@~^%é日") + ["\u00a0", "²"]
++    for _ in range(20000):
++        source = "".join(rng.choice(pool) for _ in range(rng.randint(1, 40)))
++        _assert_same(source)
++
++
++def _legacy_balanced(source, opening, open_char, close_char):
++    depth = 0
++    for token in LegacyJavaScriptLexer(source[opening:]).tokenize():
++        if token.value == open_char:
++            depth += 1
++        elif token.value == close_char:
++            depth -= 1
++            if depth == 0:
++                return opening + token.end
++    return None
++
++
++def test_balanced_pair_matches_legacy_when_legacy_succeeds():
++    rng = random.Random(7)
++    for _ in range(15000):
++        source = "".join(rng.choice(_PIECES) + rng.choice(["", " ", "\n"]) for _ in range(rng.randint(1, 14)))
++        for open_char, close_char in (("{", "}"), ("(", ")"), ("[", "]")):
++            for opening in [i for i, c in enumerate(source) if c == open_char][:3]:
++                try:
++                    expected = _legacy_balanced(source, opening, open_char, close_char)
++                except JavaScriptSyntaxError:
++                    continue  # legacy rejects the whole remainder; early stop may be more lenient
++                assert find_balanced_end(source, opening, open_char, close_char) == expected, (source, opening)
+diff --git a/tests/javascript/test_helper_parity.py b/tests/javascript/test_helper_parity.py
+new file mode 100644
+index 0000000..4b3537b
+--- /dev/null
++++ b/tests/javascript/test_helper_parity.py
+@@ -0,0 +1,140 @@
++"""Optimised helpers must behave exactly like their original implementations."""
++import random
++
++from teloce.compiler.source_map import _strip_inline_generics
++from teloce.javascript import tree_sitter_backend as ts
++from teloce.sfc.script import ScriptParser
++
++
++# ---- reference (original) implementations ---------------------------------
++def _ref_find_property(source, name):
++    quote = None
++    escaped = False
++    line_comment = block_comment = False
++    index = 0
++    while index < len(source):
++        char = source[index]
++        nxt = source[index + 1] if index + 1 < len(source) else ""
++        if line_comment:
++            if char == "\n": line_comment = False
++        elif block_comment:
++            if char == "*" and nxt == "/": block_comment = False; index += 1
++        elif quote:
++            if escaped: escaped = False
++            elif char == "\\": escaped = True
++            elif char == quote: quote = None
++        elif char in "'\"`": quote = char
++        elif char == "/" and nxt == "/": line_comment = True; index += 1
++        elif char == "/" and nxt == "*": block_comment = True; index += 1
++        elif source.startswith(name, index):
++            before = source[index - 1] if index else ""
++            after_index = index + len(name)
++            if (not (before.isalnum() or before in "_$") and
++                    (after_index == len(source) or not (source[after_index].isalnum() or source[after_index] in "_$"))):
++                cursor = after_index
++                while cursor < len(source) and source[cursor].isspace(): cursor += 1
++                if cursor < len(source) and source[cursor] == ":":
++                    return cursor + 1
++        index += 1
++    return None
++
++
++def _ref_strip(line):
++    result, i, length = [], 0, len(line)
++    ident = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_$")
++    while i < length:
++        ch = line[i]
++        if ch != "<" or i == 0 or line[i - 1] not in ident:
++            result.append(ch); i += 1; continue
++        depth, j, closed = 1, i + 1, False
++        while j < length:
++            cur = line[j]
++            if cur == "<": depth += 1
++            elif cur == ">":
++                depth -= 1
++                if depth == 0: closed = True; j += 1; break
++            j += 1
++        if closed:
++            result.append(" " * (j - i)); i = j
++        else:
++            result.append(line[i]); i += 1
++    return "".join(result)
++
++
++def _ref_byte_to_char(source, byte_offset):
++    encoded = source.encode("utf-8")
++    return len(encoded[:byte_offset].decode("utf-8", errors="ignore"))
++
++
++def _ref_point(source, point):
++    row, byte_column = point
++    lines = source.splitlines(keepends=True)
++    line = lines[row] if 0 <= row < len(lines) else ""
++    column = len(line.encode("utf-8")[:byte_column].decode("utf-8", errors="ignore"))
++    return row + 1, column + 1
++
++
++_PIECES = ["computed", "methods", "watch", ":", " : ", "{", "}", "x", "_computed", "computed2", "$computed",
++           "'", '"', "`", "\\", "// c\n", "/* b */", "/*", "\n", " ", "a<b>", "foo<T>(x)", "<div>", "x < y", "map<K, V<W>>",
++           "é", "日本", "😀", "\r\n", "\r", "\u2028", "\x0b", "\x0c", "\x85"]
++
++
++def _fuzz_sources(seed, count):
++    rng = random.Random(seed)
++    for _ in range(count):
++        yield "".join(rng.choice(_PIECES) for _ in range(rng.randint(0, 25)))
++
++
++def test_find_property_matches_reference():
++    for source in _fuzz_sources(1, 30000):
++        for name in ("computed", "methods", "watch"):
++            assert ScriptParser._find_property(source, name) == _ref_find_property(source, name), (source, name)
++
++
++def test_strip_inline_generics_matches_reference():
++    for source in _fuzz_sources(2, 20000):
++        assert _strip_inline_generics(source) == _ref_strip(source), source
++
++
++def test_offset_conversion_matches_reference():
++    rng = random.Random(3)
++    for source in _fuzz_sources(4, 4000):
++        encoded_len = len(source.encode("utf-8"))
++        lines = source.count("\n") + 1
++        for _ in range(6):
++            off = rng.randint(0, encoded_len + 2)
++            assert ts._byte_to_char(source, off) == _ref_byte_to_char(source, off), (source, off)
++            point = (rng.randint(0, lines + 1), rng.randint(0, 12))
++            assert ts._point_to_line_column(source, point) == _ref_point(source, point), (source, point)
++
++
++def test_shallow_program_matches_full_program_top_level():
++    import re
++    from pathlib import Path
++
++    from teloce.javascript.parser import JavaScriptSyntaxError, parse_javascript, parse_javascript_top_level
++
++    root = Path(__file__).resolve().parents[2]
++    checked = 0
++    for path in root.rglob("*.vel"):
++        if "node_modules" in path.parts:
++            continue
++        text = path.read_text(encoding="utf-8", errors="replace")
++        for m in re.finditer(r"<script[^>]*>([\s\S]*?)</script>", text):
++            code = m.group(1)
++            try:
++                full = parse_javascript(code)
++            except (JavaScriptSyntaxError, ValueError) as exc:
++                try:
++                    parse_javascript_top_level(code)
++                except (JavaScriptSyntaxError, ValueError) as exc2:
++                    assert str(exc) == str(exc2)
++                    continue
++                raise AssertionError("shallow parse accepted invalid source")
++            shallow = parse_javascript_top_level(code)
++            assert len(full.body) == len(shallow.body)
++            for a, b in zip(full.body, shallow.body):
++                assert (a.kind, a.source, a.start, a.end, a.line, a.column, a.name) == \
++                       (b.kind, b.source, b.start, b.end, b.line, b.column, b.name)
++            checked += 1
++    assert checked > 5
