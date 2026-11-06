@@ -166,17 +166,78 @@ await pwa?.checkForUpdate();
 ```
 
 Registration happens asynchronously and does not block application mounting. Unsupported
-browsers return null; registration failures emit `teloce:pwa-error`. The update controller
+browsers return null; registration failures emit `teloce:pwa-error` (and are logged to the
+console) with an explanation of the fix. `teloce:pwa-update` fires only for a real update, not
+for the first install. The update controller
 has `registration`, `updateAvailable`, `checkForUpdate`, `activateUpdate` and `destroy`.
 Activation is explicit, without an automatic refresh that could erase unfinished forms.
 Reload after choosing to activate a waiting update. No install-prompt UI is supplied.
 
-The worker precaches emitted JS/CSS and a generic offline page. It ignores non-GET requests,
+The worker precaches emitted JS/CSS and a generic offline page. Only the offline page is
+required: other files are cached on a best-effort basis, so one missing file cannot stop the
+worker from installing. If the offline page itself cannot be fetched, installation fails and
+`teloce:pwa-error` explains that the build is probably not served at its `public_path`.
+It ignores non-GET requests,
 cross-origin requests, query-bearing asset requests and all non-allowlisted API/data URLs.
 Navigation stays network-first and is not cached; network failure shows the static offline
 page. Sessions, Admin responses and private user data are never added by this worker.
 Offline database edits, queues and conflict resolution are not provided. Cache cleanup is
 namespaced by asset base and scope, and deletes only this application's old caches.
+
+## Making the PWA installable
+
+A browser offers "Install" when the page links a **web app manifest** with a name, a start URL, a
+`standalone` display mode and **192px and 512px icons**. Teloce handles all of that:
+
+* The manifest is emitted as `teloce-plugins/manifest.webmanifest`, and the plugin adds
+  `<link rel="manifest">` and `<meta name="theme-color">` to the page when they are not already
+  there (Flaxon already adds them). Pass `"manifest": False` to manage the link yourself.
+* If you configure no `icons`, placeholder 192px and 512px PNGs are generated from `theme_color`
+  so a fresh build is installable. The build reports a warning: replace them before release with
+  `"icons": [{"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png"}, ...]`.
+* The worker is registered for the manifest `scope` (default `/`).
+* **PWA is off in development builds**, because a cached worker makes development confusing.
+  Opt in with `"pwa": {"enabled": True}`.
+
+```python
+build_project(".", "dist", options={
+    "plugins": {"pwa": {"name": "My app", "short_name": "App", "theme_color": "#0f172a",
+                        "icons": [...]}},
+    "public_path": "/static/",   # where the output folder is served
+})
+```
+
+### Serving the worker (any framework)
+
+A service worker may only control the folder it is served from. Teloce registers it for the whole
+site (`scope: "/"`) but emits it under `teloce-plugins/`, so it must be sent with the header
+`Service-Worker-Allowed: /`. Without it the browser refuses with *"The path of the provided scope
+('/') is not under the max scope allowed"* and the app is never a PWA. Flaxon does this for you.
+For any other framework, mount `teloce.plugins.pwa_server.PwaFiles`, a small locked-down WSGI/ASGI app
+that serves only the plugin files with the right headers. Mount it at
+`public_path + "teloce-plugins"`, **before** your general static handler:
+
+```python
+from teloce.plugins.pwa_server import PwaFiles
+pwa = PwaFiles("dist")                       # the folder you passed to build_project()
+
+# Flask (or any WSGI framework)
+from werkzeug.middleware.dispatcher import DispatcherMiddleware
+app.wsgi_app = DispatcherMiddleware(app.wsgi_app, {"/static/teloce-plugins": pwa.wsgi_app})
+
+# FastAPI / Starlette (or any ASGI framework): order matters, mount it before /static
+app.mount("/static/teloce-plugins", pwa.asgi_app)
+app.mount("/static", StaticFiles(directory="dist"))
+```
+
+Prefer to keep your own static handler? Send `Service-Worker-Allowed: /` (and `Cache-Control: no-cache`)
+with `teloce-plugins/sw.js` and `Content-Type: application/manifest+json` with the manifest.
+Service workers also require HTTPS (or `localhost`).
+
+### If it still isn't a PWA
+
+Open DevTools, then **Application > Manifest** (it lists exactly what is missing) and **Application >
+Service Workers**. Listen for `teloce:pwa-error`; its message names the problem.
 
 ## Using another Python framework
 
@@ -199,8 +260,7 @@ const plugins = await installPlugins();
 const disconnect = connectPlugins(plugins, router);
 ```
 
-For PWA, also add a manifest link and serve the emitted worker at your configured
-`workerURL` with an appropriate `Service-Worker-Allowed` header. Flaxon supplies those
-steps automatically; other frameworks must do them explicitly. Runtime module factories
+For PWA, mount `PwaFiles` as described in [Making the PWA installable](#making-the-pwa-installable);
+the plugin links the manifest itself. Flaxon supplies the worker headers automatically. Runtime module factories
 can also be imported directly from their emitted files for per-component instances.
 Call instance cleanup methods and router disconnect functions when their owners unmount.

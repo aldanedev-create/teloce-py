@@ -12,3 +12,4 @@ export * from './lifecycle.js';
 export * from './slots.js';
 export * from './data.js';
 export * from './table.js';
+export * from './network.js';

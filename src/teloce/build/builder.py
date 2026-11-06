@@ -288,7 +288,7 @@ class Builder:
             # scheduler dependency beside the barrel so generated components
             # can use ``signal()``/``effect()`` without per-component setup.
             runtime_package = package_files("teloce.runtime")
-            for runtime_name in ("scheduler.js", "signals.js", "data.js", "table.js"):
+            for runtime_name in ("scheduler.js", "signals.js", "data.js", "table.js", "network.js"):
                 runtime_module_path = runtime_path.parent / runtime_name
                 runtime_module_source = runtime_package.joinpath(runtime_name).read_text(encoding="utf-8")
                 if self.options.get('minify', False):
@@ -784,7 +784,7 @@ class Builder:
         # entries on the next development build.
         try:
             runtime_package = package_files("teloce.runtime")
-            for runtime_name in ("scheduler.js", "signals.js", "data.js", "table.js", "compiled.js"):
+            for runtime_name in ("scheduler.js", "signals.js", "data.js", "table.js", "network.js", "compiled.js"):
                 digest.update(runtime_name.encode("utf-8"))
                 digest.update(runtime_package.joinpath(runtime_name).read_bytes())
         except OSError:
@@ -849,6 +849,7 @@ class Builder:
             + 'export { createSignal as signal, createComputed as computed, createEffect as effect } from "./signals.js";\n'
             + 'export * from "./data.js";\n'
             + 'export * from "./table.js";\n'
+            + 'export * from "./network.js";\n'
         )
         self._runtime_source = self._minify_generated_js(runtime_source) if self.options.get("minify", False) else runtime_source
         return self._runtime_source

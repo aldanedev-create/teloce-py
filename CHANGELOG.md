@@ -2,6 +2,13 @@
 
 ### Added
 
+- Add framework-agnostic network clients in `teloce/runtime/network.js`: `http` (fetch client with interceptors, retry, timeout and CSRF), `action` (named server calls with caching, invalidation and reactive `resource()`), and `socket` (WebSocket channels with reconnect, queue and heartbeat), plus `createScope()` for component cleanup and a `networkPlugin` for standalone pages.
+- Add `teloce.bridge`, a dependency-free Python backend for those clients: `ActionRegistry` (WSGI and ASGI apps), `ChannelHub` (ASGI WebSocket pub/sub) and `Bridge`. It mounts into Flask, FastAPI, Django or any WSGI/ASGI framework without an adapter package. See `docs/network-api.md`.
+- Fix the first-party PWA plugin on hosts other than Flaxon: it now links the manifest and theme color itself, defaults the worker scope to the manifest scope, generates placeholder 192/512px icons when none are configured (with a build warning), and explains a rejected registration (`Service-Worker-Allowed`) in `teloce:pwa-error` instead of failing silently.
+- Add `teloce.plugins.pwa_server.PwaFiles`, a framework-agnostic WSGI/ASGI app that serves the PWA plugin files with the headers a service worker needs.
+- Fix `teloce:pwa-update` firing on the very first install, and make the service worker install even when an optional precached file is missing (only the offline page is required). Development builds can opt in with `plugins.pwa.enabled`.
+- Fix the Head plugin ignoring its configured default `title` when the page has no `<title>`.
+- Export the network clients from the generated `teloce-runtime.js` barrel.
 - Add Lesson 48, a copy-and-paste Flask YouTube library using framework-neutral Teloce SSR.
 - Add the `examples/flask-youtube-ssr` application with safe YouTube URL normalization, privacy-enhanced iframes, SSR hydration, and Windows-safe paths.
 - Add a Python-only SSR example using the standard-library HTTP server.
