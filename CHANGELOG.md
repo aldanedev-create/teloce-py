@@ -1,3 +1,15 @@
+## 0.3.3
+
+### Changed
+
+- The optional `typecheck` extra now requires `pytscheck>=0.2,<0.3`, which bundles the stable TypeScript 7.0.2 native compiler instead of a development preview. `teloce typecheck` behavior and the 61 existing typecheck tests are unchanged.
+
+### Fixed
+
+- Fix the README header so the logo and badges render on GitHub and PyPI: remove escaped HTML tags and nested Markdown links inside attributes, and point the logo at this repository.
+- Make the Network API link in the README absolute so it works on PyPI.
+- Align `__version_info__` with `__version__`.
+
 ## 0.3.2
 
 ### Added

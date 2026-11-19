@@ -1,12 +1,18 @@
 # Teloce-Py
 
-\<p align="center">
-&#x20; \<img src="[https://raw.githubusercontent.com/Flaxon-labs/teloce-py/main/assets/py-teloce.jpg](https://raw.githubusercontent.com/Flaxon-labs/teloce-py/main/assets/py-teloce.jpg)" alt="Teloce-Py logo" width="160"/>
-\</p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/aldanedev-create/teloce-py/main/assets/py-teloce.jpg" alt="Teloce-Py logo" width="160">
+</p>
 
-\<p align="center">   Build interactive Python apps with \<code>.vel\</code> components. No Node.js required. \</p>
+<p align="center">
+  Build interactive Python apps with <code>.vel</code> components. No Node.js required.
+</p>
 
-\<p align="center">   \<a href="[https://pypi.org/project/teloce-py/](https://pypi.org/project/teloce-py/)">\<img src="[https://img.shields.io/pypi/v/teloce-py](https://img.shields.io/pypi/v/teloce-py)" alt="PyPI version">\</a>   \<a href="LICENSE">\<img src="[https://img.shields.io/badge/license-MIT-blue](https://img.shields.io/badge/license-MIT-blue)" alt="MIT license">\</a>   \<a href="[https://github.com/aldanedev-create/teloce-py/blob/main/docs/README.md](https://github.com/aldanedev-create/teloce-py/blob/main/docs/README.md)">\<img src="[https://img.shields.io/badge/docs-read-green](https://img.shields.io/badge/docs-read-green)" alt="Documentation">\</a> \</p>
+<p align="center">
+  <a href="https://pypi.org/project/teloce-py/"><img src="https://img.shields.io/pypi/v/teloce-py" alt="PyPI version"></a>
+  <a href="https://github.com/aldanedev-create/teloce-py/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
+  <a href="https://github.com/aldanedev-create/teloce-py/blob/main/docs/README.md"><img src="https://img.shields.io/badge/docs-read-green" alt="Documentation"></a>
+</p>
 
 Teloce-Py compiles a template, browser behavior, and scoped CSS from a single `.vel` file into plain browser assets. Your Python framework (Flask, FastAPI, Django, or Flaxon) keeps handling routes, APIs, databases, auth, and security.
 
@@ -45,6 +51,17 @@ Together, Teloce-Py and Teloce-NPM provide different ways to work with the Teloc
 ## Getting Started
 
 Install:
+
+
+## Editor Support
+
+Before you start, install the [Teloce extension for VS Code](https://marketplace.visualstudio.com/items?itemName=Flaxon-vscode.teloce-vscode). It adds syntax highlighting, diagnostics, autocomplete, hover information, formatting, and snippets for `.vel` files.
+
+```bash
+code --install-extension Flaxon-vscode.teloce-vscode
+```
+
+Or open the Extensions panel (`Ctrl+Shift+X` / `Cmd+Shift+X`), search for **Teloce**, and click **Install**. The extension is optional: Teloce-Py works without it.
 
 ```bash
 python -m pip install teloce-py Flask
@@ -138,7 +155,7 @@ Teloce strips common TypeScript syntax during compilation. The optional `teloce 
 ## Documentation
 
 - [Documentation](https://github.com/aldanedev-create/teloce-py/blob/main/docs/README.md)
-- [Network API: http, action, socket](docs/network-api.md)
+- [Network API: http, action, socket](https://github.com/aldanedev-create/teloce-py/blob/main/docs/network-api.md)
 - [Project structure](https://github.com/aldanedev-create/teloce-py/blob/main/docs/lessons/file-structure.md)
 - [Examples](https://github.com/aldanedev-create/teloce-py/blob/main/examples/README.md):
   - [Flask chat](examples/flask-chat)

@@ -1,6 +1,7 @@
 # Type checking
 
 Type checking requires Python 3.11+; the rest of Teloce continues to support Python 3.10.
+The bundled compiler ships for Linux, Windows and macOS on x64 and ARM64, and for Linux ARMv7. 32-bit x86 systems are not supported by the `typecheck` extra.
 
 `teloce typecheck` type-checks the TypeScript in your components and the expressions in your templates.
 It uses [pytscheck](https://pypi.org/project/pytscheck/), which bundles Microsoft's native TypeScript compiler; no Node.js is needed.
