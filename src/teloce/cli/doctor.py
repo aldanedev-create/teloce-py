@@ -37,6 +37,15 @@ def doctor_command(args: Any) -> int:
     
     # Check Teloce version
     print(f"📦 Teloce Version: {__version__}")
+
+    # Type checker (optional): tsgo, bundled with pytscheck
+    from teloce.typecheck import checker_info
+
+    checker = checker_info()
+    if checker:
+        print(f"🔎 Type checker: tsgo {checker['tsgo']} via pytscheck {checker['pytscheck']}")
+    else:
+        print("🔎 Type checker: not installed (pip install \"teloce-py[typecheck]\" on Python 3.11+)")
     
     # Discover project
     discovery = ProjectDiscovery()

@@ -6,7 +6,7 @@ common number/boolean/date values. It has no pandas dependency.
 ```html
 <template><ul><li v-for="row in rows" :key="row.id">{{ row.name }}: {{ row.amount | number }}</li></ul></template>
 <script>
-import { loadCsv } from "../teloce-runtime.js";
+import { loadCsv } from "teloce/runtime";
 export default {
   data() { return { rows: [] }; },
   async mounted() {

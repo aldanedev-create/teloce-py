@@ -9,14 +9,14 @@
       <h1>Build readable interfaces<br /><em>at Python speed.</em></h1>
       <p class="lead">A living cheatsheet for the .vel Single File Component format. Search the patterns, copy the syntax, and see how Flaxon serves the result.</p>
       <label class="search"><span>⌕</span><input aria-label="Search cheatsheet" v-model="query" placeholder="Search directives, signals, components..."/><kbd>⌘ K</kbd></label>
-      <div class="pills"><button v-for="category in categories" @click="selectCategory(category)" :class="{ active: selected === category }">{{ category }}</button></div>
+      <div class="pills"><button v-for="category in categories" :key="category.id" @click="selectCategory(category)" :class="{ active: selected === category }">{{ category }}</button></div>
     </section>
     <section id="cheatsheet" class="content">
-      <aside><p class="side-label">ON THIS PAGE</p><a v-for="category in categories" :class="{ active: selected === category }" @click="selectCategory(category)">{{ category }}</a><div class="build-note"><b>Build status</b><span>● 40 / 40 compiled</span><small>Flaxon ASGI · source maps on</small></div></aside>
+      <aside><p class="side-label">ON THIS PAGE</p><a v-for="category in categories" :key="category.id" :class="{ active: selected === category }" @click="selectCategory(category)">{{ category }}</a><div class="build-note"><b>Build status</b><span>● 40 / 40 compiled</span><small>Flaxon ASGI · source maps on</small></div></aside>
       <div class="main-column">
         <div class="section-heading"><div><p class="eyebrow">THE FIELD GUIDE</p><h2>{{ selected }}</h2></div><span>{{ visibleCount }} patterns</span></div>
         <div class="cards">
-          <div v-for="item in visibleItems" class="card-shell">
+          <div v-for="item in visibleItems" :key="item.id" class="card-shell">
             <article class="card">
               <div class="card-top"><span class="number">{{ item.number }}</span><span class="tag">{{ item.tag }}</span></div>
               <h3>{{ item.title }}</h3><p>{{ item.description }}</p><pre><code>{{ item.code }}</code></pre>
@@ -32,7 +32,8 @@
   </main>
 </template>
 
-<script>
+
+<script >
 import Badge from "./components/Badge.vel";
 import ButtonExample from "./components/ButtonExample.vel";
 import CardExample from "./components/CardExample.vel";

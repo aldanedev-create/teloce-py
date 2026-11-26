@@ -1,2 +1,3 @@
 include scripts/publish.py
 include docs/publishing.md
+recursive-include src/teloce/ai *.md *.tmpl

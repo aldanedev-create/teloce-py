@@ -16,6 +16,7 @@ from teloce.cli.debug import debug_command
 from teloce.cli.doctor import doctor_command
 from teloce.cli.lint import lint_command
 from teloce.cli.typecheck import typecheck_command
+from teloce.cli.ai_docs import ai_docs_command
 from teloce.cli.create import create_command
 from teloce.cli.benchmark import benchmark_command
 from teloce.cli.compile import compile_command
@@ -335,6 +336,22 @@ def main(args: Optional[list] = None) -> int:
         help="Skip git initialization"
     )
     
+    create_parser.add_argument(
+        '--no-ai-docs',
+        action='store_true',
+        help="Skip AGENTS.md, CLAUDE.md and the offline docs for AI assistants"
+    )
+
+    ai_docs_parser = subparsers.add_parser(
+        'ai-docs',
+        help='Add AGENTS.md, CLAUDE.md and offline Teloce docs for AI assistants to a project'
+    )
+    ai_docs_parser.add_argument('path', nargs='?', default='.', help='Project directory (default: current)')
+    ai_docs_parser.add_argument('--backend', choices=['flask', 'fastapi', 'django', 'flaxon', 'basic'],
+                                help='Backend notes to include (default: detected from the project)')
+    ai_docs_parser.add_argument('--force', action='store_true', help='Overwrite existing files')
+    ai_docs_parser.add_argument('--no-docs', action='store_true', help='Only write AGENTS.md and CLAUDE.md')
+
     parsed_args = parser.parse_args(args)
     
     # Execute command
@@ -348,6 +365,7 @@ def main(args: Optional[list] = None) -> int:
         'lint': lint_command,
         'typecheck': typecheck_command,
         'create': create_command,
+        'ai-docs': ai_docs_command,
         'benchmark': benchmark_command,
         'compile': compile_command,
         'component': component_command,

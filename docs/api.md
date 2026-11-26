@@ -185,7 +185,7 @@ TypeScript or `.ts` browser modules. See [JavaScript and TypeScript tooling](jav
 Project builds copy browser data helpers beside the shared runtime:
 
 ```js
-import { loadCsv, parseDelimited, downloadRowsAsCsv, exportChartToPng } from "../teloce-runtime.js";
+import { loadCsv, parseDelimited, downloadRowsAsCsv, exportChartToPng } from "teloce/runtime";
 ```
 
 `loadCsv(url, options)` parses CSV or TSV and supports `headers`, `delimiter`,

@@ -10,7 +10,7 @@ from typing import Any
 
 def typecheck_command(args: Any) -> int:
     """Run ``teloce typecheck``. Exit codes: 0 clean, 1 type errors found, 2 not available / bad input."""
-    from teloce.typecheck import TypecheckUnavailable, check_project, discover_roots
+    from teloce.typecheck import TypecheckUnavailable, check_project, checker_info, discover_roots
 
     roots = [Path(p) for p in (args.paths or [])] or discover_roots(Path.cwd())
     missing = [str(r) for r in roots if not r.exists()]
@@ -34,6 +34,7 @@ def typecheck_command(args: Any) -> int:
                 {
                     "ok": result.ok,
                     "compiler": result.compiler,
+                    "checker": checker_info(),
                     "findings": [vars(f) for f in result.findings],
                 },
                 indent=2,
@@ -49,4 +50,7 @@ def typecheck_command(args: Any) -> int:
             print(
                 f"\nFound {len(result.findings)} error{'s' if len(result.findings) != 1 else ''} in {files} file{'s' if files != 1 else ''}."
             )
+        info = checker_info()
+        if info and result.compiler:
+            print(f"Checked with tsgo {result.compiler} (pytscheck {info['pytscheck']}) in {result.elapsed:.2f}s.")
     return 0 if result.ok else 1

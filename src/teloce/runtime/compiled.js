@@ -658,6 +658,10 @@ const __teloceCreateCompiledComponent = /** @param {CompiledDefinition} definiti
     if (element.__teloceModelListener) {
       removeModelListener(element);
     }
+    element.__teloceSelectWatcher?.disconnect?.();
+    element.__teloceSelectWatcher = null;
+    element.__teloceScrollyWatcher?.disconnect?.();
+    element.__teloceScrollyWatcher = null;
     for (const [name, record] of element.__teloceDirectives?.entries?.() || []) {
       destroyDirectiveRecord(element, name, record);
     }
@@ -903,6 +907,22 @@ const __teloceCreateCompiledComponent = /** @param {CompiledDefinition} definiti
   };
 
   const bindScrolly = /** v-scrolly/v-step activate observed or focused steps; queued callbacks must not outlive cleanup. @param {RuntimeElement} element */ element => {
+    // Steps rendered later (v-for, v-if, async data) appear after this element was bound, so watch for
+    // them and bind again. Only child-list changes are watched, so our own attribute writes cannot loop.
+    if (!element.__teloceScrollyWatcher && typeof MutationObserver === "function") {
+      let queued = false;
+      const watcher = new MutationObserver(() => {
+        if (queued) return;
+        queued = true;
+        queueMicrotask(() => {
+          queued = false;
+          if (!element.isConnected) { watcher.disconnect(); element.__teloceScrollyWatcher = null; return; }
+          if (element.hasAttribute("data-teloce-scrolly")) bindScrolly(element);
+        });
+      });
+      watcher.observe(element, { childList: true, subtree: true });
+      element.__teloceScrollyWatcher = watcher;
+    }
     const steps = Array.from(element.querySelectorAll("[v-step], [data-v-step]"));
     if (!steps.length) return;
     if (element.__teloceScrollyCleanup && element.__teloceScrollySteps?.length === steps.length &&
@@ -1117,7 +1137,11 @@ const __teloceCreateCompiledComponent = /** @param {CompiledDefinition} definiti
     if (element.hasAttribute("data-teloce-virtual-for")) renderVirtualList(element);
     else element.__teloceVirtualCleanup?.();
     if (element.hasAttribute("data-teloce-scrolly")) bindScrolly(element);
-    else element.__teloceScrollyCleanup?.();
+    else {
+      element.__teloceScrollyCleanup?.();
+      element.__teloceScrollyWatcher?.disconnect?.();
+      element.__teloceScrollyWatcher = null;
+    }
     if (element.hasAttribute("data-teloce-chart-annotation")) bindAnnotation(element);
     else element.__teloceAnnotationCleanup?.();
     if (element.hasAttribute("poll")) bindPoll(element);
@@ -1320,6 +1344,15 @@ const __teloceCreateCompiledComponent = /** @param {CompiledDefinition} definiti
           element.addEventListener("compositionend", compositionEnd);
         }
         syncModelValue(element, __safeEvaluate(expression, modelScope(element)));
+        // Options rendered later (v-for, async data) must pick up the current model value.
+        if (element.tagName === "SELECT" && !element.multiple && !element.__teloceSelectWatcher && typeof MutationObserver === "function") {
+          const watcher = new MutationObserver(() => queueMicrotask(() => {
+            if (!element.isConnected) { watcher.disconnect(); element.__teloceSelectWatcher = null; return; }
+            try { syncModelValue(element, __safeEvaluate(expression, modelScope(element))); } catch (error) { handleError(error, "model:select"); }
+          }));
+          watcher.observe(element, { childList: true, subtree: true });
+          element.__teloceSelectWatcher = watcher;
+        }
       }
 
       if (attribute.name.startsWith("data-teloce-resolved-")) {

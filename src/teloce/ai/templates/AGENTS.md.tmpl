@@ -1,0 +1,140 @@
+# AGENTS.md
+
+Instructions for AI coding agents working in **@@PROJECT_NAME@@**: a @@BACKEND_LABEL@@ backend with a
+[Teloce-Py](https://github.com/aldanedev-create/teloce-py) front end written in `.vel` components.
+
+## Read this first
+
+- Offline Teloce documentation is in `@@DOCS_DIR@@/`. Start with `@@DOCS_DIR@@/index.md`: it says which file
+  to read for which task.
+- Do not guess Teloce syntax or invent directives. If something is not in those docs, say so and ask.
+- Check `@@DOCS_DIR@@/known-issues.md` before debugging odd behavior. It lists real bugs with workarounds.
+- The docs were copied from teloce-py @@TELOCE_VERSION@@. Run `teloce --version` and refresh with
+  `teloce ai-docs --force` if the installed version differs.
+
+## Project map
+
+```text
+app.py or manage.py      Backend entry point (see "Backend notes")
+templates/index.html     The page that mounts the compiled App component
+static/js/App.vel        Root component. Other components live beside it.
+static/css/              Plain CSS, if any
+teloce.config.json       Compiler and build settings
+dist/                    Build output. Generated. Never edit it by hand.
+AGENTS.md, CLAUDE.md     These instructions
+@@DOCS_DIR@@/            Offline Teloce reference docs
+```
+
+## Commands
+
+| Task | Command |
+| --- | --- |
+| Run the app | `@@RUN_COMMAND@@` |
+| Build only | `teloce build` |
+| Dev server with watch and HMR | `teloce dev` (use `--proxy URL` to forward to your backend) |
+| Check the environment | `teloce doctor` |
+| Lint templates | `teloce lint` |
+
+Teloce is Python-native. You do not need Node.js or npm to build or run this project.
+
+After editing a `.vel` file the app must be rebuilt. The Flask reloader only watches Python files, so restart
+the server, or use `teloce dev`.
+
+## Backend notes
+
+@@BACKEND_NOTES@@
+
+## How `.vel` components are written
+
+```html
+<template>
+  <section class="card">
+    <h2>{{ title }}</h2>
+    <ul><li v-for="item in items" :key="item.id">{{ item.name | capitalize }}</li></ul>
+    <button @click="add">Add</button>
+  </section>
+</template>
+
+<script>
+import Child from "./Child.vel";
+
+export default {
+  components: { Child },
+  props: { title: String },
+  data() { return { items: [] }; },
+  computed: { count() { return this.items.length; } },
+  created() {},
+  mounted() { this.load(); },
+  unmounted() {},
+  methods: {
+    async load() { /* fetch data, then assign this.items */ },
+    add() { this.$emit("added"); }
+  }
+};
+</script>
+
+<style scoped>
+.card { padding: 1rem; }
+</style>
+```
+
+- Components are options objects: `data`, `props`, `computed`, `watch`, `methods`, lifecycle hooks, `components`.
+- `data()` runs without props. Copy props into local state in `created()` (see known issues).
+- Parent to child: props. Child to parent: `this.$emit("name", payload)` and `@name="handler"`.
+- Use `:key` on every `v-for`.
+- `<style scoped>` does not reach elements that Teloce creates at runtime (for example chart annotations). Put
+  those rules in a second, unscoped `<style>` block.
+- Shared runtime helpers are imported by package name, like in Node.js:
+  `import { http, action, createScope } from "teloce/runtime";`. The build rewrites it to the right relative path.
+  Releases before this feature need the relative form (`"../teloce-runtime.js"` from `static/js/`).
+
+## Directives
+
+The complete, authoritative list is `@@DOCS_DIR@@/directives.md`. Do not use a directive that is not documented there.
+In this project the ones you will meet most are:
+
+| Need | Use | Read |
+| --- | --- | --- |
+| Lists, conditions, forms, events | `v-for`, `v-if`, `v-model`, `@event`, `:attribute` | `template-syntax.md`, `cheatsheet.md` |
+| Scrollytelling | `v-scrolly` on the container, `data-v-step` or `v-step` on each step, `@step` | `lesson-scrollytelling.md` |
+| Chart note | `v-chart-annotation="{ text, x, position }"` | `directives.md` |
+| Poll an endpoint | `poll="/api/x" interval="5000" poll-target="name"` | `lesson-live-data.md` |
+| Element behavior | `use:actionName="params"` | `lesson-use-actions.md` |
+| Custom directive | the directive contract | `directive-contracts.md` |
+
+## Network
+
+- `http` for normal JSON requests. Error statuses resolve, so check `res.ok`. Only transport failures throw
+  (`error.code` is `timeout`, `aborted` or `network`).
+- `action.call("name", data)` calls a named server function. Failures resolve as `{ success: false, error, code }`.
+- `createScope()` cancels requests when the component unmounts: call `scope.dispose()` in `unmounted()`.
+- Full reference: `@@DOCS_DIR@@/network-api.md`.
+
+## Rules
+
+1. **Never trust the browser.** Validate and clean every payload on the server. The server creates ids and any
+   names the client depends on.
+2. **Escape output.** `{{ }}` writes text. Do not render user-supplied HTML. See `@@DOCS_DIR@@/security.md`.
+3. **Add authentication** before exposing any route or action that changes data. Do not mark actions public
+   without a reason.
+4. **Keep components small.** Props down, events up. Put shared state in the parent.
+5. **Do not edit `dist/`** and do not commit it.
+6. **No new dependencies** without asking. Do not add Node tooling.
+7. **Match the existing style**: formatting, naming and file layout.
+
+## Known issues, in short
+
+Details and workarounds are in `@@DOCS_DIR@@/known-issues.md`.
+
+- `v-scrolly` may not start when its steps are rendered by `v-for` or arrive with async data (older releases).
+- `v-model` on a `<select>` with looped options may not preselect the saved value (older releases).
+- Props are not available inside `data()`.
+- `in:` and `out:` transitions on a `v-if` element can leave the element on screen in some cases.
+
+## Verify every change
+
+1. Rebuild and run the app.
+2. Open the page and check the browser console for errors.
+3. Exercise the feature you changed. For backend routes, call them with `curl` and check error cases too.
+4. If a test suite exists, run it.
+5. Tell the user what you changed, how you checked it, and anything you could not check.

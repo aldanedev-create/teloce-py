@@ -117,7 +117,26 @@ teloce create basic-app --template basic
 teloce create flaxon-app --template flaxon
 ```
 
-Options are `--template`, `--no-install`, and `--no-git`. Templates are `flask`, `fastapi`, `django`, `flaxon`, and `basic`. The `flaxon` template creates a Flaxon + Jinax backend, a compiled `.vel` frontend, an asset route, and a health endpoint. The command validates the project name, creates a `teloce.config.json`, includes `teloce-py` in generated requirements, and refuses unknown templates.
+Options are `--template`, `--no-install`, `--no-git`, and `--no-ai-docs`. Templates are `flask`, `fastapi`, `django`, `flaxon`, and `basic`. The `flaxon` template creates a Flaxon + Jinax backend, a compiled `.vel` frontend, an asset route, and a health endpoint. The command validates the project name, creates a `teloce.config.json`, includes `teloce-py` in generated requirements, and refuses unknown templates.
+
+### AI assistant files
+
+Every new project also gets files that help AI coding assistants (Claude Code, Codex, Cursor and others) work in it:
+
+- `AGENTS.md`: project map, commands, how `.vel` components are written, rules and a verification checklist, with notes for the chosen backend.
+- `CLAUDE.md`: imports `AGENTS.md` (`@AGENTS.md`) and adds a few notes for Claude Code.
+- `docs/teloce/`: an offline copy of the Teloce reference docs, an `index.md` that maps tasks to files, and `known-issues.md`.
+
+Pass `--no-ai-docs` to skip them. To add them to an existing project, or refresh them after upgrading Teloce:
+
+```bash
+teloce ai-docs                 # current directory, backend detected from the project
+teloce ai-docs my-app --backend fastapi
+teloce ai-docs --force         # overwrite existing files
+teloce ai-docs --no-docs       # only AGENTS.md and CLAUDE.md
+```
+
+Existing files are kept unless you pass `--force`. When you edit one of the copied docs in this repository, run `python scripts/sync_ai_docs.py` to refresh the copies that ship with the package.
 
 ### Generated `teloce.config.json`
 

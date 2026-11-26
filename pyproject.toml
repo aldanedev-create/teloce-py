@@ -69,6 +69,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "teloce.runtime" = ["*.js", "plugins/*.js"]
+"teloce.ai" = ["templates/*.tmpl", "docs/*.md"]
 
 [tool.setuptools.dynamic]
 version = { attr = "teloce.version.__version__" }

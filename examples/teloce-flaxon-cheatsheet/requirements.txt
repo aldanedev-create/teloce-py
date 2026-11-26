@@ -1,2 +1,2 @@
-teloce-py==0.2.0b2
-flaxon>=0.2,<1
+teloce-py
+flaxon

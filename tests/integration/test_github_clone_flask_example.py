@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("flask_admin", reason="the github-clone-flask example needs Flask-Admin")
+
 
 ROOT = Path(__file__).parents[2]
 EXAMPLE = ROOT / "examples" / "github-clone-flask"

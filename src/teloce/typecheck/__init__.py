@@ -8,6 +8,7 @@ from teloce.typecheck.adapter import (
     TypecheckResult,
     TypecheckUnavailable,
     check_project,
+    checker_info,
     discover_roots,
     free_identifiers,
 )
@@ -17,6 +18,7 @@ __all__ = [
     "TypecheckResult",
     "TypecheckUnavailable",
     "check_project",
+    "checker_info",
     "discover_roots",
     "free_identifiers",
 ]

@@ -19,6 +19,7 @@ from teloce.compiler.transformer import Transformer
 from teloce.compiler.optimizer import Optimizer
 from teloce.compiler.generator import Generator
 from teloce.compiler.diagnostics import Diagnostics, DiagnosticLevel
+from teloce.compiler.runtime_imports import RUNTIME_MODULES, unknown_teloce_imports
 from teloce.compiler.source_map import SourceMapGenerator, script_line_hints
 from teloce.sfc.parser import SFCParser
 from teloce.sfc.component import Component
@@ -115,6 +116,21 @@ class Compiler:
         "esm.sh", "esm.run", "cdn.skypack.dev", "jspm.dev",
     )
 
+    def _check_teloce_imports(self, source: str, filename: str) -> None:
+        """Report ``teloce/<name>`` imports that do not name a shared runtime module."""
+        script_match = re.search(r"<script[^>]*>(.*?)</script>", source, re.DOTALL)
+        script_text = script_match.group(1) if script_match else source
+        script_offset = script_match.start(1) if script_match else 0
+        for offset, specifier in unknown_teloce_imports(script_text):
+            self.diagnostics.add(
+                DiagnosticLevel.WARNING,
+                f"Unknown Teloce module '{specifier}'.",
+                filename=filename,
+                line=source.count("\n", 0, script_offset + offset) + 1,
+                code="W1002",
+                suggestions=["Import from one of: " + ", ".join(f"teloce/{name}" for name in RUNTIME_MODULES)],
+            )
+
     def _check_cdn_imports(self, source: str, filename: str) -> None:
         """Warn on module imports fetched from a remote URL that are either
         unencrypted (http://, interceptable via MITM injection) or, for
@@ -188,6 +204,7 @@ class Compiler:
         component = sfc_parser.parse(source, filename)
         if component:
             self._check_cdn_imports(source, filename)
+            self._check_teloce_imports(source, filename)
 
         for warning in sfc_parser.warnings:
             line, column = self._message_location(warning)

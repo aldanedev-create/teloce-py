@@ -1,3 +1,27 @@
+## Unreleased
+
+### Added
+
+- `teloce create` now writes `AGENTS.md`, `CLAUDE.md` and an offline copy of the reference docs (`docs/teloce/`, with a task index and a known-issues list) into every new project. Use `--no-ai-docs` to skip them.
+- New `teloce ai-docs` command that adds or refreshes those files in an existing project (`--backend`, `--force`, `--no-docs`).
+- `AGENTS.md` and `CLAUDE.md` for contributors to this repository, and `scripts/sync_ai_docs.py` to keep the shipped doc copies in sync.
+- Package-style imports in `.vel` scripts: `import { http } from "teloce/runtime"` (also `teloce/network`, `teloce/signals`, `teloce/data`, `teloce/scheduler`, `teloce/table`) is rewritten to the correct relative path for each component. The relative form still works. Unknown `teloce/...` names produce warning `W1002`.
+
+- `teloce typecheck` resolves `teloce/runtime`, `teloce/network`, `teloce/signals`, `teloce/data`, `teloce/scheduler`, `teloce/table` and the relative `teloce-runtime.js` form with the real runtime types. Misuse such as `http.get(42)` is now reported.
+- `teloce typecheck` prints the compiler it used (`Checked with tsgo 7.0.2 (pytscheck 0.2.0)`), `--json` adds a `checker` object, and `teloce doctor` reports the type checker.
+
+### Fixed
+
+- `v-scrolly` now finds steps that are rendered after the container is bound (`v-for`, `v-if`, async data). It watches for new steps and binds again.
+- `teloce typecheck` no longer reports `TS2440` for an explicitly imported signal helper in a TypeScript script, and a bad import is reported once instead of twice (the duplicate at 1:1 is dropped).
+- `v-model` on a `<select>` now picks up the current value when its `<option>` elements are rendered later.
+- `test_examples_compile_and_build` handles HTML-mode examples such as `flask-youtube-ssr`, which keep components in `ui/*.html`.
+- The `github-clone-flask` example test is skipped when Flask-Admin is not installed.
+
+### Known issues
+
+- `in:` / `out:` transitions on a `v-if` element can leave the element on screen in some cases. See `docs/teloce/known-issues.md` in a generated project.
+
 ## 0.3.3
 
 ### Changed

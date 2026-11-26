@@ -27,7 +27,12 @@ def test_examples_compile_and_build():
     assert examples
     for example in examples:
         vel_files = sorted(example.rglob("*.vel"))
-        assert vel_files, f"Example has no .vel component: {example}"
+        build_options = {"dev": True, "clean": True}
+        if not vel_files:
+            # HTML-mode examples (such as flask-youtube-ssr) keep their components in ui/*.html.
+            vel_files = sorted((example / "ui").rglob("*.html"))
+            build_options.update({"html_mode": True, "source_roots": ["ui"]})
+        assert vel_files, f"Example has no .vel or ui/*.html component: {example}"
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory) / example.name
             shutil.copytree(example, workspace)
@@ -45,7 +50,7 @@ def test_examples_compile_and_build():
             # A copied example may contain a generated manifest from a local
             # editable run. The test workspace must always exercise a full
             # rebuild instead of inheriting that cache.
-            build = Builder({"dev": True, "clean": True}).build(workspace)
+            build = Builder(build_options).build(workspace)
             assert build["total"] == len(vel_files)
             assert build["compiled"] == len(vel_files)
 

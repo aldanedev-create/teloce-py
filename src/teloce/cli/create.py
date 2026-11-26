@@ -10,6 +10,8 @@ from typing import Any
 import json
 import re
 
+from teloce.ai import write_ai_files
+
 
 SUPPORTED_TEMPLATES = {'flask', 'fastapi', 'django', 'flaxon', 'basic'}
 PROJECT_NAME_PATTERN = re.compile(r'^[A-Za-z][A-Za-z0-9_-]*$')
@@ -68,7 +70,12 @@ def create_command(args: Any) -> int:
     
     # Create package.json
     create_package_json(project_path, project_name)
-    
+
+    # Instructions and offline docs for AI coding assistants
+    if not getattr(args, 'no_ai_docs', False):
+        written = write_ai_files(project_path, project_name=project_name, backend=template_name)['written']
+        print(f"🤖 AI assistant files: AGENTS.md, CLAUDE.md and docs/teloce/ ({len(written)} files)")
+
     # Initialize git
     if init_git:
         print("🔧 Initializing git...")

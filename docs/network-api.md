@@ -31,7 +31,18 @@ For standalone pages, load the runtime first, then register the plugin. The plug
 </script>
 ```
 
-Generated components can import them from the shared `teloce-runtime.js` barrel, which re-exports
+In a `.vel` script, import them by package name, the way you would in Node.js:
+
+```js
+import { http, action, createScope } from "teloce/runtime";
+```
+
+The build rewrites `teloce/runtime` to the right relative path for each component, so it works from any folder depth.
+The older relative form (`"../teloce-runtime.js"`) still works. Smaller entry points exist too: `teloce/network`,
+`teloce/signals`, `teloce/data`, `teloce/scheduler` and `teloce/table`. Importing an unknown `teloce/...` name
+produces warning `W1002`.
+
+The `teloce/runtime` barrel re-exports
 `http`, `action`, `createHttp`, `createActionClient`, `createSocket`, `createScope`, `networkPlugin`,
 `NetworkError`, `HttpClient`, `ActionClient` and `SocketClient` (the build emits `network.js` next to
 `signals.js`).

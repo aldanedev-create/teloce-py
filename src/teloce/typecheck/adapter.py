@@ -108,7 +108,68 @@ declare function __forEach<T>(source: readonly T[], cb: (item: T, index: number)
 declare function __forEach(source: number, cb: (item: number, index: number) => void): void;
 declare function __forEach<T extends object>(source: T, cb: (value: T[keyof T], key: string, index: number) => void): void;
 """
-SHIMS_DTS = 'declare module "*.html" { const component: any; export default component; }\ndeclare module "*.vel" { const component: any; export default component; }\n'
+
+
+_IMPORT_STATEMENT = re.compile(r"\bimport\s+(?!\()(?P<clause>[^;\"']*?)\s*from\s*[\"'][^\"']+[\"']", re.DOTALL)
+_LOCAL_DECLARATION = re.compile(r"\b(?:const|let|var|function\*?|class)\s+(?P<name>[A-Za-z_$][\w$]*)")
+
+
+def user_bound_names(script: str) -> set[str]:
+    """Names the script itself imports or declares.
+
+    ``ScriptParser`` reads plain JavaScript, so a script that uses TypeScript syntax (``0 as number``) yields no
+    imports at all. Scanning the text keeps the checker from auto-declaring a signal helper the author already
+    imported, which would be reported as a conflicting declaration.
+    """
+    names: set[str] = set()
+    for match in _IMPORT_STATEMENT.finditer(script):
+        clause = match.group("clause").strip()
+        clause = re.sub(r"^type\s+(?=[{*A-Za-z_$])", "", clause)
+        named = re.search(r"\{(?P<items>[^}]*)\}", clause)
+        if named:
+            for item in named.group("items").split(","):
+                parts = re.sub(r"^type\s+", "", item.strip()).split()
+                if parts:
+                    names.add(parts[-1])
+            clause = clause.replace(named.group(0), "")
+        namespace = re.search(r"\*\s*as\s+([A-Za-z_$][\w$]*)", clause)
+        if namespace:
+            names.add(namespace.group(1))
+            clause = clause.replace(namespace.group(0), "")
+        names.update(re.findall(r"[A-Za-z_$][\w$]*", clause))
+    names.update(match.group("name") for match in _LOCAL_DECLARATION.finditer(script))
+    return names
+
+
+def runtime_declaration_files() -> dict[str, str]:
+    """Virtual ``node_modules/teloce/*.d.ts`` files that resolve ``teloce/runtime`` and its siblings.
+
+    ``import { http } from "teloce/runtime"`` is rewritten by the build, so the checker has to resolve the same
+    names. Each file re-exports the real runtime sources, so their JSDoc types are what you get. Using
+    ``node_modules`` resolution leaves a project's own tsconfig ``paths`` untouched.
+    """
+    from importlib import resources
+
+    base = Path(str(resources.files("teloce.runtime"))).resolve().as_posix()
+
+    def module(name: str) -> str:
+        return f"{base}/{name}.js"
+
+    signal_names = "createSignal, createComputed, createEffect, createMemo, batch, untracked, isSignal, isComputed, toSignal, getValue"
+    runtime = (
+        f'export {{ {signal_names} }} from "{module("signals")}";\n'
+        f'export {{ createSignal as signal, createComputed as computed, createEffect as effect }} from "{module("signals")}";\n'
+        f'export * from "{module("data")}";\n'
+        f'export * from "{module("table")}";\n'
+        f'export * from "{module("network")}";\n'
+    )
+    files = {"node_modules/teloce/runtime.d.ts": runtime, "node_modules/teloce/index.d.ts": runtime}
+    for name in ("network", "signals", "data", "scheduler", "table"):
+        files[f"node_modules/teloce/{name}.d.ts"] = f'export * from "{module(name)}";\n'
+    return files
+
+
+SHIMS_DTS = 'declare module "*teloce-runtime.js" { export * from "teloce/runtime"; }\ndeclare module "*.html" { const component: any; export default component; }\ndeclare module "*.vel" { const component: any; export default component; }\n'
 
 
 class TypecheckUnavailable(RuntimeError):
@@ -882,6 +943,7 @@ class _Adapter:
         sources = [
             SourceFile(path="teloce-shims.d.ts", text=SHIMS_DTS),
             SourceFile(path="teloce-define.d.ts", text=DEFINE_DTS),
+            *(SourceFile(path=name, text=text) for name, text in runtime_declaration_files().items()),
         ]
         files: list[Path] = []
         for root in self.roots:
@@ -940,10 +1002,13 @@ class _Adapter:
                 {"shared_runtime_import": "teloce-signals"}
             )._generate_signal_imports(SimpleNamespace(script=parsed))
             declarations = []
+            user_names = user_bound_names(body)
             for statement in imports:
                 for binding in statement.split("{", 1)[1].split("}", 1)[0].split(","):
                     parts = binding.strip().split(" as ")
                     imported, local = parts[0], parts[-1]
+                    if local in user_names:
+                        continue  # the author's own import or declaration wins
                     declarations.append(
                         f"/** @type {{typeof __TeloceSignals.{imported}}} */ const {local} = /** @type {{any}} */ (null);"
                         if is_js
@@ -1127,7 +1192,16 @@ class _Adapter:
             findings.append(
                 Finding(rel, line, column, error.code, self._tidy(error.message))
             )
-        return findings
+        return _drop_unlocated_duplicates(findings)
+
+
+def _drop_unlocated_duplicates(findings: list[Finding]) -> list[Finding]:
+    """Drop a finding at the (1, 1) placeholder when the same error is also reported at a real position.
+
+    Imports are copied into the template-checking file, so a bad import is reported there without a position.
+    """
+    located = {(f.file, f.code, f.message) for f in findings if (f.line, f.column) != (1, 1)}
+    return [f for f in findings if (f.line, f.column) != (1, 1) or (f.file, f.code, f.message) not in located]
 
 
 def discover_roots(start: str | Path) -> list[Path]:
@@ -1135,6 +1209,23 @@ def discover_roots(start: str | Path) -> list[Path]:
     root = Path(start)
     found = [p for p in [root / "ui", *sorted(root.glob("modules/*/ui"))] if p.is_dir()]
     return found or [root]
+
+
+def checker_info() -> dict[str, str] | None:
+    """Versions of the type checker in use (tsgo, via pytscheck), or ``None`` when it is not installed."""
+    import sys
+
+    if sys.version_info < (3, 11):
+        return None
+    try:
+        import pytscheck
+    except ImportError:
+        return None
+    return {
+        "engine": "tsgo",
+        "tsgo": str(getattr(pytscheck, "COMPILER_VERSION", "")),
+        "pytscheck": str(getattr(pytscheck, "__version__", "")),
+    }
 
 
 def check_project(

@@ -22,7 +22,7 @@ storage mechanism.
 Export rows from a method or action:
 
 ```js
-import { downloadRowsAsCsv, exportChartToPng } from "../teloce-runtime.js";
+import { downloadRowsAsCsv, exportChartToPng } from "teloce/runtime";
 downloadRowsAsCsv(this.rows, "filtered-report.csv");
 exportChartToPng(document.querySelector(".chart"), "chart.png");
 ```

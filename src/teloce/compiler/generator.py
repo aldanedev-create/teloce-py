@@ -14,6 +14,7 @@ from teloce.ast.elements import ElementFactory
 from teloce.css.hashing import HashGenerator
 from teloce.css.modules import CSSModules
 from teloce.compiler.minifier import minify_js
+from teloce.compiler.runtime_imports import rewrite_teloce_imports
 from teloce.project.extensions import normalize_source_extensions, source_extension_pattern
 
 from teloce.ast.nodes import ASTNode, ElementNode, TextNode, InterpolationNode, ForNode, IfNode, ComponentNode, SlotNode, FragmentNode
@@ -379,6 +380,8 @@ class Generator:
         module_code = getattr(component.script, "module_code", "")
         if module_code:
             cleaned_module_code = self._strip_component_imports(module_code)
+            # `import { http } from "teloce/runtime"` becomes a relative URL for this component.
+            cleaned_module_code = rewrite_teloce_imports(cleaned_module_code, self.options.get("shared_runtime_import"))
             if cleaned_module_code:
                 lines.append(cleaned_module_code)
         lines.append('')

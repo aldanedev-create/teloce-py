@@ -4,7 +4,9 @@ Type checking requires Python 3.11+; the rest of Teloce continues to support Pyt
 The bundled compiler ships for Linux, Windows and macOS on x64 and ARM64, and for Linux ARMv7. 32-bit x86 systems are not supported by the `typecheck` extra.
 
 `teloce typecheck` type-checks the TypeScript in your components and the expressions in your templates.
-It uses [pytscheck](https://pypi.org/project/pytscheck/), which bundles Microsoft's native TypeScript compiler; no Node.js is needed.
+It uses [pytscheck](https://pypi.org/project/pytscheck/), which bundles Microsoft's native TypeScript compiler, `tsgo`; no Node.js is needed.
+The output ends with the compiler that ran, for example `Checked with tsgo 7.0.2 (pytscheck 0.2.0) in 0.47s.`
+`--json` adds a `checker` object (`engine`, `tsgo`, `pytscheck`), and `teloce doctor` shows the same versions or tells you the checker is not installed.
 
 ```bash
 pip install "teloce-py[typecheck]"
@@ -27,6 +29,23 @@ Flaxon or other tools can call `teloce.typecheck.check_project()` with their reg
 ```text
 ui/shop/Shop.html(7,30): error TS2551: Property 'lenght' does not exist on type 'Product[]'. Did you mean 'length'?
 ```
+
+## Runtime imports
+
+Components can import the browser runtime by package name, and the checker resolves it with the real types:
+
+```ts
+import { http, action, createScope, signal } from "teloce/runtime";
+
+const res = await http.get("/api/story");   // HttpResponse
+http.get(42);                               // error TS2345: number is not assignable to string
+```
+
+`teloce/network`, `teloce/signals`, `teloce/data`, `teloce/scheduler` and `teloce/table` resolve too, and so does the older
+relative form (`"../teloce-runtime.js"`). The types come from the JSDoc in the runtime sources. The checker supplies virtual
+`node_modules/teloce/*.d.ts` files for this, so your own tsconfig `paths` are left alone. An unknown name such as
+`teloce/nope` is reported once, at the import. Explicitly importing a signal helper (`signal`, `createSignal`, ...) in a
+TypeScript script works: the checker only provides helpers you did not import or declare yourself.
 
 ## Writing components that check well
 
