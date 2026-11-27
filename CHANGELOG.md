@@ -2,6 +2,7 @@
 
 ### Added
 
+- Optional in-memory builds: `teloce.build.memory.build_in_memory(root)` builds into a temporary folder, keeps the files in memory and deletes the folder, so no `dist/` is left behind. `MemoryBuild.wsgi_app()` and `.asgi_app()` serve the files (known paths only, MIME types, ETag/304, `nosniff`). Disk stays the default; `teloce build` always writes to disk.
 - `teloce create` now writes `AGENTS.md`, `CLAUDE.md` and an offline copy of the reference docs (`docs/teloce/`, with a task index and a known-issues list) into every new project. Use `--no-ai-docs` to skip them.
 - New `teloce ai-docs` command that adds or refreshes those files in an existing project (`--backend`, `--force`, `--no-docs`).
 - `AGENTS.md` and `CLAUDE.md` for contributors to this repository, and `scripts/sync_ai_docs.py` to keep the shipped doc copies in sync.

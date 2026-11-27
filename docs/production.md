@@ -38,3 +38,23 @@ The examples intentionally use in-memory data and development servers. They are 
 Do not expose debug servers, source maps, development HMR endpoints, or
 development secrets in a public deployment. The Django scanner example needs
 additional SSRF and egress controls before it can be internet-facing.
+
+## Building in memory (optional)
+
+For development, tests, read-only filesystems and single-process servers you can skip the `dist/` folder:
+
+```python
+from teloce.build.memory import build_in_memory
+
+assets = build_in_memory(PROJECT_ROOT)                 # builds once, keeps the files in memory
+app.wsgi_app = DispatcherMiddleware(app.wsgi_app, {"/static": assets.wsgi_app("static")})   # Flask
+# FastAPI / Starlette: app.mount("/static", assets.asgi_app("static"))
+```
+
+The build runs into a temporary folder that is deleted afterwards, so nothing is left in your project. Only files that
+exist in the build are served (no path traversal), with the right MIME type, an `ETag` (304 on a match) and
+`X-Content-Type-Options: nosniff`. Pass `max_age=` for long-lived caching of hashed files.
+
+Keep using `teloce build` (disk) for deployments: with several workers every process would build its own copy, and a CDN or
+upload step needs real files. The in-memory build is identical to the disk build except for the timestamp in
+`manifest.json`.
